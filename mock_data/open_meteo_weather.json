@@ -1,0 +1,277 @@
+{
+  "ROM": {
+    "source": "open_meteo_forecast",
+    "request_url": "https://api.open-meteo.com/v1/forecast?latitude=41.794594&longitude=12.250346&timezone=auto&start_date=2026-09-21&end_date=2026-09-22&daily=weather_code%2Ctemperature_2m_max%2Ctemperature_2m_min%2Cprecipitation_probability_max%2Csunshine_duration%2Cwind_speed_10m_max",
+    "retrieved_at": "2026-09-11T14:03:16Z",
+    "data": {
+      "latitude": 41.8125,
+      "longitude": 12.25,
+      "generationtime_ms": 0.4737377166748047,
+      "utc_offset_seconds": 7200,
+      "timezone": "Europe/Rome",
+      "timezone_abbreviation": "GMT+2",
+      "elevation": 12.0,
+      "daily_units": {
+        "time": "iso8601",
+        "weather_code": "wmo code",
+        "temperature_2m_max": "°C",
+        "temperature_2m_min": "°C",
+        "precipitation_probability_max": "%",
+        "sunshine_duration": "s",
+        "wind_speed_10m_max": "km/h"
+      },
+      "daily": {
+        "time": [
+          "2026-09-21",
+          "2026-09-22"
+        ],
+        "weather_code": [
+          1,
+          1
+        ],
+        "temperature_2m_max": [
+          29.7,
+          25.9
+        ],
+        "temperature_2m_min": [
+          20.2,
+          17.3
+        ],
+        "precipitation_probability_max": [
+          10,
+          16
+        ],
+        "sunshine_duration": [
+          43098.95,
+          43036.73
+        ],
+        "wind_speed_10m_max": [
+          23.0,
+          20.3
+        ]
+      }
+    }
+  },
+  "MLA": {
+    "source": "open_meteo_forecast",
+    "request_url": "https://api.open-meteo.com/v1/forecast?latitude=35.8575&longitude=14.4775&timezone=auto&start_date=2026-09-18&end_date=2026-09-22&daily=weather_code%2Ctemperature_2m_max%2Ctemperature_2m_min%2Cprecipitation_probability_max%2Csunshine_duration%2Cwind_speed_10m_max",
+    "retrieved_at": "2026-09-11T14:03:17Z",
+    "data": {
+      "latitude": 35.875,
+      "longitude": 14.5,
+      "generationtime_ms": 0.5192756652832031,
+      "utc_offset_seconds": 7200,
+      "timezone": "Europe/Malta",
+      "timezone_abbreviation": "GMT+2",
+      "elevation": 75.0,
+      "daily_units": {
+        "time": "iso8601",
+        "weather_code": "wmo code",
+        "temperature_2m_max": "°C",
+        "temperature_2m_min": "°C",
+        "precipitation_probability_max": "%",
+        "sunshine_duration": "s",
+        "wind_speed_10m_max": "km/h"
+      },
+      "daily": {
+        "time": [
+          "2026-09-18",
+          "2026-09-19",
+          "2026-09-20",
+          "2026-09-21",
+          "2026-09-22"
+        ],
+        "weather_code": [
+          2,
+          51,
+          51,
+          1,
+          3
+        ],
+        "temperature_2m_max": [
+          28.7,
+          28.1,
+          28.3,
+          27.1,
+          26.5
+        ],
+        "temperature_2m_min": [
+          25.0,
+          24.8,
+          24.7,
+          24.3,
+          23.4
+        ],
+        "precipitation_probability_max": [
+          23,
+          22,
+          24,
+          32,
+          31
+        ],
+        "sunshine_duration": [
+          43200.0,
+          43186.27,
+          43099.06,
+          43011.25,
+          42922.95
+        ],
+        "wind_speed_10m_max": [
+          18.2,
+          13.8,
+          16.8,
+          25.5,
+          27.9
+        ]
+      }
+    }
+  },
+  "LIS": {
+    "source": "open_meteo_forecast",
+    "request_url": "https://api.open-meteo.com/v1/forecast?latitude=38.770042&longitude=-9.128165&timezone=auto&start_date=2026-09-18&end_date=2026-09-22&daily=weather_code%2Ctemperature_2m_max%2Ctemperature_2m_min%2Cprecipitation_probability_max%2Csunshine_duration%2Cwind_speed_10m_max",
+    "retrieved_at": "2026-09-11T14:03:19Z",
+    "data": {
+      "latitude": 38.75,
+      "longitude": -9.125,
+      "generationtime_ms": 1.448512077331543,
+      "utc_offset_seconds": 3600,
+      "timezone": "Europe/Lisbon",
+      "timezone_abbreviation": "GMT+1",
+      "elevation": 102.0,
+      "daily_units": {
+        "time": "iso8601",
+        "weather_code": "wmo code",
+        "temperature_2m_max": "°C",
+        "temperature_2m_min": "°C",
+        "precipitation_probability_max": "%",
+        "sunshine_duration": "s",
+        "wind_speed_10m_max": "km/h"
+      },
+      "daily": {
+        "time": [
+          "2026-09-18",
+          "2026-09-19",
+          "2026-09-20",
+          "2026-09-21",
+          "2026-09-22"
+        ],
+        "weather_code": [
+          45,
+          0,
+          0,
+          2,
+          3
+        ],
+        "temperature_2m_max": [
+          27.5,
+          29.1,
+          31.6,
+          34.3,
+          32.1
+        ],
+        "temperature_2m_min": [
+          15.9,
+          16.7,
+          17.8,
+          22.7,
+          23.7
+        ],
+        "precipitation_probability_max": [
+          0,
+          0,
+          2,
+          2,
+          4
+        ],
+        "sunshine_duration": [
+          37866.78,
+          43711.03,
+          43562.46,
+          43413.19,
+          42188.05
+        ],
+        "wind_speed_10m_max": [
+          15.8,
+          17.5,
+          16.5,
+          11.7,
+          12.4
+        ]
+      }
+    }
+  },
+  "ATH": {
+    "source": "open_meteo_forecast",
+    "request_url": "https://api.open-meteo.com/v1/forecast?latitude=37.93635&longitude=23.946486&timezone=auto&start_date=2026-09-18&end_date=2026-09-22&daily=weather_code%2Ctemperature_2m_max%2Ctemperature_2m_min%2Cprecipitation_probability_max%2Csunshine_duration%2Cwind_speed_10m_max",
+    "retrieved_at": "2026-09-11T14:03:19Z",
+    "data": {
+      "latitude": 37.9375,
+      "longitude": 23.9375,
+      "generationtime_ms": 2.2362470626831055,
+      "utc_offset_seconds": 10800,
+      "timezone": "Europe/Athens",
+      "timezone_abbreviation": "GMT+3",
+      "elevation": 80.0,
+      "daily_units": {
+        "time": "iso8601",
+        "weather_code": "wmo code",
+        "temperature_2m_max": "°C",
+        "temperature_2m_min": "°C",
+        "precipitation_probability_max": "%",
+        "sunshine_duration": "s",
+        "wind_speed_10m_max": "km/h"
+      },
+      "daily": {
+        "time": [
+          "2026-09-18",
+          "2026-09-19",
+          "2026-09-20",
+          "2026-09-21",
+          "2026-09-22"
+        ],
+        "weather_code": [
+          95,
+          1,
+          1,
+          0,
+          3
+        ],
+        "temperature_2m_max": [
+          29.5,
+          29.4,
+          31.1,
+          30.9,
+          23.2
+        ],
+        "temperature_2m_min": [
+          21.8,
+          20.0,
+          19.8,
+          20.2,
+          18.1
+        ],
+        "precipitation_probability_max": [
+          9,
+          12,
+          9,
+          10,
+          5
+        ],
+        "sunshine_duration": [
+          34845.51,
+          42593.51,
+          41403.86,
+          40894.2,
+          40907.94
+        ],
+        "wind_speed_10m_max": [
+          10.1,
+          7.0,
+          10.1,
+          14.1,
+          27.2
+        ]
+      }
+    }
+  }
+}

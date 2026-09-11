@@ -1,0 +1,489 @@
+{
+  "IT": {
+    "source": "rest_countries_v5",
+    "request_url": "https://api.restcountries.com/countries/v5/codes.alpha_2/IT?response_fields=names.common%2Cnames.official%2Ccodes.alpha_2%2Ccodes.alpha_3%2Ccapitals%2Ccurrencies%2Clanguages%2Cregion%2Csubregion%2Cflag%2Ctimezones",
+    "retrieved_at": "2026-09-11T14:03:17Z",
+    "data": {
+      "names": {
+        "common": "Italy",
+        "official": "Italian Republic"
+      },
+      "codes": {
+        "alpha_2": "IT",
+        "alpha_3": "ITA"
+      },
+      "capitals": [
+        {
+          "attributes": {
+            "administrative": false,
+            "constitutional": false,
+            "executive": false,
+            "judicial": false,
+            "legislative": false,
+            "primary": true
+          },
+          "coordinates": {
+            "lat": 41.9,
+            "lng": 12.48
+          },
+          "name": "Rome"
+        }
+      ],
+      "flag": {
+        "colors": {
+          "dominant": "#009246",
+          "palette": [
+            {
+              "hex": "#009246",
+              "proportion": 0.32823206943809957
+            },
+            {
+              "hex": "#ffffff",
+              "proportion": 0.32023755139333027
+            },
+            {
+              "hex": "#e9b5b7",
+              "proportion": 0.007994518044769302
+            },
+            {
+              "hex": "#ce2b39",
+              "proportion": 0.32023755139333027
+            },
+            {
+              "hex": "#008a3c",
+              "proportion": 0.0077661032434901784
+            },
+            {
+              "hex": "#fdfcfc",
+              "proportion": 0.0077661032434901784
+            },
+            {
+              "hex": "#cf2e3a",
+              "proportion": 0.0077661032434901784
+            }
+          ],
+          "prominent": "#009246",
+          "swatches": {
+            "dark_muted": null,
+            "dark_vibrant": null,
+            "light_muted": "#e9b5b7",
+            "light_vibrant": null,
+            "muted": "#009246",
+            "vibrant": "#ce2b39"
+          }
+        },
+        "description": "The flag of Italy is composed of three equal vertical bands of green, white and red.",
+        "emoji": "🇮🇹",
+        "html_entity": "&#127470;&#127481;",
+        "unicode": "U+1F1EE U+1F1F9",
+        "url_png": "https://flags.restcountries.com/v5/w640/it.png",
+        "url_svg": "https://flags.restcountries.com/v5/svg/it.svg"
+      },
+      "region": "Europe",
+      "subregion": "Southern Europe",
+      "currencies": [
+        {
+          "code": "EUR",
+          "name": "Euro",
+          "symbol": "€"
+        }
+      ],
+      "languages": [
+        {
+          "bcp47": "it",
+          "iso639_1": "it",
+          "iso639_2b": "ita",
+          "iso639_2t": "ita",
+          "iso639_3": "ita",
+          "name": "Italian",
+          "native_name": "italiano"
+        },
+        {
+          "bcp47": "ca",
+          "iso639_1": "ca",
+          "iso639_2b": "cat",
+          "iso639_2t": "cat",
+          "iso639_3": "cat",
+          "name": "Catalan",
+          "native_name": "català"
+        }
+      ],
+      "timezones": [
+        "UTC+01:00"
+      ],
+      "_match": [
+        {
+          "path": "codes.alpha_2",
+          "value": "IT"
+        }
+      ],
+      "_meta": {
+        "lastUpdatedTimestamp": 1788557518
+      }
+    }
+  },
+  "MT": {
+    "source": "rest_countries_v5",
+    "request_url": "https://api.restcountries.com/countries/v5/codes.alpha_2/MT?response_fields=names.common%2Cnames.official%2Ccodes.alpha_2%2Ccodes.alpha_3%2Ccapitals%2Ccurrencies%2Clanguages%2Cregion%2Csubregion%2Cflag%2Ctimezones",
+    "retrieved_at": "2026-09-11T14:03:18Z",
+    "data": {
+      "names": {
+        "common": "Malta",
+        "official": "Republic of Malta"
+      },
+      "codes": {
+        "alpha_2": "MT",
+        "alpha_3": "MLT"
+      },
+      "capitals": [
+        {
+          "attributes": {
+            "administrative": false,
+            "constitutional": false,
+            "executive": false,
+            "judicial": false,
+            "legislative": false,
+            "primary": true
+          },
+          "coordinates": {
+            "lat": 35.88,
+            "lng": 14.5
+          },
+          "name": "Valletta"
+        }
+      ],
+      "flag": {
+        "colors": {
+          "dominant": "#fbfaf5",
+          "palette": [
+            {
+              "hex": "#fbfaf5",
+              "proportion": 0.47852900867976245
+            },
+            {
+              "hex": "#cf211d",
+              "proportion": 0.4922338967565098
+            },
+            {
+              "hex": "#c1c9cc",
+              "proportion": 0.003426222019186843
+            },
+            {
+              "hex": "#a39e9a",
+              "proportion": 0.003654636820465966
+            },
+            {
+              "hex": "#c82f49",
+              "proportion": 0.012334399269072635
+            },
+            {
+              "hex": "#f2e5e6",
+              "proportion": 0.009593421653723162
+            },
+            {
+              "hex": "#f4a5a8",
+              "proportion": 0.00022841480127912289
+            },
+            {
+              "hex": "#948d00",
+              "proportion": 0
+            }
+          ],
+          "prominent": "#cf211d",
+          "swatches": {
+            "dark_muted": null,
+            "dark_vibrant": null,
+            "light_muted": "#fbfaf5",
+            "light_vibrant": "#f4a5a8",
+            "muted": "#a39e9a",
+            "vibrant": "#cf211d"
+          }
+        },
+        "description": "The flag of Malta is composed of two equal vertical bands of white and red. A representation of the George cross edged in red is situated on the upper hoist-side corner of the white band.",
+        "emoji": "🇲🇹",
+        "html_entity": "&#127474;&#127481;",
+        "unicode": "U+1F1F2 U+1F1F9",
+        "url_png": "https://flags.restcountries.com/v5/w640/mt.png",
+        "url_svg": "https://flags.restcountries.com/v5/svg/mt.svg"
+      },
+      "region": "Europe",
+      "subregion": "Southern Europe",
+      "currencies": [
+        {
+          "code": "EUR",
+          "name": "Euro",
+          "symbol": "€"
+        }
+      ],
+      "languages": [
+        {
+          "bcp47": "en",
+          "iso639_1": "en",
+          "iso639_2b": "eng",
+          "iso639_2t": "eng",
+          "iso639_3": "eng",
+          "name": "English",
+          "native_name": "English"
+        },
+        {
+          "bcp47": "mt",
+          "iso639_1": "mt",
+          "iso639_2b": "mlt",
+          "iso639_2t": "mlt",
+          "iso639_3": "mlt",
+          "name": "Maltese",
+          "native_name": "Malti"
+        }
+      ],
+      "timezones": [
+        "UTC+01:00"
+      ],
+      "_match": [
+        {
+          "path": "codes.alpha_2",
+          "value": "MT"
+        }
+      ],
+      "_meta": {
+        "lastUpdatedTimestamp": 1788557519
+      }
+    }
+  },
+  "PT": {
+    "source": "rest_countries_v5",
+    "request_url": "https://api.restcountries.com/countries/v5/codes.alpha_2/PT?response_fields=names.common%2Cnames.official%2Ccodes.alpha_2%2Ccodes.alpha_3%2Ccapitals%2Ccurrencies%2Clanguages%2Cregion%2Csubregion%2Cflag%2Ctimezones",
+    "retrieved_at": "2026-09-11T14:03:19Z",
+    "data": {
+      "names": {
+        "common": "Portugal",
+        "official": "Portuguese Republic"
+      },
+      "codes": {
+        "alpha_2": "PT",
+        "alpha_3": "PRT"
+      },
+      "capitals": [
+        {
+          "attributes": {
+            "administrative": false,
+            "constitutional": false,
+            "executive": false,
+            "judicial": false,
+            "legislative": false,
+            "primary": true
+          },
+          "coordinates": {
+            "lat": 38.72,
+            "lng": -9.13
+          },
+          "name": "Lisbon"
+        }
+      ],
+      "flag": {
+        "colors": {
+          "dominant": "#166b00",
+          "palette": [
+            {
+              "hex": "#166b00",
+              "proportion": 0.3414801279122887
+            },
+            {
+              "hex": "#ff1419",
+              "proportion": 0.5603015075376885
+            },
+            {
+              "hex": "#ffeb83",
+              "proportion": 0.03380539058931019
+            },
+            {
+              "hex": "#7097c9",
+              "proportion": 0.009821836455002285
+            },
+            {
+              "hex": "#9d7e48",
+              "proportion": 0.010050251256281407
+            },
+            {
+              "hex": "#bd9100",
+              "proportion": 0.02763819095477387
+            },
+            {
+              "hex": "#175a00",
+              "proportion": 0.0109639104613979
+            },
+            {
+              "hex": "#a22a00",
+              "proportion": 0.005938784833257195
+            }
+          ],
+          "prominent": "#ff1419",
+          "swatches": {
+            "dark_muted": null,
+            "dark_vibrant": "#175a00",
+            "light_muted": null,
+            "light_vibrant": "#ffeb83",
+            "muted": "#7097c9",
+            "vibrant": "#ff1419"
+          }
+        },
+        "description": "The flag of Portugal is composed of two vertical bands of green and red in the ratio of 2:3, with the coat of arms of Portugal centered over the two-color boundary.",
+        "emoji": "🇵🇹",
+        "html_entity": "&#127477;&#127481;",
+        "unicode": "U+1F1F5 U+1F1F9",
+        "url_png": "https://flags.restcountries.com/v5/w640/pt.png",
+        "url_svg": "https://flags.restcountries.com/v5/svg/pt.svg"
+      },
+      "region": "Europe",
+      "subregion": "Southern Europe",
+      "currencies": [
+        {
+          "code": "EUR",
+          "name": "Euro",
+          "symbol": "€"
+        }
+      ],
+      "languages": [
+        {
+          "bcp47": "pt",
+          "iso639_1": "pt",
+          "iso639_2b": "por",
+          "iso639_2t": "por",
+          "iso639_3": "por",
+          "name": "Portuguese",
+          "native_name": "português"
+        }
+      ],
+      "timezones": [
+        "UTC-01:00",
+        "UTC"
+      ],
+      "_match": [
+        {
+          "path": "codes.alpha_2",
+          "value": "PT"
+        }
+      ],
+      "_meta": {
+        "lastUpdatedTimestamp": 1788557520
+      }
+    }
+  },
+  "GR": {
+    "source": "rest_countries_v5",
+    "request_url": "https://api.restcountries.com/countries/v5/codes.alpha_2/GR?response_fields=names.common%2Cnames.official%2Ccodes.alpha_2%2Ccodes.alpha_3%2Ccapitals%2Ccurrencies%2Clanguages%2Cregion%2Csubregion%2Cflag%2Ctimezones",
+    "retrieved_at": "2026-09-11T14:03:20Z",
+    "data": {
+      "names": {
+        "common": "Greece",
+        "official": "Hellenic Republic"
+      },
+      "codes": {
+        "alpha_2": "GR",
+        "alpha_3": "GRC"
+      },
+      "capitals": [
+        {
+          "attributes": {
+            "administrative": false,
+            "constitutional": false,
+            "executive": false,
+            "judicial": false,
+            "legislative": false,
+            "primary": true
+          },
+          "coordinates": {
+            "lat": 37.98,
+            "lng": 23.73
+          },
+          "name": "Athens"
+        }
+      ],
+      "flag": {
+        "colors": {
+          "dominant": "#fcfbf7",
+          "palette": [
+            {
+              "hex": "#fcfbf7",
+              "proportion": 0.3510735495660119
+            },
+            {
+              "hex": "#f0f5fb",
+              "proportion": 0.08679762448606669
+            },
+            {
+              "hex": "#135fae",
+              "proportion": 0.5312928277752398
+            },
+            {
+              "hex": "#2369b6",
+              "proportion": 0.02923709456372773
+            },
+            {
+              "hex": "#457cbf",
+              "proportion": 0.0015989036089538603
+            },
+            {
+              "hex": "#eeffd2",
+              "proportion": 0
+            },
+            {
+              "hex": "#eeffd2",
+              "proportion": 0
+            },
+            {
+              "hex": "#6f79d9",
+              "proportion": 0
+            }
+          ],
+          "prominent": "#135fae",
+          "swatches": {
+            "dark_muted": null,
+            "dark_vibrant": null,
+            "light_muted": "#fcfbf7",
+            "light_vibrant": null,
+            "muted": "#457cbf",
+            "vibrant": "#135fae"
+          }
+        },
+        "description": "The flag of Greece is composed of nine equal horizontal bands of blue alternating with white. A blue square bearing a white cross is superimposed in the canton.",
+        "emoji": "🇬🇷",
+        "html_entity": "&#127468;&#127479;",
+        "unicode": "U+1F1EC U+1F1F7",
+        "url_png": "https://flags.restcountries.com/v5/w640/gr.png",
+        "url_svg": "https://flags.restcountries.com/v5/svg/gr.svg"
+      },
+      "region": "Europe",
+      "subregion": "Southern Europe",
+      "currencies": [
+        {
+          "code": "EUR",
+          "name": "Euro",
+          "symbol": "€"
+        }
+      ],
+      "languages": [
+        {
+          "bcp47": "el",
+          "iso639_1": "el",
+          "iso639_2b": "gre",
+          "iso639_2t": "ell",
+          "iso639_3": "ell",
+          "name": "Greek",
+          "native_name": "Ελληνικά"
+        }
+      ],
+      "timezones": [
+        "UTC+02:00"
+      ],
+      "_match": [
+        {
+          "path": "codes.alpha_2",
+          "value": "GR"
+        }
+      ],
+      "_meta": {
+        "lastUpdatedTimestamp": 1788557518
+      }
+    }
+  }
+}
