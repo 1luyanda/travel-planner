@@ -1,0 +1,47 @@
+export function formatDate(value) {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+}
+
+export function formatDuration(minutes) {
+  if (minutes == null || Number.isNaN(Number(minutes))) return null
+  const total = Math.round(Number(minutes))
+  const hours = Math.floor(total / 60)
+  const remaining = total % 60
+  return `${hours}h ${remaining}m`
+}
+
+export function formatStops(stops) {
+  if (stops == null) return null
+  if (stops === 0) return 'Direct'
+  return stops === 1 ? '1 stop' : `${stops} stops`
+}
+
+export function formatAirline(flight = {}) {
+  return flight.airline_name || flight.airline_code || null
+}
+
+export function formatPrice(flight = {}) {
+  if (flight.price == null) return null
+  return `${flight.price} ${flight.currency || ''}`.trim()
+}
+
+export function formatTemperature(value) {
+  if (value == null || Number.isNaN(Number(value))) return null
+  return `${Number(value)}°C`
+}
+
+export function formatPrecipitation(value) {
+  if (value == null || Number.isNaN(Number(value))) return null
+  return `${Number(value)}%`
+}
+
+export function cityTone(city = '') {
+  let hash = 0
+  for (const character of city) {
+    hash = (hash * 31 + character.charCodeAt(0)) % 360
+  }
+  return hash
+}
