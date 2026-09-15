@@ -116,18 +116,31 @@ Scores are relative ranking values, not confidence or match percentages.
 
 ## Configuration
 
-Copy `.env.example` to `.env`. Proposed variable names:
+`create_llm_client_from_env()` loads the project-root `.env` and does not
+override process environment values. Do not commit `.env`.
+
+Academy Azure OpenAI chat (used when these four are set together):
+
+- `AZURE_OPENAI_ENDPOINT` — Azure resource root, not a generic OpenAI base URL
+- `AZURE_OPENAI_API_KEY`
+- `AZURE_OPENAI_DEPLOYMENT` — chat deployment name
+- `AZURE_OPENAI_API_VERSION`
+
+A partial Azure set does not fall back to public OpenAI.
+
+OpenAI-compatible alternative:
 
 - `LLM_API_KEY` or `OPENAI_API_KEY`
-- `LLM_MODEL` or `OPENAI_MODEL`
+- `LLM_MODEL` or `OPENAI_MODEL` (required on this path; no default model)
 - `LLM_BASE_URL` or `OPENAI_BASE_URL` (optional)
 - `LLM_API_VERSION` (optional)
 
-Do not commit `.env`.
+Live checks need the `openai` package from `requirements.txt`.
 
 ## Local checks
 
 ```text
 python -m pip install -r requirements.txt
-python -m pytest tests/test_parse_request.py tests/test_explanations.py
+python -m pytest tests/test_parse_request.py tests/test_explanations.py tests/test_llm_config.py
+python backend/scripts/live_llm_check.py
 ```
