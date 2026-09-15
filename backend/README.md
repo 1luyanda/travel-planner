@@ -1,10 +1,11 @@
-# AI request parser
+# AI request parser and explanations
 
-Turns user text and optional form fields into a structured travel request.
+Turns user text and optional form fields into a structured travel request, then
+explains ranked destinations using only supplied facts.
 
-This component does not rank destinations, call travel providers, or expose HTTP routes.
+This component does not rank destinations, query Cosmos, or expose HTTP routes.
 
-## Function the backend owner should call
+## parse_request
 
 ```python
 from datetime import date
@@ -20,7 +21,7 @@ result = parse_request(
 
 `llm_client` is optional. If omitted and `user_text` is present, the function builds a live client from environment variables. It never falls back to the test fake client.
 
-## Return shape
+### Return shape
 
 ```python
 result.status                    # "ready" | "needs_input" | "error"
@@ -34,11 +35,84 @@ result.clarification_questions   # list[str]
 
 `ready` requires origin IATA, departure date, return date, positive budget and currency. Mood, duration, direct-flight and weather are optional.
 
-## Form fields
+### Form fields
 
 Optional keys: `origin`, `departure_date`, `return_date`, `duration_days`, `budget`, `currency`, `moods`, `direct_flights_only`, `weather_preference`.
 
 Explicit form values are preserved. If they conflict with the message, `status` is `needs_input`.
+
+## explain_ranked_trips
+
+Call this **after** ranking. Pass the validated `TripRequest` and the ranked list in ranking order.
+
+The ranking package is not imported on this branch. Any object with the
+`RankedDestination` fields from `origin/feature/ranking` is accepted
+(`destination_id`, `destination_iata`, `city`, `price_eur`, `changeover_count`,
+`flight_duration_minutes`, `trip_duration_days`, `average_max_temperature_c`,
+and the five scores). Wiring to Ivan's live ranking objects is still pending.
+
+```python
+from backend.services.explanations import explain_ranked_trips
+from backend.services.llm import create_llm_client_from_env
+
+result = explain_ranked_trips(
+    request,                 # TripRequest from parse_request
+    ranked,                  # list of RankedDestination-like objects
+    llm_client=create_llm_client_from_env(),
+    ranking_weights=None,    # optional dict actually used by ranking
+)
+```
+
+### Return shape
+
+```python
+result.status          # "ok" | "error"
+result.explanations    # list[DestinationExplanation] in the supplied ranking order
+result.issues          # ignored unknown IDs, cross-destination evidence, model problems
+```
+
+Each explanation keeps the supplied scores and includes only evidence IDs that
+belong to that `destination_id`. Factual numbers are rendered from the ranked
+records, not from model prose.
+
+### Example
+
+Input ranked row (fields only):
+
+```text
+destination_id=ZAG-ROM-2026-09-18
+city=Rome
+price_eur=65
+changeover_count=0
+final_score=0.92
+```
+
+Example `ok` output:
+
+```python
+result.status == "ok"
+result.explanations[0].destination_id == "ZAG-ROM-2026-09-18"
+result.explanations[0].rank == 1
+result.explanations[0].final_score == 0.92
+result.explanations[0].evidence[0].code == "within_budget"
+# summary contains the recorded 65 EUR price from the ranked object
+```
+
+### Failure behaviour
+
+| Case | Result |
+|---|---|
+| Empty `ranked` list | `ok`, `explanations=[]`, model is **not** called |
+| Missing LLM config when ranked items exist | `error`, `explanations=[]` |
+| Invalid model JSON twice, or two request failures | `error`, `explanations=[]`, no invented text |
+| Unknown `destination_id` | ignored, listed in `issues` |
+| Evidence ID for another destination | ignored, listed in `issues` |
+| Mood / cooler-weather claims not in the allowed list | dropped; mood is never treated as a destination quality |
+| Budget vs price | compared only when the request currency is EUR |
+
+Scores are relative ranking values, not confidence or match percentages.
+`flight_duration_minutes` is documented by ranking as round-trip air time
+(outbound plus return), not holiday length.
 
 ## Configuration
 
@@ -55,5 +129,5 @@ Do not commit `.env`.
 
 ```text
 python -m pip install -r requirements.txt
-python -m pytest tests/test_parse_request.py
+python -m pytest tests/test_parse_request.py tests/test_explanations.py
 ```
