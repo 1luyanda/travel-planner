@@ -5,6 +5,7 @@ from __future__ import annotations
 from backend.contracts import (
     CandidateItem,
     CandidateResponse,
+    FlightListResponse,
     FlightQuery,
     OriginItem,
     RejectedCandidateItem,
@@ -29,6 +30,17 @@ class CandidateService:
 
     async def get_origin(self, origin_id: str) -> OriginItem:
         return await self._data_service.get_origin(origin_id)
+
+    async def list_flights(self, request: FlightQuery) -> FlightListResponse:
+        """Return every Cosmos flight document for the origin partition."""
+
+        flights = await self._data_service.get_destination_records(request)
+        return FlightListResponse(
+            origin_id=request.origin_id,
+            flights=flights,
+            count=len(flights),
+            data_source=self._data_service.source_name,
+        )
 
     async def prepare(self, request: FlightQuery) -> CandidateResponse:
         records = await self._data_service.get_destination_records(request)
