@@ -5,6 +5,43 @@ explains ranked destinations using only supplied facts.
 
 This component does not rank destinations, query Cosmos, or expose HTTP routes.
 
+## interpret_feedback
+
+Call this when the user comments on an **existing** validated `TripRequest`.
+The input request is not mutated. Explicit feedback updates are applied; the
+initial parser's form-vs-text conflict rules are not used.
+
+```python
+from backend.services.feedback import interpret_feedback
+
+result = interpret_feedback(
+    "Cheaper",
+    request,  # current TripRequest
+    llm_client=create_llm_client_from_env(),
+)
+```
+
+### Return shape
+
+```python
+result.status              # "ready" | "needs_input" | "error"
+result.request             # snapshot of the input TripRequest
+result.updated_request     # new TripRequest when ready, else None
+result.intents             # semantic ranking/filter intents (no invented weights)
+result.changes             # explicit field updates only
+result.issues
+result.clarification_questions
+```
+
+| Feedback | Validated result |
+|---|---|
+| Cheaper | Intent `stronger_price_preference`. Budget unchanged. |
+| Warmer | Intent `prefer_warmer`. `weather_preference="warmer"`. No temperature number. |
+| My budget is now EUR 300 | `budget=300`, `currency=EUR`. Other fields copied. |
+| Direct flights only | `direct_flights_only=True`. Intent maps to ranking hard filter `max_changeovers`, not a weight. |
+
+Ivan's `RankingPreferences` (`price_weight`, `weather_weight`, `changeovers_weight`, `duration_weight`) has no named mapping from these phrases to numeric weights. Intents record the related field name and leave the value unset.
+
 ## parse_request
 
 ```python
@@ -141,6 +178,7 @@ Live checks need the `openai` package from `requirements.txt`.
 
 ```text
 python -m pip install -r requirements.txt
-python -m pytest tests/test_parse_request.py tests/test_explanations.py tests/test_llm_config.py
+python -m pytest tests/test_parse_request.py tests/test_explanations.py tests/test_llm_config.py tests/test_feedback.py
 python backend/scripts/live_llm_check.py
+python backend/scripts/live_feedback_check.py
 ```

@@ -3,6 +3,11 @@ from backend.models.explanation import (
     EvidenceReference,
     ExplainRankedTripsResult,
 )
+from backend.models.feedback import (
+    FieldChange,
+    InterpretFeedbackResult,
+    RankingIntent,
+)
 from backend.models.trip_request import (
     ExtractedPreferences,
     ParseRequestResult,
@@ -14,6 +19,9 @@ __all__ = [
     "EvidenceReference",
     "ExplainRankedTripsResult",
     "ExtractedPreferences",
+    "FieldChange",
+    "InterpretFeedbackResult",
     "ParseRequestResult",
+    "RankingIntent",
     "TripRequest",
 ]

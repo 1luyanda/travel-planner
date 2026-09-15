@@ -1,4 +1,5 @@
 from backend.services.explanations import RankedTripLike, explain_ranked_trips
+from backend.services.feedback import interpret_feedback
 from backend.services.llm import (
     LLMClient,
     create_llm_client_from_env,
@@ -11,6 +12,7 @@ __all__ = [
     "RankedTripLike",
     "create_llm_client_from_env",
     "explain_ranked_trips",
+    "interpret_feedback",
     "load_llm_environment",
     "parse_request",
 ]
