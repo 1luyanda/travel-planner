@@ -17,10 +17,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-
 # ---------------------------------------------------------------------------
 # Public models: these are the types that the ranking developer works with.
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True, slots=True)
 class RankingCandidate:
@@ -285,9 +285,7 @@ def _to_candidate(record: dict[str, Any]) -> RankingCandidate:
     if supplied_changeovers not in (None, ""):
         changeovers = _whole_number(supplied_changeovers, "changeover_count")
     else:
-        outbound = _required_int(
-            record, "flight.outbound_stops", "outbound_stops"
-        )
+        outbound = _required_int(record, "flight.outbound_stops", "outbound_stops")
         inbound = _required_int(record, "flight.return_stops", "return_stops")
         changeovers = outbound + inbound
     if changeovers < 0:
@@ -333,9 +331,7 @@ def _to_candidate(record: dict[str, Any]) -> RankingCandidate:
         "rain_pct",
     )
     if not 0 <= precipitation <= 100:
-        raise ValueError(
-            "precipitation_probability_percent must be between 0 and 100"
-        )
+        raise ValueError("precipitation_probability_percent must be between 0 and 100")
 
     # Constructing this dataclass is the actual boundary: after this point the
     # ranking developer uses attributes rather than raw record fields.
@@ -400,9 +396,7 @@ def _trip_duration_days(record: dict[str, Any]) -> int:
     if supplied_days not in (None, ""):
         days = _whole_number(supplied_days, "trip_duration_days")
     else:
-        departure = _required_datetime(
-            record, "flight.departure_at", "departure_at"
-        )
+        departure = _required_datetime(record, "flight.departure_at", "departure_at")
         return_time = _required_datetime(record, "flight.return_at", "return_at")
         if return_time < departure:
             raise ValueError("return_at cannot be before departure_at")
@@ -443,8 +437,7 @@ def _constraint_rejections(
         )
     if (
         constraints.max_flight_duration_minutes is not None
-        and candidate.flight_duration_minutes
-        > constraints.max_flight_duration_minutes
+        and candidate.flight_duration_minutes > constraints.max_flight_duration_minutes
     ):
         reasons.append(
             Rejection(
@@ -460,6 +453,7 @@ def _constraint_rejections(
 # Private parsing helpers. Their leading underscore means they are internal to
 # this module; other project code should call prepare_ranking_records instead.
 # ---------------------------------------------------------------------------
+
 
 def _nested(record: dict[str, Any], path: str) -> Any:
     """Resolve a dotted path such as ``weather.average_max_temperature_c``."""
