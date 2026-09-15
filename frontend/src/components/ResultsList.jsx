@@ -1,37 +1,51 @@
+import { useEffect, useRef } from 'react'
 import DestinationCard from './DestinationCard'
+import styles from '../workspace.module.css'
 
-/**
- * Centre column: match count, empty-state copy, or ranked destination cards.
- * @param {object[]} results Filtered, ranked shortlist.
- * @param {Record<string, number>} previousRanks Map of destination id to previous rank.
- * @param {object} weights Passed through to each card’s score explanation.
- * @param {Function} onViewDetails Opens the trip details drawer.
- */
-export default function ResultsList({ results, previousRanks, weights, onViewDetails }) {
+export default function ResultsList({
+  results,
+  previousRanks,
+  weights,
+  selectedId,
+  savedIds,
+  onSelect,
+  onToggleSaved,
+  onViewDetails,
+}) {
   const count = results.length
   const heading = count === 1 ? '1 matching trip' : `${count} matching trips`
+  const cardRefs = useRef({})
+
+  useEffect(() => {
+    if (!selectedId) return
+    cardRefs.current[selectedId]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }, [selectedId])
 
   return (
-    <section className="results" aria-labelledby="results-title">
-      <div className="results-heading">
-        <h2 id="results-title">{heading}</h2>
-        <p>Ranked by transparent local weighted score.</p>
-      </div>
-
+    <section className={styles.results} aria-labelledby="results-title">
+      <h2 id="results-title">{heading}</h2>
       {count === 0 ? (
-        // Empty state: data loaded successfully, but filters matched nothing.
-        <p className="notice">No destinations match these filters. Try a higher budget or fewer constraints.</p>
+        <p className={styles.notice}>
+          No destinations match these filters. Try a higher budget or fewer constraints.
+        </p>
       ) : (
-        <div className="card-stack">
+        <div className={styles.cardStack}>
           {results.map((destination, index) => (
             <DestinationCard
               key={destination.id || `${destination.destination?.city}-${index}`}
               destination={destination}
               rank={index + 1}
               previousRank={previousRanks[destination.id]}
-              isBestMatch={index === 0}
+              isBestMatch={index === 0 && destination.scores?.total != null}
+              isSelected={destination.id === selectedId}
+              isSaved={savedIds.includes(destination.id)}
               weights={weights}
+              onSelect={onSelect}
+              onToggleSaved={onToggleSaved}
               onViewDetails={onViewDetails}
+              cardRef={(node) => {
+                if (destination.id) cardRefs.current[destination.id] = node
+              }}
             />
           ))}
         </div>

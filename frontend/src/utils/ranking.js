@@ -123,6 +123,17 @@ export function percent(value) {
   return `${Math.round(Number(value || 0) * 100)}%`
 }
 
+/** One-line reason from the highest weighted contribution. */
+export function rankingReason(destination, weights = {}) {
+  const rows = scoreBreakdown(destination, weights)
+    .filter((item) => Number(item.weight) > 0)
+    .sort((a, b) => b.contribution - a.contribution)
+  const top = rows[0]
+  if (!top) return null
+  const name = top.label.replace(/\s*\(.*\)$/, '').toLowerCase()
+  return `Weighted score favours ${name}.`
+}
+
 /** Turn stored scores and current weights into labelled contribution rows for the UI. */
 export function scoreBreakdown(destination, weights = {}) {
   const scores = destination?.scores || {}

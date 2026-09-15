@@ -45,3 +45,19 @@ export function cityTone(city = '') {
   }
   return hash
 }
+
+/** Compact facts line from real mock fields only. */
+export function tripFactsLine(destination = {}) {
+  const flight = destination.flight || {}
+  const weather = destination.weather || {}
+  return [
+    formatStops(flight.outbound_stops),
+    formatDuration(flight.duration_minutes),
+    formatTemperature(weather.average_max_temperature_c)
+      ? `${formatTemperature(weather.average_max_temperature_c)} avg max`
+      : null,
+    formatPrecipitation(weather.average_precipitation_probability_percent)
+      ? `${formatPrecipitation(weather.average_precipitation_probability_percent)} rain`
+      : null,
+  ].filter(Boolean).join(' · ')
+}

@@ -3,6 +3,9 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
+  test: {
+    environment: 'node',
+  },
   server: {
     // Forward /api from the Vite dev server to FastAPI so the browser can
     // call fetch('/api/destinations') without a CORS round-trip in development.

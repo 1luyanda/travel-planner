@@ -1,93 +1,91 @@
+import { Heart } from 'lucide-react'
 import ScoreBreakdown from './ScoreBreakdown'
+import DestinationPhoto from './DestinationPhoto'
 import {
-  cityTone,
   formatAirline,
-  formatDuration,
-  formatPrecipitation,
   formatPrice,
-  formatStops,
-  formatTemperature,
+  tripFactsLine,
 } from '../utils/format'
-import { percent, scoreBreakdown } from '../utils/ranking'
+import { rankingReason, scoreBreakdown } from '../utils/ranking'
+import styles from '../workspace.module.css'
 
-/**
- * One ranked destination. Values come from the mock JSON; missing fields are omitted.
- * @param {object} destination Normalised record plus `scores` from ranking.js.
- * @param {number} rank 1-based position in the current shortlist.
- * @param {number} [previousRank] Prior rank, used after refinement.
- * @param {boolean} isBestMatch First result in the ranked list.
- * @param {object} weights Current weights for the “Why this ranking?” breakdown.
- * @param {(destination: object, event: MouseEvent) => void} onViewDetails
- */
 export default function DestinationCard({
   destination,
   rank,
   previousRank,
   isBestMatch,
+  isSelected,
+  isSaved,
   weights,
+  onSelect,
+  onToggleSaved,
   onViewDetails,
+  cardRef,
 }) {
   const flight = destination.flight || {}
   const place = destination.destination || {}
-  const weather = destination.weather || {}
   const country = destination.country || {}
   const airline = formatAirline(flight)
   const moved = previousRank && previousRank !== rank
   const breakdown = scoreBreakdown(destination, weights)
-  const tone = cityTone(place.city)
+  const reason = rankingReason(destination, weights)
+  const facts = tripFactsLine(destination)
 
   return (
-    <article className="destination-card">
-      {/* Decorative gradient only; the mock data has no destination images. */}
-      <div
-        className="card-media"
-        style={{ '--tone': `${tone}` }}
-        aria-hidden="true"
-      />
+    <article
+      className={isSelected ? `${styles.card} ${styles.cardSelected}` : styles.card}
+      ref={cardRef}
+      aria-current={isSelected ? 'true' : undefined}
+    >
+      <button type="button" className={styles.cardHit} onClick={() => onSelect?.(destination)}>
+        <DestinationPhoto destination={destination} className={styles.cardPhoto} sizes="280px" />
+      </button>
 
-      <div className="card-body">
-        <div className="card-top">
+      <div className={styles.cardBody}>
+        <div className={styles.cardTop}>
           <div>
-            <div className="card-labels">
-              {isBestMatch && <span className="best-match">Best match</span>}
-              <span className="rank">#{rank}</span>
+            <div className={styles.cardLabels}>
+              {isBestMatch && <span className={styles.bestMatch}>Best match</span>}
+              <span className={styles.rank}>#{rank}</span>
             </div>
             <h3>{place.city || 'Unknown city'}</h3>
-            <p className="country">{country.common_name || place.country_code}</p>
+            <p>{country.common_name || place.country_code}</p>
           </div>
-          {formatPrice(flight) && <strong className="price">{formatPrice(flight)}</strong>}
+          <div className={styles.cardPrice}>
+            {formatPrice(flight) && <strong>{formatPrice(flight)}</strong>}
+            <button
+              type="button"
+              className={isSaved ? styles.saveOn : styles.saveBtn}
+              aria-pressed={isSaved}
+              aria-label={isSaved ? `Remove ${place.city} from saved` : `Save ${place.city}`}
+              onClick={(event) => {
+                event.stopPropagation()
+                onToggleSaved?.(destination)
+              }}
+            >
+              <Heart size={16} fill={isSaved ? 'currentColor' : 'none'} />
+            </button>
+          </div>
         </div>
 
-        {moved && <p className="movement">Moved from #{previousRank}</p>}
+        {moved && <p className={styles.movement}>Moved from #{previousRank}</p>}
+        {facts && <p className={styles.facts}>{facts}{airline ? ` · ${airline}` : ''}</p>}
+        {reason && <p className={styles.reason}>{reason}</p>}
 
-        <div className="facts">
-          {formatStops(flight.outbound_stops) && <span>{formatStops(flight.outbound_stops)}</span>}
-          {formatDuration(flight.duration_minutes) && <span>{formatDuration(flight.duration_minutes)}</span>}
-          {formatTemperature(weather.average_max_temperature_c) && (
-            <span>{formatTemperature(weather.average_max_temperature_c)} avg max</span>
-          )}
-          {formatPrecipitation(weather.average_precipitation_probability_percent) && (
-            <span>{formatPrecipitation(weather.average_precipitation_probability_percent)} rain</span>
-          )}
-          {airline && <span>{airline}{flight.flight_number ? ` ${flight.flight_number}` : ''}</span>}
-        </div>
-
-        <div className="score-row">
-          <span>Ranking score</span>
-          <strong>{percent(destination.scores?.total)}</strong>
-        </div>
-        <div className="bar">
-          <i style={{ width: percent(destination.scores?.total) }} />
-        </div>
-
-        <details className="why-ranking">
-          <summary>Why this ranking?</summary>
+        <details className={styles.why}>
+          <summary>How it’s ranked</summary>
           <ScoreBreakdown items={breakdown} total={destination.scores?.total} />
         </details>
 
-        <button type="button" className="secondary" onClick={(event) => onViewDetails(destination, event)}>
-          View trip details
-        </button>
+        {onViewDetails && (
+          <button
+            type="button"
+            className={styles.textLink}
+            onClick={(event) => onViewDetails(destination, event)}
+          >
+            Trip details
+          </button>
+        )}
       </div>
     </article>
   )
