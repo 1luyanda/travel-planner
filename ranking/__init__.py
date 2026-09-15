@@ -24,6 +24,7 @@ from .interface import (
     Rejection,
     prepare_ranking_data,
     prepare_ranking_records,
+    prepare_ranking_records,
 )
 from .ranking import rank_destinations
 
