@@ -1,13 +1,14 @@
 """Load slim ranking JSON into Azure Cosmos DB.
 
-One origins document per origin city, one flights document per trip.
-Partition key on flights is origin_id (city + country, e.g. zagreb-hr).
+One origins document per origin city (city photo URLs included),
+one flights document per trip.
 
 Reads COSMOS_CONNECTION_STRING from .env. Does not print the secret.
 
 Usage:
     python data_preparation/load_to_cosmos.py mock_data
     python data_preparation/load_to_cosmos.py Real_data
+    python data_preparation/load_to_cosmos.py Real_data --origins-only
 """
 
 from __future__ import annotations
@@ -31,6 +32,18 @@ ENV_FILE = PROJECT_DIR / ".env"
 DEFAULT_DATABASE = "TravelPlaner"
 ORIGINS_CONTAINER = "origins"
 FLIGHTS_CONTAINER = "flights"
+PHOTO_FIELDS = (
+    "photo_url",
+    "photo_url_small",
+)
+DROP_PHOTO_FIELDS = (
+    "photo_alt",
+    "photographer",
+    "photographer_url",
+    "pexels_url",
+    "pexels_id",
+    "photo_query",
+)
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(line_buffering=True)
@@ -188,6 +201,31 @@ def flatten(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def text(value: Any) -> str | None:
+    if value is None:
+        return None
+    cleaned = str(value).strip()
+    return cleaned or None
+
+
+def copy_photo_fields(source: dict[str, Any] | None) -> dict[str, Any]:
+    if not source:
+        return {}
+    fields: dict[str, Any] = {}
+    for key in PHOTO_FIELDS:
+        value = source.get(key)
+        if value not in (None, ""):
+            fields[key] = value
+    return fields
+
+
+def strip_extra_photo_fields(dest: dict[str, Any] | None) -> None:
+    if not dest:
+        return
+    for key in DROP_PHOTO_FIELDS:
+        dest.pop(key, None)
+
+
 def to_number(value: Any) -> float | None:
     if value is None or value == "":
         return None
@@ -238,8 +276,10 @@ def flight_document(item: dict[str, Any], origin_id: str, fields: dict[str, str]
     }
 
 
-def origin_document(origin_id: str, bucket: dict[str, Any]) -> dict[str, Any]:
-    return {
+def origin_document(
+    origin_id: str, bucket: dict[str, Any], photos: dict[tuple[str, str], dict[str, Any]]
+) -> dict[str, Any]:
+    document = {
         "id": origin_id,
         "city": bucket["city"],
         "country": bucket["country"],
@@ -248,6 +288,26 @@ def origin_document(origin_id: str, bucket: dict[str, Any]) -> dict[str, Any]:
         "city_iata": sorted(bucket["city_iata"]),
         "flight_count": len(bucket["flights"]),
     }
+    key = (str(bucket["city"]).casefold(), str(bucket["country_code"] or "XX").upper())
+    document.update(photos.get(key) or {})
+    return document
+
+
+def city_photos_from_items(items: list[dict[str, Any]]) -> dict[tuple[str, str], dict[str, Any]]:
+    photos: dict[tuple[str, str], dict[str, Any]] = {}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        dest = item.get("destination") or {}
+        country = item.get("country") or {}
+        city = text(dest.get("city"))
+        if not city:
+            continue
+        country_code = (text(dest.get("country_code") or country.get("alpha_2")) or "XX").upper()
+        fields = copy_photo_fields(dest)
+        if fields.get("photo_url"):
+            photos[(city.casefold(), country_code)] = fields
+    return photos
 
 
 def upsert_with_retry(container, document: dict[str, Any], attempts: int = 8) -> None:
@@ -316,24 +376,36 @@ def build_groups(items: list[dict[str, Any]]) -> list[tuple[str, dict[str, Any]]
 
 
 def load_file(
-    json_path: Path, origins_container, flights_container, workers: int
+    json_path: Path,
+    origins_container,
+    flights_container,
+    workers: int,
+    origins_only: bool,
 ) -> None:
     print(f"Loading {json_path}...")
     payload = json.loads(json_path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise SystemExit(f"{json_path} should be an object with a destinations list.")
-    groups = build_groups(payload.get("destinations") or [])
-    origin_docs = []
-    flight_docs = []
-    for origin_id, bucket in groups:
-        origin_docs.append(origin_document(origin_id, bucket))
-        for item, fields in bucket["flights"]:
-            flight_docs.append(flight_document(item, origin_id, fields))
+    items = payload.get("destinations") or []
+    photos = city_photos_from_items(items)
+    groups = build_groups(items)
+    origin_docs = [
+        origin_document(origin_id, bucket, photos) for origin_id, bucket in groups
+    ]
     print(f"  upserting {len(origin_docs):,} origins...")
     for i, document in enumerate(origin_docs, 1):
         upsert_with_retry(origins_container, document)
         if i % 100 == 0 or i == len(origin_docs):
             print(f"  upserted {i:,} / {len(origin_docs):,} origins...")
+    if origins_only:
+        with_photos = sum(1 for doc in origin_docs if doc.get("photo_url"))
+        print(f"  {len(origin_docs):,} origins ({with_photos:,} with photos, skipped flights)")
+        return
+
+    flight_docs = []
+    for origin_id, bucket in groups:
+        for item, fields in bucket["flights"]:
+            flight_docs.append(flight_document(item, origin_id, fields))
     print(f"  upserting {len(flight_docs):,} flights ({workers} workers)...")
     upsert_many(flights_container, flight_docs, workers)
     print(f"  {len(origin_docs):,} origins  {len(flight_docs):,} flights")
@@ -355,6 +427,11 @@ def main(argv: list[str] | None = None) -> int:
         default=8,
         help="Parallel flight upserts (default: 8).",
     )
+    parser.add_argument(
+        "--origins-only",
+        action="store_true",
+        help="Upsert origins (including city photo URLs) and skip flights.",
+    )
     args = parser.parse_args(argv)
     workers = max(1, args.workers)
 
@@ -370,8 +447,14 @@ def main(argv: list[str] | None = None) -> int:
         if not path.exists():
             print(f"Skip missing {path}")
             continue
-        load_file(path, origins, flights, workers)
-    print("Done. Check Data Explorer → Items. Do not upload the 148 MB JSON there.")
+        load_file(
+            path,
+            origins,
+            flights,
+            workers,
+            args.origins_only,
+        )
+    print("Done. Check Data Explorer -> Items. Do not upload the 148 MB JSON there.")
     return 0
 
 
