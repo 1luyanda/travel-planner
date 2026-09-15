@@ -1,8 +1,10 @@
-Travel_Planner_Final_Project_Plan.docx
-
 .env
-
+destination_pipeline.py
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.pytest_tmp/
+Travel_Planner_Final_Project_Plan.docx
+.cursorignore
 Real_data
 mock_data/*.json
-.cursorignore
-__pycache__/
