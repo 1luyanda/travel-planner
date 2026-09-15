@@ -13,7 +13,7 @@ from ranking import (
     RankingConstraints,
     prepare_ranking_data,
     prepare_ranking_records,
-    rank_destinations,
+    rank_candidates,
 )
 
 
@@ -93,13 +93,13 @@ def test_nested_duration_requires_both_whole_legs_and_positive_total(field, valu
     assert result.rejected[0].reasons[0].code == "invalid_data"
 
 
-def test_legacy_duration_fields_are_not_used_as_fallback():
+def test_cosmos_duration_minutes_is_accepted():
     record = flat_record()
     del record["flight_duration_minutes"]
     record["duration_minutes"] = 170
     result = prepare_ranking_records([record])
-    assert not result.candidates
-    assert result.rejected[0].reasons[0].code == "invalid_data"
+    assert not result.rejected
+    assert result.candidates[0].flight_duration_minutes == 170
 
 
 def test_preparation_is_path_free_non_mutating_and_accepts_generators(monkeypatch):
@@ -115,7 +115,7 @@ def test_preparation_is_path_free_non_mutating_and_accepts_generators(monkeypatc
     assert {field.name for field in fields(CandidatePreparationResult)} == {
         "candidates", "rejected"
     }
-    assert len(rank_destinations(list(result.candidates))) == 2
+    assert len(rank_candidates(result.candidates)) == 2
     assert prepare_ranking_records([]) == CandidatePreparationResult((), ())
 
 
@@ -132,7 +132,7 @@ def test_preparation_is_path_free_non_mutating_and_accepts_generators(monkeypatc
     ("average_min_temperature_c", 71),
     ("precipitation_probability_percent", -1),
     ("precipitation_probability_percent", 101),
-    ("flight_retrieved_at", None), ("weather_retrieved_at", None),
+    ("flight_retrieved_at", "not-a-timestamp"),
     ("weather_retrieved_at", "not-a-timestamp"),
 ])
 def test_invalid_destination_is_rejected_without_blocking_valid_one(field, value):
@@ -165,12 +165,12 @@ def test_malformed_records_have_structured_rejections():
 
 def test_all_hard_constraint_failures_and_inclusive_boundaries():
     constraints = RankingConstraints(
-        max_price_eur=65, direct_only=True, max_flight_duration_minutes=170
+        max_price_eur=65, max_changeovers=0, max_flight_duration_minutes=170
     )
     result = prepare_ranking_records([nested_record(), flat_record()], constraints)
     assert len(result.candidates) == 1
     assert [reason.code for reason in result.rejected[0].reasons] == [
-        "over_budget", "not_direct", "flight_too_long"
+        "over_budget", "too_many_changeovers", "flight_too_long"
     ]
     # The corrected sum passes, even though flight.duration_minutes is 1140.
     result = prepare_ranking_records(
@@ -233,3 +233,46 @@ def test_file_adapter_delegates_to_core_without_real_files(monkeypatch, suffix):
         prepare_ranking_records([record], constraints)
     )
     assert calls == [constraints]
+
+@pytest.mark.parametrize("field", [
+    "max_price_eur", "max_changeovers", "max_flight_duration_minutes",
+])
+def test_negative_constraints_raise(field):
+    with pytest.raises(ValueError, match="negative"):
+        RankingConstraints(**{field: -1})
+
+
+@pytest.mark.parametrize("maximum", [0, 1])
+def test_changeover_limits_are_inclusive(maximum):
+    records = [flat_record(destination_id=str(stops), changeover_count=stops)
+               for stops in range(3)]
+    result = prepare_ranking_records(records, RankingConstraints(max_changeovers=maximum))
+    assert [item.changeover_count for item in result.candidates] == list(range(maximum + 1))
+    assert len(result.rejected) == 2 - maximum
+    assert all(item.reasons[0].code == "too_many_changeovers" for item in result.rejected)
+
+
+@pytest.mark.parametrize("explicit_none", [False, True])
+def test_missing_retrieval_timestamps_are_optional(explicit_none):
+    record = flat_record()
+    for field in ("flight_retrieved_at", "weather_retrieved_at"):
+        if explicit_none:
+            record[field] = None
+        else:
+            del record[field]
+    result = prepare_ranking_records([record])
+    assert not result.rejected
+    candidate, = result.candidates
+    assert candidate.flight_retrieved_at is None
+    assert candidate.weather_retrieved_at is None
+
+
+def test_flat_leg_durations_and_prepared_total_precedence():
+    record = flat_record()
+    del record["flight_duration_minutes"]
+    record.update(outbound_duration_minutes=85, return_duration_minutes=90)
+    assert prepare_ranking_records([record]).candidates[0].flight_duration_minutes == 175
+    record["duration_minutes"] = 180
+    assert prepare_ranking_records([record]).candidates[0].flight_duration_minutes == 180
+    record["flight_duration_minutes"] = 170
+    assert prepare_ranking_records([record]).candidates[0].flight_duration_minutes == 170

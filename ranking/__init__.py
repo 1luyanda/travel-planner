@@ -24,9 +24,8 @@ from .interface import (
     Rejection,
     prepare_ranking_data,
     prepare_ranking_records,
-    prepare_ranking_records,
 )
-from .ranking import rank_destinations
+from .ranking import RankingPreferences, rank_candidates, rank_destinations
 
 # ``__all__`` documents the supported public API and controls what is exported
 # by ``from ranking import *``. Names not listed here should be treated as
@@ -36,10 +35,12 @@ __all__ = [
     "RankedDestination",
     "RankingCandidate",
     "RankingConstraints",
+    "RankingPreferences",
     "RankingDataError",
     "RejectedCandidate",
     "Rejection",
     "prepare_ranking_data",
     "prepare_ranking_records",
     "rank_destinations",
+    "rank_candidates",
 ]

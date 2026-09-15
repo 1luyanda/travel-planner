@@ -11,7 +11,7 @@ from backend.config import Settings
 from backend.contracts import FlightQuery, OriginItem
 from backend.repositories import CosmosDestinationRepository
 from backend.services import CandidateService
-from ranking import RankingConstraints, prepare_ranking_records
+from ranking import RankingConstraints, RankingPreferences, prepare_ranking_records, rank_candidates
 
 
 MOCK_PATH = (
@@ -36,6 +36,8 @@ def cosmos_records() -> list[dict[str, Any]]:
         "outbound_stops": 0,
         "return_stops": 0,
         "duration_minutes": 170,
+        "outbound_duration_minutes": 85,
+        "return_duration_minutes": 85,
         "temp_max_c": 27.8,
         "temp_min_c": 18.75,
         "rain_pct": 13.0,
@@ -100,7 +102,7 @@ class RankingBridgeTests(unittest.TestCase):
 
     def test_hard_price_constraint_preserves_rejections(self) -> None:
         result = prepare_ranking_records(
-            mock_records(),
+            cosmos_records(),
             RankingConstraints(max_price_eur=70),
         )
 
@@ -119,6 +121,29 @@ class RankingBridgeTests(unittest.TestCase):
         self.assertEqual(len(result.candidates), 3)
         self.assertEqual(result.rejected, ())
         self.assertIsNone(result.candidates[0].flight_retrieved_at)
+        self.assertIsNone(result.candidates[0].weather_retrieved_at)
+        rome = next(candidate for candidate in result.candidates if candidate.city == "Rome")
+        self.assertEqual(rome.destination_iata, "FCO")
+        self.assertEqual(rome.average_max_temperature_c, 27.8)
+        self.assertEqual(rome.average_min_temperature_c, 18.75)
+        self.assertEqual(rome.precipitation_probability_percent, 13)
+        self.assertEqual(rome.sunshine_hours, 11.96)
+        self.assertEqual(rome.flight_duration_minutes, 170)
+        self.assertEqual(rome.trip_duration_days, 1)
+        ranked = rank_candidates(result.candidates, RankingPreferences())
+        self.assertEqual(len(ranked), 3)
+        self.assertEqual(ranked[0].city, "Rome")
+
+    def test_cosmos_stops_and_invalid_record_isolation(self) -> None:
+        records = cosmos_records()
+        records[0].update(outbound_stops=1, return_stops=2)
+        records[1]["temp_max_c"] = "invalid"
+        result = prepare_ranking_records(records)
+        self.assertEqual(len(result.candidates), 2)
+        self.assertEqual(len(result.rejected), 1)
+        self.assertEqual(result.rejected[0].reasons[0].code, "invalid_data")
+        rome = next(candidate for candidate in result.candidates if candidate.city == "Rome")
+        self.assertEqual(rome.changeover_count, 3)
 
     def test_real_cosmos_origin_and_flight_documents_are_accepted(self) -> None:
         origin = OriginItem.model_validate(
@@ -199,6 +224,8 @@ class CandidateServiceTests(unittest.IsolatedAsyncioTestCase):
         response = await service.prepare(request)
 
         self.assertGreaterEqual(len(response.candidates), 3)
+        self.assertEqual(response.rejected, [])
+        self.assertTrue(all(candidate.flight_retrieved_at is None for candidate in response.candidates))
         self.assertEqual(
             response.data_source,
             "test://normalized-destinations",
@@ -220,6 +247,14 @@ class CandidateServiceTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(len(records), 3)
+        prepared = prepare_ranking_records(records)
+        self.assertFalse(prepared.rejected)
+        self.assertEqual(len(rank_candidates(prepared.candidates)), 3)
+        self.assertIn("c.origin_id = @origin_id", container.query_arguments["query"])
+        self.assertIn(
+            {"name": "@origin_id", "value": "zagreb-hr"},
+            container.query_arguments["parameters"],
+        )
         self.assertEqual(
             container.query_arguments["partition_key"],
             "zagreb-hr",

@@ -43,6 +43,9 @@ class CandidateService:
             ),
         )
 
+        # Future ranked response integration uses these models directly:
+        # ranked = rank_candidates(prepared.candidates, preferences)
+        # This endpoint's contract currently returns unranked candidates.
         return CandidateResponse(
             origin_id=request.origin_id,
             candidates=[

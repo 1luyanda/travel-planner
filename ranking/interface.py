@@ -15,7 +15,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 
 # ---------------------------------------------------------------------------
@@ -56,9 +56,9 @@ class RankingCandidate:
     # distance between the destination airport and its associated city.
     airport_distance_km: float | None
 
-    # Ranking can use these timestamps to penalize stale offers or forecasts.
-    flight_retrieved_at: datetime
-    weather_retrieved_at: datetime
+    # Cosmos currently omits freshness; it does not affect MVP scores.
+    flight_retrieved_at: datetime | None = None
+    weather_retrieved_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -293,12 +293,16 @@ def _to_candidate(record: dict[str, Any]) -> RankingCandidate:
     if changeovers < 0:
         raise ValueError("changeover_count cannot be negative")
 
-    supplied_duration = _first(record, "flight_duration_minutes")
+    supplied_duration = _first(record, "flight_duration_minutes", "duration_minutes")
     if supplied_duration is not None:
         duration = _whole_number(supplied_duration, "flight_duration_minutes")
     else:
-        outbound_duration = _required_int(record, "flight.outbound_duration_minutes")
-        return_duration = _required_int(record, "flight.return_duration_minutes")
+        outbound_duration = _required_int(
+            record, "flight.outbound_duration_minutes", "outbound_duration_minutes"
+        )
+        return_duration = _required_int(
+            record, "flight.return_duration_minutes", "return_duration_minutes"
+        )
         duration = outbound_duration + return_duration
     if duration <= 0:
         raise ValueError("flight_duration_minutes must be greater than zero")
