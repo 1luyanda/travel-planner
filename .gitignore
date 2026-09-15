@@ -4,4 +4,7 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .pytest_tmp/
-__pycache__/
+Travel_Planner_Final_Project_Plan.docx
+.cursorignore
+Real_data
+mock_data/*.json
