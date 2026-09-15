@@ -28,12 +28,16 @@ API documentation is available at `http://localhost:8000/docs`.
 - `GET /api/health`
 - `GET /api/origins?q=zag&country=HR`
 - `GET /api/origins/{origin_id}`
-- `GET /api/flights?origin_id=zagreb-hr&max_price=300`
+- `GET /api/flights?origin_id=zagreb-hr&max_price=300`  
+  Full Cosmos flight documents for display (airline, coordinates, weather, etc.).
+- `GET /api/candidates?origin_id=zagreb-hr&max_price=300&max_changeovers=0`  
+  Ranking-ready `candidates` plus `rejected` reasons. Use this from ranking/`test.py`.
 
-Example request:
+Example requests:
 
 ```http
-GET /api/flights?origin_id=zagreb-hr&departure_date=2026-09-18&return_date=2026-09-22&max_price=300&max_changeovers=1
+GET /api/flights?origin_id=zagreb-hr
+GET /api/candidates?origin_id=zagreb-hr&max_price=300&max_changeovers=0
 ```
 
 ## Integration placeholders
