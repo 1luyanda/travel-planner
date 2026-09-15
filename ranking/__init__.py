@@ -22,6 +22,7 @@ from .interface import (
     RejectedCandidate,
     Rejection,
     prepare_ranking_data,
+    prepare_ranking_records,
 )
 
 # ``__all__`` documents the supported public API and controls what is exported
@@ -35,4 +36,5 @@ __all__ = [
     "RejectedCandidate",
     "Rejection",
     "prepare_ranking_data",
+    "prepare_ranking_records",
 ]

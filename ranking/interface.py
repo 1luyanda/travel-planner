@@ -1,7 +1,8 @@
 """Public data interface for the destination ranking algorithm.
 
-Ranking code should import only the models and ``prepare_ranking_data`` from
-this module. It should not read provider JSON or CSV files itself.
+Production services pass database records to ``prepare_ranking_records``.
+``prepare_ranking_data`` remains as a JSON/CSV adapter for local development.
+Ranking code should not read provider data or databases itself.
 
 Supported input:
 
@@ -20,7 +21,7 @@ import math
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 
 # ---------------------------------------------------------------------------
@@ -60,9 +61,10 @@ class RankingCandidate:
     # distance between the destination airport and its associated city.
     airport_distance_km: float | None
 
-    # Ranking can use these timestamps to penalize stale offers or forecasts.
-    flight_retrieved_at: datetime
-    weather_retrieved_at: datetime
+    # Optional until the flattened Cosmos schema preserves source timestamps.
+    # Ranking must skip freshness scoring when these are unavailable.
+    flight_retrieved_at: datetime | None
+    weather_retrieved_at: datetime | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,8 +76,19 @@ class RankingConstraints:
     """
 
     max_price_eur: float | None = None
-    direct_only: bool = False
+    max_changeovers: int | None = None
     max_flight_duration_minutes: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.max_price_eur is not None and self.max_price_eur < 0:
+            raise ValueError("max_price_eur cannot be negative")
+        if self.max_changeovers is not None and self.max_changeovers < 0:
+            raise ValueError("max_changeovers cannot be negative")
+        if (
+            self.max_flight_duration_minutes is not None
+            and self.max_flight_duration_minutes < 0
+        ):
+            raise ValueError("max_flight_duration_minutes cannot be negative")
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,7 +118,7 @@ class CandidatePreparationResult:
 
     candidates: tuple[RankingCandidate, ...]
     rejected: tuple[RejectedCandidate, ...]
-    source_path: Path
+    source_path: Path | None
 
 
 class RankingDataError(ValueError):
@@ -125,6 +138,25 @@ def prepare_ranking_data(
     # Stage 1: parse either supported file format into ordinary dictionaries.
     path = Path(source_path)
     records = _read_records(path)
+    return prepare_ranking_records(
+        records,
+        constraints,
+        source_path=path,
+    )
+
+
+def prepare_ranking_records(
+    records: Iterable[dict[str, Any]],
+    constraints: RankingConstraints | None = None,
+    *,
+    source_path: Path | None = None,
+) -> CandidatePreparationResult:
+    """Validate in-memory records retrieved by a database or data service.
+
+    This is the production-facing bridge. File loading remains available
+    through ``prepare_ranking_data`` for local development and tests.
+    """
+
     active_constraints = constraints or RankingConstraints()
     candidates: list[RankingCandidate] = []
     rejected: list[RejectedCandidate] = []
@@ -185,7 +217,7 @@ def prepare_ranking_data(
     return CandidatePreparationResult(
         candidates=tuple(candidates),
         rejected=tuple(rejected),
-        source_path=path,
+        source_path=source_path,
     )
 
 
@@ -236,8 +268,9 @@ def _to_candidate(record: dict[str, Any]) -> RankingCandidate:
     destination_iata = _required_text(
         record,
         "flight.destination_airport_iata",
-        "flight.destination_iata",
         "destination_airport_iata",
+        "destination_airport",
+        "flight.destination_iata",
         "destination_iata",
     ).upper()
     if len(destination_iata) != 3 or not destination_iata.isalpha():
@@ -274,11 +307,13 @@ def _to_candidate(record: dict[str, Any]) -> RankingCandidate:
         record,
         "weather.average_max_temperature_c",
         "average_max_temperature_c",
+        "temp_max_c",
     )
     min_temperature = _optional_float(
         record,
         "weather.average_min_temperature_c",
         "average_min_temperature_c",
+        "temp_min_c",
     )
     for name, temperature in (
         ("average_max_temperature_c", max_temperature),
@@ -291,6 +326,7 @@ def _to_candidate(record: dict[str, Any]) -> RankingCandidate:
         record,
         "weather.average_precipitation_probability_percent",
         "precipitation_probability_percent",
+        "rain_pct",
     )
     if not 0 <= precipitation <= 100:
         raise ValueError(
@@ -302,7 +338,12 @@ def _to_candidate(record: dict[str, Any]) -> RankingCandidate:
     return RankingCandidate(
         destination_id=destination_id,
         destination_iata=destination_iata,
-        city=_required_text(record, "destination.city", "city"),
+        city=_required_text(
+            record,
+            "destination.city",
+            "destination_city",
+            "city",
+        ),
         price_eur=price_eur,
         changeover_count=changeovers,
         flight_duration_minutes=duration,
@@ -324,10 +365,10 @@ def _to_candidate(record: dict[str, Any]) -> RankingCandidate:
             "destination.airport_distance_from_city_km",
             "airport_distance_km",
         ),
-        flight_retrieved_at=_required_datetime(
+        flight_retrieved_at=_optional_datetime(
             record, "flight.retrieved_at", "flight_retrieved_at"
         ),
-        weather_retrieved_at=_required_datetime(
+        weather_retrieved_at=_optional_datetime(
             record, "weather.retrieved_at", "weather_retrieved_at"
         ),
     )
@@ -385,9 +426,16 @@ def _constraint_rejections(
                 f"{constraints.max_price_eur:.2f} EUR",
             )
         )
-    if constraints.direct_only and candidate.changeover_count > 0:
+    if (
+        constraints.max_changeovers is not None
+        and candidate.changeover_count > constraints.max_changeovers
+    ):
         reasons.append(
-            Rejection("not_direct", "Candidate contains one or more changeovers")
+            Rejection(
+                "too_many_changeovers",
+                f"Candidate has {candidate.changeover_count} changeovers; "
+                f"maximum allowed is {constraints.max_changeovers}",
+            )
         )
     if (
         constraints.max_flight_duration_minutes is not None
@@ -488,6 +536,24 @@ def _required_datetime(record: dict[str, Any], *paths: str) -> datetime:
     value = _first(record, *paths)
     if value is None:
         raise ValueError(f"Missing required field: {paths[0]}")
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError as error:
+        raise ValueError(f"{paths[0]} must be an ISO-8601 timestamp") from error
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _optional_datetime(
+    record: dict[str, Any],
+    *paths: str,
+) -> datetime | None:
+    """Parse an optional ISO-8601 timestamp without inventing freshness."""
+
+    value = _first(record, *paths)
+    if value is None:
+        return None
     try:
         parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except ValueError as error:

@@ -1,2 +1,4 @@
 .env
 destination_pipeline.py
+__pycache__/
+*.py[cod]
