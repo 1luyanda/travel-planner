@@ -14,13 +14,13 @@ from backend.services import CandidateService
 from ranking import RankingConstraints, RankingPreferences, prepare_ranking_records, rank_candidates
 
 
-MOCK_PATH = (
-    Path(__file__).parents[1] / "mock_data" / "normalized_destinations.json"
+FIXTURE_PATH = (
+    Path(__file__).resolve().parent / "fixtures" / "normalized_destinations.json"
 )
 
 
 def mock_records() -> list[dict[str, Any]]:
-    payload = json.loads(MOCK_PATH.read_text(encoding="utf-8"))
+    payload = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
     return payload["destinations"]
 
 
@@ -94,7 +94,6 @@ class FakeFlightsContainer:
 
 
 class RankingBridgeTests(unittest.TestCase):
-    @unittest.skipUnless(MOCK_PATH.exists(), "mock_data/normalized_destinations.json is not present")
     def test_normalized_records_are_accepted(self) -> None:
         result = prepare_ranking_records(mock_records())
 

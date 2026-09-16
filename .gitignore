@@ -1,5 +1,6 @@
 .env
 destination_pipeline.py
+.venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
