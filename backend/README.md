@@ -1,9 +1,66 @@
+# Travel Planner Backend
+
+FastAPI and Cosmos candidate retrieval live here, along with the AI request
+parser, grounded explanations, and feedback interpretation.
+
+The running application does **not** call `parse_request`, `explain_ranked_trips`,
+or `interpret_feedback` yet. HTTP routes serve origins and unranked flight
+candidates. Ranking lives in `ranking/` and is not invoked from those routes.
+
+## Setup
+
+1. Install dependencies:
+
+   ```powershell
+   python3.13.exe -m pip install -r requirements.txt
+   ```
+
+2. Copy `.env.example` to `.env` and configure Cosmos DB:
+
+   - `COSMOS_CONNECTION_STRING` — the PRIMARY CONNECTION STRING.
+   - `COSMOS_DATABASE=TravelPlaner` — spelling and case matter.
+
+   The backend uses the fixed `origins` and `flights` container names.
+
+3. Start FastAPI:
+
+   ```powershell
+   python3.13.exe -m uvicorn backend.main:app --reload
+   ```
+
+API documentation is available at `http://localhost:8000/docs`.
+
+## Endpoints
+
+- `GET /api/health`
+- `GET /api/origins?q=zag&country=HR`
+- `GET /api/origins/{origin_id}`
+- `GET /api/flights?origin_id=zagreb-hr&max_price=300`
+
+Example request:
+
+```http
+GET /api/flights?origin_id=zagreb-hr&departure_date=2026-09-18&return_date=2026-09-22&max_price=300&max_changeovers=1
+```
+
+## Integration placeholders
+
+- The agent developer can convert user messages into `FlightQuery` fields
+  before calling the candidate service. `parse_request` is available for that
+  conversion but is not wired into the routes yet.
+- The ranking developer can pass `CandidateResponse.candidates` into their
+  algorithm.
+- A final recommendations endpoint should be added when the agent and ranking
+  implementations are merged.
+- Authentication and authorization are not implemented yet.
+
 # AI request parser and explanations
 
 Turns user text and optional form fields into a structured travel request, then
 explains ranked destinations using only supplied facts.
 
-This component does not rank destinations, query Cosmos, or expose HTTP routes.
+These functions do not rank destinations, query Cosmos, or expose HTTP routes.
+Call them from application code when that wiring is added.
 
 ## interpret_feedback
 
@@ -82,8 +139,8 @@ Explicit form values are preserved. If they conflict with the message, `status` 
 
 Call this **after** ranking. Pass the validated `TripRequest` and the ranked list in ranking order.
 
-The ranking package is not imported on this branch. Any object with the
-`RankedDestination` fields from `origin/feature/ranking` is accepted
+The ranking package is not imported by the AI functions. Any object with the
+`RankedDestination` fields from ranking is accepted
 (`destination_id`, `destination_iata`, `city`, `price_eur`, `changeover_count`,
 `flight_duration_minutes`, `trip_duration_days`, `average_max_temperature_c`,
 and the five scores). Wiring to Ivan's live ranking objects is still pending.

@@ -2,5 +2,10 @@
 destination_pipeline.py
 .venv/
 __pycache__/
+*.py[cod]
 .pytest_cache/
-*.pyc
+.pytest_tmp/
+Travel_Planner_Final_Project_Plan.docx
+.cursorignore
+Real_data
+mock_data/*.json

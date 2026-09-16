@@ -187,7 +187,7 @@ def test_repeated_invalid_output_stops_at_retry_limit():
 
 def test_missing_values_are_not_copied_from_fixtures():
     fixture_request = json.loads(
-        (Path(__file__).resolve().parents[1] / "mock_data" / "normalized_destinations.json").read_text(
+        (Path(__file__).resolve().parent / "fixtures" / "normalized_destinations.json").read_text(
             encoding="utf-8"
         )
     )["request"]

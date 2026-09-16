@@ -1,1 +1,1 @@
-"""Backend package for Travel Planner services owned by individual teammates."""
+"""Travel Planner backend package for FastAPI, Cosmos candidates, and AI services."""

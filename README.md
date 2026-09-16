@@ -2,6 +2,8 @@
 TODO: Give a short introduction of your project. Let this section explain the objectives or the motivation behind this project. 
 
 # Getting Started
+Data pull, filter, and Cosmos access live in **`data_preparation/`**. Read [data_preparation/README.md](data_preparation/README.md). `.env` stays at the repo root.
+
 TODO: Guide users through getting your code up and running on their own system. In this section you can talk about:
 1.	Installation process
 2.	Software dependencies
