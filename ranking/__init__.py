@@ -26,6 +26,7 @@ from .interface import (
     prepare_ranking_records,
 )
 from .ranking import RankingPreferences, rank_candidates, rank_destinations
+from .policy import preferences_from_intents
 
 # ``__all__`` documents the supported public API and controls what is exported
 # by ``from ranking import *``. Names not listed here should be treated as
@@ -41,6 +42,7 @@ __all__ = [
     "Rejection",
     "prepare_ranking_data",
     "prepare_ranking_records",
+    "preferences_from_intents",
     "rank_destinations",
     "rank_candidates",
 ]
