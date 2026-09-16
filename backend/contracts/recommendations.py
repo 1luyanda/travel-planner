@@ -17,8 +17,9 @@ RecommendStatus = Literal["ready", "needs_input", "error"]
 class RankingPreferencesBody(BaseModel):
     """Optional ranking weights supplied by the ranking owner or frontend.
 
-    Omitted fields keep Ivan's RankingPreferences defaults. This backend does
-    not invent weights from phrases such as cheaper or warmer.
+    Omitted fields keep Ivan's RankingPreferences defaults. On refine,
+    recognized intents such as cheaper or warmer replace these via
+    ``preferences_from_intents``.
     """
 
     price_weight: float | None = None

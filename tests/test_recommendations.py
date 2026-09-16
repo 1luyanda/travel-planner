@@ -15,6 +15,13 @@ from backend.contracts import (
 from backend.contracts.candidates import FlightQuery
 from backend.models.trip_request import TripRequest
 from backend.services import CandidateService, RecommendationService
+from ranking import (
+    RankingConstraints,
+    RankingPreferences,
+    preferences_from_intents,
+    prepare_ranking_records,
+    rank_candidates,
+)
 from tests.fake_llm import FakeLLMClient
 from tests.test_integration_boundaries import cosmos_records
 
@@ -191,19 +198,28 @@ class RecommendServiceTests(unittest.IsolatedAsyncioTestCase):
 
 
 class RefineServiceTests(unittest.IsolatedAsyncioTestCase):
-    async def test_cheaper_keeps_budget_and_does_not_change_default_ranking(self) -> None:
-        recommend, _ = _service([COMPLETE_EXTRACTION, _explain_payload()])
-        baseline = await recommend.recommend(
-            RecommendRequest(text="From ZAG, 21–25 September 2026, under EUR 400.")
-        )
-        refine, data = _service(
+    async def test_cheaper_keeps_budget_and_applies_price_weight_preset(self) -> None:
+        service, data = _service(
             [
                 _feedback_payload(stronger_price_preference=True),
                 _explain_payload(),
             ]
         )
-        result = await refine.refine(
+        result = await service.refine(
             RefineRequest(text="Cheaper", request=_trip())
+        )
+        expected = rank_candidates(
+            prepare_ranking_records(
+                cosmos_records(),
+                RankingConstraints(max_price_eur=400),
+            ).candidates,
+            preferences_from_intents(["stronger_price_preference"]),
+        )
+        default = rank_candidates(
+            prepare_ranking_records(
+                cosmos_records(),
+                RankingConstraints(max_price_eur=400),
+            ).candidates,
         )
 
         self.assertEqual(result.status, "ready")
@@ -214,11 +230,15 @@ class RefineServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             [item.city for item in result.recommendations],
-            [item.city for item in baseline.recommendations],
+            [item.city for item in expected],
         )
         self.assertEqual(
             [item.final_score for item in result.recommendations],
-            [item.final_score for item in baseline.recommendations],
+            [item.final_score for item in expected],
+        )
+        self.assertNotEqual(
+            [item.final_score for item in expected],
+            [item.final_score for item in default],
         )
         self.assertEqual(data.last_query.max_price_eur if data.last_query else None, 400)
 
@@ -239,21 +259,42 @@ class RefineServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.rejected)
         self.assertEqual(data.last_query.max_price_eur if data.last_query else None, 70)
 
-    async def test_client_can_supply_ranking_weights(self) -> None:
-        service, _ = _service(
+    async def test_client_weights_apply_when_feedback_has_no_ranking_intent(self) -> None:
+        service, data = _service(
             [
-                _feedback_payload(stronger_price_preference=True),
+                _feedback_payload(direct_flights_only=True),
                 _explain_payload(),
             ]
         )
         result = await service.refine(
             RefineRequest(
-                text="Cheaper",
+                text="Direct flights only",
                 request=_trip(),
                 ranking_preferences=RankingPreferencesBody(price_weight=0.8),
             )
         )
+        expected = rank_candidates(
+            prepare_ranking_records(
+                cosmos_records(),
+                RankingConstraints(max_price_eur=400, max_changeovers=0),
+            ).candidates,
+            _ranking_preferences_for_test(),
+        )
 
         self.assertEqual(result.status, "ready")
-        self.assertTrue(result.recommendations)
-        self.assertEqual(result.intents[0].code, "stronger_price_preference")
+        self.assertEqual(result.updated_request.direct_flights_only, True)
+        self.assertEqual(data.last_query.max_changeovers if data.last_query else None, 0)
+        self.assertEqual(
+            [item.final_score for item in result.recommendations],
+            [item.final_score for item in expected],
+        )
+
+
+def _ranking_preferences_for_test() -> RankingPreferences:
+    defaults = RankingPreferences()
+    return RankingPreferences(
+        price_weight=0.8,
+        weather_weight=defaults.weather_weight,
+        changeovers_weight=defaults.changeovers_weight,
+        duration_weight=defaults.duration_weight,
+    )

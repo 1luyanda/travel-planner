@@ -23,11 +23,17 @@ from backend.services.llm import (
     create_llm_client_from_env,
     parse_request,
 )
-from ranking import RankingCandidate, RankingPreferences, RankedDestination, rank_candidates
+from ranking import (
+    RankingCandidate,
+    RankingPreferences,
+    RankedDestination,
+    preferences_from_intents,
+    rank_candidates,
+)
 
 
 class RecommendationService:
-    """Josip's recommend/refine pipeline. Ranking weight policy is not set here."""
+    """Josip's recommend/refine pipeline. Weight numbers come from Ivan's policy."""
 
     def __init__(
         self,
@@ -116,7 +122,10 @@ class RecommendationService:
             )
 
         try:
-            weights = _ranking_preferences(ranking_preferences)
+            weights = preferences_from_intents(
+                intents or [],
+                _ranking_preferences(ranking_preferences),
+            )
         except ValueError as error:
             return RecommendationResponse(
                 status="error",

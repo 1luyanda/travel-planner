@@ -49,8 +49,8 @@ API documentation is available at `http://localhost:8000/docs`.
   origin IATA to a Cosmos origin, load candidates, rank them, and explain.
 - `POST /api/refine` — interpret feedback against a saved `TripRequest`, then
   search and rank again. Explicit field changes (budget, direct flights) are
-  applied. Semantic intents such as cheaper/warmer are returned as-is; ranking
-  weights stay Ivan's defaults unless the client sends `ranking_preferences`.
+  applied. Intents such as cheaper/warmer are passed to Ivan's
+  `preferences_from_intents` so ranking weights update.
 
 Example requests:
 
@@ -86,9 +86,9 @@ Example refine body:
 }
 ```
 
-`ranking_preferences` is optional on both bodies. Use it when the ranking owner
-or frontend already chose numeric weights. This backend does not invent a
-weight change from "cheaper" or "warmer".
+`ranking_preferences` is optional on both bodies. On refine, recognized
+cheaper/warmer intents replace those weights using Ivan's presets. If the
+feedback has no ranking intent, the supplied weights (or defaults) stay.
 
 ## Integration placeholders
 
@@ -96,8 +96,8 @@ weight change from "cheaper" or "warmer".
   and ranking in one backend path.
 - Origin IATA codes such as `ZAG` are resolved through Cosmos `city_iata` /
   `airports`. Unmatched or ambiguous codes return `needs_input`.
-- Ranking weight policy for intents remains Ivan's. Luyanda can send
-  `ranking_preferences` or keep defaults.
+- Refine calls Ivan's `preferences_from_intents` for cheaper/warmer. Luyanda
+  can still send `ranking_preferences` as the starting weights.
 - Authentication and authorization are not implemented yet.
 
 # AI request parser and explanations
