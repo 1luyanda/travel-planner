@@ -1,6 +1,5 @@
 .env
 destination_pipeline.py
-.venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
@@ -9,3 +8,10 @@ Travel_Planner_Final_Project_Plan.docx
 .cursorignore
 Real_data
 mock_data/*.json
+
+
+
+##Data preparation
+AzurePublishFunc/
+data_preparation/
+test_compare_cosmos.py
