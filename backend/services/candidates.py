@@ -16,7 +16,7 @@ from ranking import RankingConstraints, prepare_ranking_records
 
 
 class CandidateService:
-    """Backend boundary handed to future ranking and agent integrations."""
+    """Cosmos retrieval and validation. Ranking and LLM live in RecommendationService."""
 
     def __init__(self, data_service: DestinationDataService) -> None:
         self._data_service = data_service
@@ -30,6 +30,9 @@ class CandidateService:
 
     async def get_origin(self, origin_id: str) -> OriginItem:
         return await self._data_service.get_origin(origin_id)
+
+    async def find_origins_by_iata(self, iata: str) -> list[OriginItem]:
+        return await self._data_service.find_origins_by_iata(iata)
 
     async def list_flights(self, request: FlightQuery) -> FlightListResponse:
         """Return every Cosmos flight document for the origin partition."""
@@ -55,9 +58,7 @@ class CandidateService:
             ),
         )
 
-        # Future ranked response integration uses these models directly:
-        # ranked = rank_candidates(prepared.candidates, preferences)
-        # This endpoint's contract currently returns unranked candidates.
+        # /api/candidates stays unranked. /api/recommend ranks these models.
         return CandidateResponse(
             origin_id=request.origin_id,
             candidates=[

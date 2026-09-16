@@ -91,6 +91,33 @@ class CosmosDestinationRepository:
             ) from error
         return sorted(rows, key=lambda row: (row.city, row.country, row.id))
 
+    async def find_origins_by_iata(self, iata: str) -> list[OriginItem]:
+        """Resolve a 3-letter IATA code to origin city documents."""
+
+        if self._origins is None:
+            raise RepositoryError("Cosmos repository has not been connected")
+
+        code = iata.strip().upper()
+        query = """
+            SELECT TOP 10 * FROM c
+            WHERE ARRAY_CONTAINS(c.city_iata, @iata)
+               OR ARRAY_CONTAINS(c.airports, @iata)
+        """
+        parameters: list[dict[str, Any]] = [{"name": "@iata", "value": code}]
+        try:
+            rows = [
+                OriginItem.model_validate(item)
+                async for item in self._origins.query_items(
+                    query=query,
+                    parameters=parameters,
+                )
+            ]
+        except (CosmosHttpResponseError, TypeError, ValueError) as error:
+            raise RepositoryError(
+                f"Cosmos DB origin IATA query failed: {error}"
+            ) from error
+        return sorted(rows, key=lambda row: (row.city, row.country, row.id))
+
     async def get_origin(self, origin_id: str) -> OriginItem:
         """Point-read one origin; its id is also its partition key."""
 
