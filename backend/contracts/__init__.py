@@ -9,6 +9,12 @@ from .candidates import (
     RejectedCandidateItem,
     RejectionItem,
 )
+from .recommendations import (
+    RankingPreferencesBody,
+    RecommendRequest,
+    RecommendationResponse,
+    RefineRequest,
+)
 
 __all__ = [
     "CandidateItem",
@@ -16,6 +22,10 @@ __all__ = [
     "FlightListResponse",
     "FlightQuery",
     "OriginItem",
+    "RankingPreferencesBody",
+    "RecommendRequest",
+    "RecommendationResponse",
+    "RefineRequest",
     "RejectedCandidateItem",
     "RejectionItem",
 ]

@@ -12,7 +12,7 @@ from backend.api import router
 from backend.config import get_settings
 from backend.data import DestinationDataService
 from backend.repositories import CosmosDestinationRepository
-from backend.services import CandidateService
+from backend.services import CandidateService, RecommendationService
 
 
 @asynccontextmanager
@@ -24,6 +24,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await repository.connect()
     app.state.candidate_service = CandidateService(
         data_service=DestinationDataService(repository)
+    )
+    app.state.recommendation_service = RecommendationService(
+        candidate_service=app.state.candidate_service
     )
     try:
         yield
