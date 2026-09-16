@@ -5,6 +5,7 @@ from __future__ import annotations
 import unittest
 from datetime import date
 from typing import Any
+from unittest.mock import AsyncMock, patch
 
 from backend.contracts import (
     OriginItem,
@@ -13,6 +14,7 @@ from backend.contracts import (
     RefineRequest,
 )
 from backend.contracts.candidates import FlightQuery
+from backend.models.feedback import InterpretFeedbackResult, RankingIntent
 from backend.models.trip_request import TripRequest
 from backend.services import CandidateService, RecommendationService
 from ranking import (
@@ -241,6 +243,95 @@ class RefineServiceTests(unittest.IsolatedAsyncioTestCase):
             [item.final_score for item in default],
         )
         self.assertEqual(data.last_query.max_price_eur if data.last_query else None, 400)
+
+    async def test_price_and_weather_feedback_change_order_using_policy_presets(self) -> None:
+        cases = [
+            ("Cheaper", "stronger_price_preference", 2, 0,
+             RankingPreferences(0.50, 0.20, 0.15, 0.15), [MALTA_ID, ROME_ID], [ROME_ID, MALTA_ID]),
+            ("Warmer", "prefer_warmer", 0, 2,
+             RankingPreferences(0.20, 0.50, 0.15, 0.15), [ROME_ID, MALTA_ID], [MALTA_ID, ROME_ID]),
+        ]
+        for text, code, cheap_stops, warm_stops, expected, before, after in cases:
+            for supplied in (None, RankingPreferencesBody(price_weight=0.8)):
+                with self.subTest(text=text, supplied=supplied):
+                    records = cosmos_records()[:2]
+                    records[0].update(price_eur=50, temp_max_c=10, outbound_stops=cheap_stops)
+                    records[1].update(price_eur=200, temp_max_c=30, outbound_stops=warm_stops)
+                    data = RecordingDataService()
+                    data.get_destination_records = AsyncMock(return_value=records)
+                    service, _ = _service(
+                        [_feedback_payload(**{code: True}), _explain_payload(ROME_ID, MALTA_ID)],
+                        data,
+                    )
+                    body = RefineRequest(text=text, request=_trip(), ranking_preferences=supplied)
+                    snapshot = body.model_dump()
+                    default = rank_candidates(prepare_ranking_records(records).candidates)
+                    self.assertEqual([item.destination_id for item in default], before)
+                    self.assertGreater(default[0].final_score, default[1].final_score)
+
+                    with patch(
+                        "backend.services.recommendations.rank_candidates", wraps=rank_candidates,
+                    ) as ranking:
+                        result = await service.refine(body)
+
+                    self.assertEqual(result.status, "ready")
+                    ranking.assert_called_once()
+                    self.assertEqual(ranking.call_args.args[1], expected)
+                    self.assertEqual([item.code for item in result.intents], [code])
+                    self.assertEqual([item.destination_id for item in result.recommendations], after)
+                    self.assertGreater(
+                        result.recommendations[0].final_score,
+                        result.recommendations[1].final_score,
+                    )
+                    self.assertEqual(body.model_dump(), snapshot)
+
+    async def test_constraint_only_feedback_preserves_default_or_supplied_weights(self) -> None:
+        cases = [
+            ("My budget is now EUR 70", _feedback_payload(budget=70, currency="EUR"), 70, None),
+            ("Direct flights only", _feedback_payload(direct_flights_only=True), 400, 0),
+        ]
+        for text, payload, budget, changeovers in cases:
+            for supplied in (None, RankingPreferencesBody(price_weight=0.8)):
+                with self.subTest(text=text, supplied=supplied):
+                    service, data = _service([payload, _explain_payload()])
+                    body = RefineRequest(text=text, request=_trip(), ranking_preferences=supplied)
+                    snapshot = body.model_dump()
+                    with patch(
+                        "backend.services.recommendations.rank_candidates", wraps=rank_candidates,
+                    ) as ranking:
+                        result = await service.refine(body)
+
+                    self.assertEqual(result.status, "ready")
+                    ranking.assert_called_once()
+                    self.assertEqual(
+                        ranking.call_args.args[1],
+                        RankingPreferences() if supplied is None else _ranking_preferences_for_test(),
+                    )
+                    self.assertEqual(data.last_query.max_price_eur, budget)
+                    self.assertEqual(data.last_query.max_changeovers, changeovers)
+                    self.assertFalse(any(item.target == "ranking_preferences" for item in result.intents))
+                    self.assertEqual(body.model_dump(), snapshot)
+
+    async def test_unknown_ranking_intent_preserves_supplied_preferences(self) -> None:
+        trip = _trip()
+        interpreted = InterpretFeedbackResult(
+            status="ready", request=trip, updated_request=trip.model_copy(deep=True),
+            intents=[RankingIntent(code="unknown_intent", target="ranking_preferences", meaning="Unknown")],
+        )
+        service, _ = _service([_explain_payload()])
+        with (
+            patch("backend.services.recommendations.interpret_feedback", return_value=interpreted),
+            patch("backend.services.recommendations.rank_candidates", wraps=rank_candidates) as ranking,
+        ):
+            result = await service.refine(RefineRequest(
+                text="A future preference", request=trip,
+                ranking_preferences=RankingPreferencesBody(price_weight=0.8),
+            ))
+
+        self.assertEqual(result.status, "ready")
+        ranking.assert_called_once()
+        self.assertEqual(ranking.call_args.args[1], _ranking_preferences_for_test())
+        self.assertEqual(result.intents, interpreted.intents)
 
     async def test_explicit_budget_filters_candidates(self) -> None:
         service, data = _service(
