@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -46,9 +47,9 @@ class FlightQuery(BaseModel):
 
 
 class OriginItem(BaseModel):
-    """Origin city document from Cosmos. Extra system fields such as `_rid` are ignored."""
+    """Full origin city document from Cosmos, including photos and extra fields."""
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="allow")
 
     id: str
     city: str
@@ -57,6 +58,8 @@ class OriginItem(BaseModel):
     airports: list[str] = Field(default_factory=list)
     city_iata: list[str] = Field(default_factory=list)
     flight_count: int = 0
+    photo_url: str | None = None
+    photo_url_small: str | None = None
 
 
 class CandidateItem(BaseModel):
@@ -96,4 +99,13 @@ class CandidateResponse(BaseModel):
     origin_id: str
     candidates: list[CandidateItem]
     rejected: list[RejectedCandidateItem]
+    data_source: str
+
+
+class FlightListResponse(BaseModel):
+    """All Cosmos flight documents for one origin partition."""
+
+    origin_id: str
+    flights: list[dict[str, Any]]
+    count: int
     data_source: str

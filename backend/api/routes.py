@@ -6,7 +6,7 @@ from datetime import date
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
-from backend.contracts import CandidateResponse, FlightQuery, OriginItem
+from backend.contracts import CandidateResponse, FlightListResponse, FlightQuery, OriginItem
 from backend.repositories import RepositoryError, RepositoryNotFoundError
 from backend.services import CandidateService
 
@@ -16,6 +16,28 @@ router = APIRouter(prefix="/api")
 
 def _candidate_service(request: Request) -> CandidateService:
     return request.app.state.candidate_service
+
+
+def _flight_query(
+    origin_id: str,
+    departure_date: date | None = None,
+    return_date: date | None = None,
+    max_price: float | None = None,
+    min_temp: float | None = None,
+    country: str | None = None,
+    max_changeovers: int | None = None,
+    max_duration_minutes: int | None = None,
+) -> FlightQuery:
+    return FlightQuery(
+        origin_id=origin_id,
+        departure_date=departure_date,
+        return_date=return_date,
+        max_price_eur=max_price,
+        min_temperature_c=min_temp,
+        destination_country_code=country,
+        max_changeovers=max_changeovers,
+        max_flight_duration_minutes=max_duration_minutes,
+    )
 
 
 @router.get("/health")
@@ -58,8 +80,39 @@ async def get_origin(origin_id: str, request: Request) -> OriginItem:
         ) from error
 
 
-@router.get("/flights", response_model=CandidateResponse)
+@router.get("/flights", response_model=FlightListResponse)
 async def get_flights(
+    request: Request,
+    origin_id: str = Query(min_length=3, max_length=150),
+    departure_date: date | None = None,
+    return_date: date | None = None,
+    max_price: float | None = Query(default=None, gt=0),
+    min_temp: float | None = None,
+    country: str | None = Query(default=None, min_length=2, max_length=2),
+) -> FlightListResponse:
+    """Load every Cosmos flight document for one origin partition."""
+
+    query = _flight_query(
+        origin_id,
+        departure_date,
+        return_date,
+        max_price,
+        min_temp,
+        country,
+    )
+
+    try:
+        return await _candidate_service(request).list_flights(query)
+    except RepositoryError as error:
+        # Do not expose Cosmos credentials or low-level response details.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Destination data is temporarily unavailable.",
+        ) from error
+
+
+@router.get("/candidates", response_model=CandidateResponse)
+async def get_candidates(
     request: Request,
     origin_id: str = Query(min_length=3, max_length=150),
     departure_date: date | None = None,
@@ -70,23 +123,22 @@ async def get_flights(
     max_changeovers: int | None = Query(default=None, ge=0),
     max_duration_minutes: int | None = Query(default=None, gt=0),
 ) -> CandidateResponse:
-    """Load one origin partition and return validated ranking candidates."""
+    """Validate Cosmos flights and return ranking-ready candidates."""
 
-    query = FlightQuery(
-        origin_id=origin_id,
-        departure_date=departure_date,
-        return_date=return_date,
-        max_price_eur=max_price,
-        min_temperature_c=min_temp,
-        destination_country_code=country,
-        max_changeovers=max_changeovers,
-        max_flight_duration_minutes=max_duration_minutes,
+    query = _flight_query(
+        origin_id,
+        departure_date,
+        return_date,
+        max_price,
+        min_temp,
+        country,
+        max_changeovers,
+        max_duration_minutes,
     )
 
     try:
         return await _candidate_service(request).prepare(query)
     except RepositoryError as error:
-        # Do not expose Cosmos credentials or low-level response details.
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Destination data is temporarily unavailable.",

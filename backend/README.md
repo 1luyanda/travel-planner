@@ -4,7 +4,8 @@ FastAPI and Cosmos candidate retrieval live here, along with the AI request
 parser, grounded explanations, and feedback interpretation.
 
 The running application does **not** call `parse_request`, `explain_ranked_trips`,
-or `interpret_feedback` yet. HTTP routes serve origins and unranked flight
+or `interpret_feedback` yet. Those functions are available for later wiring.
+HTTP routes serve origins, raw Cosmos flight documents, and prepared unranked
 candidates. Ranking lives in `ranking/` and is not invoked from those routes.
 
 ## Setup
@@ -35,12 +36,20 @@ API documentation is available at `http://localhost:8000/docs`.
 - `GET /api/health`
 - `GET /api/origins?q=zag&country=HR`
 - `GET /api/origins/{origin_id}`
-- `GET /api/flights?origin_id=zagreb-hr&max_price=300`
+- `GET /api/flights` — raw Cosmos flight documents for one origin partition
+  (airline, coordinates, weather, and other stored fields).
+  Required: `origin_id`. Optional: `departure_date`, `return_date`, `max_price`,
+  `min_temp`, `country`. Does not accept `max_changeovers` or
+  `max_duration_minutes`.
+- `GET /api/candidates` — prepared, unranked `candidates` plus `rejected`
+  reasons. Required: `origin_id`. Optional: `departure_date`, `return_date`,
+  `max_price`, `min_temp`, `country`, `max_changeovers`, `max_duration_minutes`.
 
-Example request:
+Example requests:
 
 ```http
-GET /api/flights?origin_id=zagreb-hr&departure_date=2026-09-18&return_date=2026-09-22&max_price=300&max_changeovers=1
+GET /api/flights?origin_id=zagreb-hr
+GET /api/candidates?origin_id=zagreb-hr&max_price=300&max_changeovers=0
 ```
 
 ## Integration placeholders

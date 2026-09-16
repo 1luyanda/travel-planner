@@ -155,6 +155,8 @@ class RankingBridgeTests(unittest.TestCase):
                 "airports": ["ZAG"],
                 "city_iata": ["ZAG"],
                 "flight_count": 154,
+                "photo_url": "https://images.pexels.com/photos/29789524/pexels-photo-29789524.jpeg",
+                "photo_url_small": "https://images.pexels.com/photos/29789524/pexels-photo-29789524.jpeg?h=350",
                 "_rid": "rPUJAIcvhrABAAAAAAAAAA==",
                 "_self": "dbs/rPUJAA==/colls/rPUJAIcvhrA=/docs/rPUJAIcvhrABAAAAAAAAAA==/",
                 "_etag": '"4b00c7ac-0000-1100-0000-6aa7fc9b0000"',
@@ -205,6 +207,9 @@ class RankingBridgeTests(unittest.TestCase):
         candidate = result.candidates[0]
 
         self.assertEqual(origin.id, "zagreb-hr")
+        self.assertTrue(origin.photo_url)
+        dumped = origin.model_dump()
+        self.assertIn("_rid", dumped)
         self.assertEqual(len(result.candidates), 1)
         self.assertEqual(candidate.city, "Rome")
         self.assertEqual(candidate.destination_iata, "FCO")
@@ -221,15 +226,20 @@ class CandidateServiceTests(unittest.IsolatedAsyncioTestCase):
             origin_id="zagreb-hr",
         )
 
-        response = await service.prepare(request)
+        response = await service.list_flights(request)
 
-        self.assertGreaterEqual(len(response.candidates), 3)
-        self.assertEqual(response.rejected, [])
-        self.assertTrue(all(candidate.flight_retrieved_at is None for candidate in response.candidates))
+        self.assertGreaterEqual(len(response.flights), 3)
+        self.assertEqual(response.count, len(response.flights))
+        self.assertEqual(response.flights[0]["origin_id"], "zagreb-hr")
+        self.assertIn("price_eur", response.flights[0])
         self.assertEqual(
             response.data_source,
             "test://normalized-destinations",
         )
+
+        ranked = await service.prepare(request)
+        self.assertGreaterEqual(len(ranked.candidates), 3)
+        self.assertTrue(ranked.candidates[0].destination_id)
 
     async def test_cosmos_flight_query_uses_origin_partition(self) -> None:
         repository = CosmosDestinationRepository(

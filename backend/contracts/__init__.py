@@ -3,6 +3,7 @@
 from .candidates import (
     CandidateItem,
     CandidateResponse,
+    FlightListResponse,
     FlightQuery,
     OriginItem,
     RejectedCandidateItem,
@@ -12,6 +13,7 @@ from .candidates import (
 __all__ = [
     "CandidateItem",
     "CandidateResponse",
+    "FlightListResponse",
     "FlightQuery",
     "OriginItem",
     "RejectedCandidateItem",
