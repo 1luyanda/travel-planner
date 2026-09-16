@@ -5,7 +5,6 @@ import styles from '../workspace.module.css'
 export default function FiltersPopover({
   open,
   form,
-  origins,
   maxBudgetCap,
   onChange,
   onReset,
@@ -38,23 +37,10 @@ export default function FiltersPopover({
             <X size={18} />
           </button>
         </header>
-        <p className={styles.panelHint}>Updates the mock shortlist already loaded. Not a new API search.</p>
-
-        <label htmlFor="filter-origin">
-          Origin airport
-          <select
-            id="filter-origin"
-            value={form.origin}
-            onChange={(event) => onChange('origin', event.target.value)}
-          >
-            <option value="">All origins</option>
-            {origins.map((code) => (
-              <option key={code} value={code}>
-                {code}
-              </option>
-            ))}
-          </select>
-        </label>
+        <p className={styles.panelHint}>
+          Budget and direct-flight changes request an updated stored shortlist. Weather preference
+          only re-ranks the trips already loaded. Origin is set in Flying from.
+        </p>
 
         <label htmlFor="filter-budget">
           Maximum budget

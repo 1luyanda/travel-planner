@@ -1,6 +1,6 @@
 # Travel Planner frontend
 
-React UI for Team 4's Travel Planner. It fetches `/api/destinations` from FastAPI and ranks destinations in the browser. Start the backend first so the Vite `/api` proxy can reach `http://127.0.0.1:8000`.
+React UI for Team 4's Travel Planner. It searches stored Cosmos snapshots through FastAPI (`/api/origins`, `/api/candidates`, `/api/flights`) and ranks results in the browser. Fares are not live or bookable. Start the backend first so the Vite `/api` proxy can reach `http://127.0.0.1:8000`.
 
 ## Run locally (Windows PowerShell)
 
@@ -22,6 +22,6 @@ npm run build
 
 ## Notes
 
-- Destination cards use the normalized mock data, not hardcoded city lists.
-- Filters and ranking run entirely in the browser.
-- Ranking weights are shown in the refinement panel and change when you choose Cheaper, Warmer, Direct flights, or Shorter travel.
+- Choose a stored origin city before searching. `origin_id` values such as `zagreb-hr` are not IATA codes.
+- Ranking runs once in the browser because `/api/candidates` is unranked.
+- Missing optional fields stay unavailable; map pins require valid destination coordinates from flight documents.

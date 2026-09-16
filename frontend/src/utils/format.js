@@ -1,3 +1,10 @@
+export const NOT_AVAILABLE = 'Not available'
+
+export function displayValue(value) {
+  if (value == null || value === '') return NOT_AVAILABLE
+  return value
+}
+
 export function formatDate(value) {
   if (!value) return null
   const date = new Date(value)
@@ -46,7 +53,7 @@ export function cityTone(city = '') {
   return hash
 }
 
-/** Compact facts line from real mock fields only. */
+/** Compact facts line from grounded fields only. */
 export function tripFactsLine(destination = {}) {
   const flight = destination.flight || {}
   const weather = destination.weather || {}

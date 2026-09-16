@@ -1,34 +1,17 @@
 import BrandMark from './BrandMark'
-import DestinationPhoto from './DestinationPhoto'
-import { formatPrice } from '../utils/format'
 import { getDestinationImage } from '../data/destinationImages'
 import { AppLink, ROUTES } from '../utils/routes.jsx'
 import styles from '../landing.module.css'
 
-function FloatingCard({ destination, className, onSelect }) {
-  const city = destination.destination?.city
-  const price = formatPrice(destination.flight)
-  if (!city || !price) return null
+const COLLAGE = [
+  { city: 'Rome', className: styles.shotMain },
+  { city: 'Lisbon', className: styles.shotMid },
+  { city: 'Athens', className: styles.shotRound },
+  { city: 'Malta', className: styles.shotSmall },
+]
 
-  return (
-    <button type="button" className={className} onClick={() => onSelect(destination)}>
-      <strong>{city}</strong>
-      <span>{price}</span>
-    </button>
-  )
-}
-
-export default function LandingPage({ destinations, onSelectDestination }) {
-  const previews = destinations.slice(0, 4)
-  const [rome, malta, lisbon, athens] = ['Rome', 'Malta', 'Lisbon', 'Athens'].map((city) =>
-    destinations.find((item) => item.destination?.city === city),
-  )
-  const collagePhotos = [
-    { destination: rome, className: styles.shotMain },
-    { destination: lisbon, className: styles.shotMid },
-    { destination: athens, className: styles.shotRound },
-    { destination: malta, className: styles.shotSmall },
-  ].filter((item) => item.destination && getDestinationImage(item.destination.destination?.city))
+export default function LandingPage() {
+  const collagePhotos = COLLAGE.filter((item) => getDestinationImage(item.city))
 
   return (
     <div className={styles.page}>
@@ -48,12 +31,13 @@ export default function LandingPage({ destinations, onSelectDestination }) {
 
       <section className={styles.hero} aria-labelledby="landing-title">
         <div className={styles.heroCopy}>
-          <p className={styles.badge}>Demo · Mock data</p>
+          <p className={styles.badge}>Stored travel data · Snapshot</p>
           <h1 id="landing-title">
             Your mood. Your budget. <span className={styles.accent}>Your next trip.</span>
           </h1>
           <p className={styles.lede}>
-            Explore destinations, compare flight and weather details, and find a getaway that fits.
+            Compare stored flight and weather snapshots for a departure city you choose. Fares are
+            not live or bookable.
           </p>
           <AppLink to={ROUTES.planner} className={styles.startBtnLarge}>
             Start planning
@@ -61,32 +45,14 @@ export default function LandingPage({ destinations, onSelectDestination }) {
         </div>
 
         <div className={styles.collage}>
-          {collagePhotos.map(({ destination, className }) => (
-            <div key={destination.id} className={className}>
-              <DestinationPhoto destination={destination} sizes="280px" />
-            </div>
-          ))}
-          {rome && (
-            <FloatingCard
-              destination={rome}
-              onSelect={onSelectDestination}
-              className={`${styles.floatCard} ${styles.floatOne}`}
-            />
-          )}
-          {malta && (
-            <FloatingCard
-              destination={malta}
-              onSelect={onSelectDestination}
-              className={`${styles.floatCard} ${styles.floatTwo}`}
-            />
-          )}
-          {lisbon && (
-            <FloatingCard
-              destination={lisbon}
-              onSelect={onSelectDestination}
-              className={`${styles.floatCard} ${styles.floatThree}`}
-            />
-          )}
+          {collagePhotos.map(({ city, className }) => {
+            const image = getDestinationImage(city)
+            return (
+              <div key={city} className={className}>
+                <img src={image.src} alt={image.alt} title={image.attribution} />
+              </div>
+            )
+          })}
         </div>
       </section>
 
@@ -96,22 +62,22 @@ export default function LandingPage({ destinations, onSelectDestination }) {
           <li>
             <span>1</span>
             <div>
-              <h3>Describe your getaway</h3>
-              <p>Share a mood, budget, and departure airport. This demo reads those fields locally.</p>
+              <h3>Choose where you fly from</h3>
+              <p>Search stored origin cities, then add a mood or budget. A departure city is required.</p>
             </div>
           </li>
           <li>
             <span>2</span>
             <div>
-              <h3>Compare your matches</h3>
-              <p>Ranked cards show real mock prices, stops, duration, and weather side by side.</p>
+              <h3>Compare stored matches</h3>
+              <p>Cards show snapshot prices, stops, duration, and weather. Missing fields stay blank.</p>
             </div>
           </li>
           <li>
             <span>3</span>
             <div>
               <h3>Refine your shortlist</h3>
-              <p>Weight cheaper, warmer, direct, or shorter trips without leaving the planner.</p>
+              <p>Re-rank cheaper, warmer, direct, or shorter trips in the browser.</p>
             </div>
           </li>
         </ol>
@@ -119,28 +85,13 @@ export default function LandingPage({ destinations, onSelectDestination }) {
 
       <section className={styles.explore} id="explore-destinations" aria-labelledby="explore-title">
         <h2 id="explore-title">Explore destinations</h2>
-        <p>From the mock dataset. Selecting a city opens the planner with that trip selected.</p>
-        <div className={styles.grid}>
-          {previews.map((destination) => {
-            const city = destination.destination?.city || 'Destination'
-            const country = destination.country?.common_name
-            return (
-              <button
-                key={destination.id}
-                type="button"
-                className={styles.preview}
-                onClick={() => onSelectDestination(destination)}
-              >
-                <DestinationPhoto destination={destination} sizes="240px" />
-                <span>
-                  <strong>{city}</strong>
-                  {country && <em>{country}</em>}
-                  {formatPrice(destination.flight) && <b>{formatPrice(destination.flight)}</b>}
-                </span>
-              </button>
-            )
-          })}
-        </div>
+        <p>
+          Snapshot trips load after you pick a departure city in the planner. There is no all-origins
+          catalogue endpoint.
+        </p>
+        <AppLink to={ROUTES.planner} className={styles.startBtn}>
+          Open the planner
+        </AppLink>
       </section>
     </div>
   )

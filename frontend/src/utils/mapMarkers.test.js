@@ -47,4 +47,17 @@ describe('buildMapMarkers', () => {
   it('skips records without valid pins', () => {
     expect(buildMapMarkers([{ id: 'x', destination: { latitude: 0, longitude: 0 } }])).toEqual([])
   })
+
+  it('does not use origin coordinates when destination coords are missing', () => {
+    expect(
+      buildMapMarkers([
+        {
+          id: 'no-pin',
+          origin: { latitude: 45.8, longitude: 16 },
+          destination: { city: 'Rome' },
+          flight: { origin_iata: 'ZAG' },
+        },
+      ]),
+    ).toEqual([])
+  })
 })

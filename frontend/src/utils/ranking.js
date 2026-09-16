@@ -14,18 +14,20 @@ export function defaultWeights(preferWarm) {
 }
 
 export function uniqueOrigins(destinations) {
-  return [...new Set(destinations.map((item) => item.flight?.origin_iata).filter(Boolean))].sort()
+  return [...new Set(destinations.map((item) => item.originId).filter(Boolean))].sort()
 }
 
 /**
- * Keep destinations that match origin, max EUR budget, and optional direct-only.
+ * Keep destinations that match origin_id, max EUR budget, and optional direct-only.
+ * Origin is required: an empty origin_id matches nothing.
  * Warm preference is not a hard filter; it only changes ranking weights.
+ * Missing numeric fields stay missing in the record; score helpers treat them as 0
+ * so a gap is not filled with invented prices, temperatures, or durations.
  */
 export function filterDestinations(destinations, filters) {
   return destinations.filter((item) => {
     const flight = item.flight || {}
-
-    if (filters.origin && flight.origin_iata !== filters.origin) {
+    if (!filters.originId || item.originId !== filters.originId) {
       return false
     }
 
@@ -75,6 +77,15 @@ function lowerIsBetter(value, min, max) {
 function withoutScores(destination) {
   const { scores, ...rest } = destination
   return rest
+}
+
+/** Rank adapted candidates exactly once with the current weight set. */
+export function applyBrowserRanking(destinations, preferWarm, refinement = null) {
+  const weights =
+    refinement && refinementPresets[refinement]
+      ? refinementPresets[refinement]
+      : defaultWeights(preferWarm)
+  return { weights, ranked: rankDestinations(destinations, weights) }
 }
 
 /**

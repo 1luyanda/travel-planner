@@ -32,7 +32,7 @@ export default function Sidebar({
           </button>
         </div>
 
-        <p className={styles.demoBadge}>Demo · Mock data</p>
+        <p className={styles.demoBadge}>Stored snapshot</p>
 
         <button type="button" className={styles.newTrip} onClick={onNewTrip} title="New trip">
           <Plus size={16} strokeWidth={2} />

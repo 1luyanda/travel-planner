@@ -88,7 +88,11 @@ export default function DestinationMap({
     return (
       <section className={styles.mapEmpty} aria-labelledby="map-title">
         <h2 id="map-title">Destination map</h2>
-        <p>No mapped destinations for these results. Pins need valid destination coordinates.</p>
+        <p>
+          {results?.length
+            ? 'These trips are listed, but none have valid destination coordinates to map.'
+            : 'No mapped destinations for these results. Pins need valid destination coordinates.'}
+        </p>
       </section>
     )
   }

@@ -2,6 +2,7 @@ import { Heart } from 'lucide-react'
 import ScoreBreakdown from './ScoreBreakdown'
 import DestinationPhoto from './DestinationPhoto'
 import {
+  displayValue,
   formatAirline,
   formatPrice,
   tripFactsLine,
@@ -49,10 +50,10 @@ export default function DestinationCard({
               <span className={styles.rank}>#{rank}</span>
             </div>
             <h3>{place.city || 'Unknown city'}</h3>
-            <p>{country.common_name || place.country_code}</p>
+            <p>{country.common_name || place.country_code || displayValue(null)}</p>
           </div>
           <div className={styles.cardPrice}>
-            {formatPrice(flight) && <strong>{formatPrice(flight)}</strong>}
+            <strong>{formatPrice(flight) || displayValue(null)}</strong>
             <button
               type="button"
               className={isSaved ? styles.saveOn : styles.saveBtn}
@@ -70,6 +71,7 @@ export default function DestinationCard({
 
         {moved && <p className={styles.movement}>Moved from #{previousRank}</p>}
         {facts && <p className={styles.facts}>{facts}{airline ? ` · ${airline}` : ''}</p>}
+        {!facts && <p className={styles.facts}>{displayValue(null)}</p>}
         {reason && <p className={styles.reason}>{reason}</p>}
 
         <details className={styles.why}>

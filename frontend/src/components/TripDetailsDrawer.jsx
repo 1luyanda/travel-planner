@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef } from 'react'
 import ScoreBreakdown from './ScoreBreakdown'
 import {
+  NOT_AVAILABLE,
   formatAirline,
   formatDate,
   formatDuration,
@@ -9,6 +10,7 @@ import {
   formatStops,
   formatTemperature,
 } from '../utils/format'
+import { snapshotLabel } from '../utils/adaptResults'
 import { scoreBreakdown } from '../utils/ranking'
 
 /** Omit a details row when the mock JSON has no value for that field. */
@@ -76,19 +78,20 @@ export default function TripDetailsDrawer({ destination, weights, onClose }) {
         </div>
 
         <dl className="drawer-list">
-          <Row label="Airport" value={place.airport} />
-          <Row label="Price" value={formatPrice(flight)} />
-          <Row label="Airline" value={airline} />
+          <Row label="Airport" value={place.airport || NOT_AVAILABLE} />
+          <Row label="Price" value={formatPrice(flight) || NOT_AVAILABLE} />
+          <Row label="Airline" value={airline || NOT_AVAILABLE} />
           <Row label="Flight number" value={flight.flight_number} />
           <Row label="Departs" value={formatDate(flight.departure_at)} />
           <Row label="Returns" value={formatDate(flight.return_at)} />
-          <Row label="Duration" value={formatDuration(flight.duration_minutes)} />
-          <Row label="Stops" value={formatStops(flight.outbound_stops)} />
-          <Row label="Average max temperature" value={formatTemperature(weather.average_max_temperature_c)} />
+          <Row label="Duration" value={formatDuration(flight.duration_minutes) || NOT_AVAILABLE} />
+          <Row label="Stops" value={formatStops(flight.outbound_stops) || NOT_AVAILABLE} />
+          <Row label="Average max temperature" value={formatTemperature(weather.average_max_temperature_c) || NOT_AVAILABLE} />
           <Row
             label="Precipitation probability"
             value={formatPrecipitation(weather.average_precipitation_probability_percent)}
           />
+          <Row label="Data" value={snapshotLabel(destination.dataSource)} />
         </dl>
 
         <section className="drawer-score" aria-labelledby={`${titleId}-score`}>

@@ -14,7 +14,7 @@ export default function SavedPane({
   return (
     <div className={styles.conversation}>
       <h1 className={styles.savedTitle}>Saved</h1>
-      <p className={styles.panelHint}>Kept on this device. Hearts toggle destinations from the mock shortlist.</p>
+      <p className={styles.panelHint}>Kept on this device. Hearts save trips from the current stored shortlist.</p>
       {destinations.length === 0 ? (
         <div className={styles.emptySaved}>
           <p>No saved destinations yet.</p>

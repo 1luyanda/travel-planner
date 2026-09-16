@@ -14,8 +14,8 @@ export default function WelcomePane({ onPrompt, composerRef }) {
       />
       <h1>Where to today?</h1>
       <p>
-        Tell me a mood, a budget, and where you are leaving from. This demo ranks mock flight and
-        weather data — it is not a live AI planner.
+        Tell me a mood, a budget, and where you are leaving from. Results come from stored travel data
+        and are ranked in the browser — not a live search or AI planner.
       </p>
       <div className={styles.starters} role="group" aria-label="Starter prompts">
         {starterPrompts.map((prompt) => (

@@ -31,7 +31,7 @@ export function parsePrompt(text, { origins = [], cities = [] } = {}) {
     return {
       ok: false,
       message:
-        'This demo only understands trip requests about budget, warmth, direct flights, and short getaways. It is not an LLM. Try one of the starter prompts.',
+        'This planner only understands trip requests about budget, warmth, direct flights, and short getaways. It is not an LLM. Try one of the starter prompts.',
     }
   }
 

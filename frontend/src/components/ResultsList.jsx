@@ -26,7 +26,7 @@ export default function ResultsList({
       <h2 id="results-title">{heading}</h2>
       {count === 0 ? (
         <p className={styles.notice}>
-          No destinations match these filters. Try a higher budget or fewer constraints.
+          No stored trips match these filters. Try a higher budget or fewer constraints.
         </p>
       ) : (
         <div className={styles.cardStack}>

@@ -187,6 +187,8 @@
 }
 
 .composerDock {
+  position: relative;
+  z-index: 8;
   padding: 0 36px 22px;
   background: var(--tp-bg);
 }
@@ -196,6 +198,104 @@
   font-size: 11px;
   font-weight: 600;
   color: var(--tp-text-muted);
+}
+
+.originField {
+  margin: 0 0 10px;
+}
+
+.originControl {
+  position: relative;
+}
+
+.originField label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--tp-text);
+}
+
+.originField input {
+  width: 100%;
+  border: 1px solid var(--tp-border);
+  border-radius: 16px;
+  padding: 10px 14px;
+  background: var(--tp-surface);
+  color: var(--tp-text);
+  outline: none;
+}
+
+.originField input[aria-invalid='true'] {
+  border-color: var(--tp-error-text);
+}
+
+.originList {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: auto;
+  bottom: calc(100% + 4px);
+  z-index: 12;
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  max-height: 220px;
+  overflow: auto;
+  background: var(--tp-surface);
+  border: 1px solid var(--tp-border);
+  border-radius: 16px;
+  box-shadow: var(--tp-shadow);
+}
+
+.originOption,
+.originOptionActive {
+  display: grid;
+  width: 100%;
+  border: 0;
+  border-radius: 12px;
+  padding: 8px 10px;
+  background: transparent;
+  color: var(--tp-text);
+  text-align: left;
+}
+
+.originOptionActive,
+.originOption:hover {
+  background: var(--tp-selected);
+}
+
+.originOption strong,
+.originOptionActive strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.originOption span,
+.originOptionActive span {
+  color: var(--tp-text-muted);
+  font-size: 12px;
+}
+
+.originEmpty {
+  padding: 10px 12px;
+  color: var(--tp-text-muted);
+  font-size: 13px;
+}
+
+.originHint,
+.originError {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.originHint {
+  color: var(--tp-text-muted);
+}
+
+.originError {
+  color: var(--tp-error-text);
 }
 
 .composer {
