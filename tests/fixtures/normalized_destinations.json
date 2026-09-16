@@ -1,0 +1,68 @@
+{
+  "request": {
+    "origin": "ZAG",
+    "currency": "EUR",
+    "departure_date": "2026-09-18",
+    "return_date": "2026-09-22"
+  },
+  "destinations": [
+    {
+      "id": "offer-rome",
+      "destination": { "city": "Rome" },
+      "flight": {
+        "destination_airport_iata": "FCO",
+        "price": 65,
+        "currency": "EUR",
+        "outbound_stops": 0,
+        "return_stops": 0,
+        "outbound_duration_minutes": 85,
+        "return_duration_minutes": 85,
+        "departure_at": "2026-09-18T15:55:00+02:00",
+        "return_at": "2026-09-22T23:50:00+02:00"
+      },
+      "weather": {
+        "average_max_temperature_c": 27.8,
+        "average_min_temperature_c": 18.75,
+        "average_precipitation_probability_percent": 13
+      }
+    },
+    {
+      "id": "offer-lisbon",
+      "destination": { "city": "Lisbon" },
+      "flight": {
+        "destination_airport_iata": "LIS",
+        "price": 189,
+        "currency": "EUR",
+        "outbound_stops": 0,
+        "return_stops": 0,
+        "outbound_duration_minutes": 195,
+        "return_duration_minutes": 190,
+        "departure_at": "2026-09-18T08:10:00+02:00",
+        "return_at": "2026-09-22T21:40:00+01:00"
+      },
+      "weather": {
+        "average_max_temperature_c": 26.1,
+        "average_precipitation_probability_percent": 8
+      }
+    },
+    {
+      "id": "offer-athens",
+      "destination": { "city": "Athens" },
+      "flight": {
+        "destination_airport_iata": "ATH",
+        "price": 260,
+        "currency": "EUR",
+        "outbound_stops": 1,
+        "return_stops": 1,
+        "outbound_duration_minutes": 215,
+        "return_duration_minutes": 360,
+        "departure_at": "2026-09-18T11:00:00+02:00",
+        "return_at": "2026-09-22T09:35:00+03:00"
+      },
+      "weather": {
+        "average_max_temperature_c": 28.82,
+        "average_precipitation_probability_percent": 9
+      }
+    }
+  ]
+}
