@@ -14,3 +14,8 @@ Travel_Planner_Final_Project_Plan.docx
 .cursorignore
 Real_data
 mock_data/*.json
+
+## Data preparation
+AzurePublishFunc/
+data_preparation/
+test_compare_cosmos.py

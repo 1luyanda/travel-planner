@@ -79,6 +79,27 @@ class FakeDataService:
         return cosmos_records()
 
 
+class FakeOriginsContainer:
+    def __init__(self) -> None:
+        self.query_arguments: dict[str, Any] = {}
+
+    def query_items(self, **kwargs: Any) -> Any:
+        self.query_arguments = kwargs
+
+        async def rows() -> Any:
+            yield {
+                "id": "zagreb-hr",
+                "city": "Zagreb",
+                "country": "Croatia",
+                "country_code": "HR",
+                "airports": ["ZAG"],
+                "city_iata": ["ZAG"],
+                "flight_count": 154,
+            }
+
+        return rows()
+
+
 class FakeFlightsContainer:
     def __init__(self) -> None:
         self.query_arguments: dict[str, Any] = {}
@@ -268,6 +289,32 @@ class CandidateServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             container.query_arguments["partition_key"],
             "zagreb-hr",
+        )
+        self.assertNotIn(
+            "enable_cross_partition_query",
+            container.query_arguments,
+        )
+
+    async def test_origin_iata_lookup_queries_city_iata_and_airports(self) -> None:
+        repository = CosmosDestinationRepository(
+            Settings(
+                cosmos_connection_string="placeholder",
+                cosmos_database_name="TravelPlaner",
+                frontend_origins=("http://localhost:5173",),
+            )
+        )
+        container = FakeOriginsContainer()
+        repository._origins = container  # type: ignore[assignment]
+
+        origins = await repository.find_origins_by_iata("zag")
+
+        self.assertEqual(len(origins), 1)
+        self.assertEqual(origins[0].id, "zagreb-hr")
+        self.assertIn("ARRAY_CONTAINS(c.city_iata, @iata)", container.query_arguments["query"])
+        self.assertIn("ARRAY_CONTAINS(c.airports, @iata)", container.query_arguments["query"])
+        self.assertIn(
+            {"name": "@iata", "value": "ZAG"},
+            container.query_arguments["parameters"],
         )
         self.assertNotIn(
             "enable_cross_partition_query",

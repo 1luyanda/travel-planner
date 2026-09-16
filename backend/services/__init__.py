@@ -9,11 +9,13 @@ from .llm import (
     load_llm_environment,
     parse_request,
 )
+from .recommendations import RecommendationService
 
 __all__ = [
     "CandidateService",
     "LLMClient",
     "RankedTripLike",
+    "RecommendationService",
     "create_llm_client_from_env",
     "explain_ranked_trips",
     "interpret_feedback",

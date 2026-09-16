@@ -42,3 +42,6 @@ class DestinationDataService:
 
     async def get_origin(self, origin_id: str) -> OriginItem:
         return await self._repository.get_origin(origin_id)
+
+    async def find_origins_by_iata(self, iata: str) -> list[OriginItem]:
+        return await self._repository.find_origins_by_iata(iata)

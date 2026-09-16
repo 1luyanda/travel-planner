@@ -6,9 +6,17 @@ from datetime import date
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
-from backend.contracts import CandidateResponse, FlightListResponse, FlightQuery, OriginItem
+from backend.contracts import (
+    CandidateResponse,
+    FlightListResponse,
+    FlightQuery,
+    OriginItem,
+    RecommendRequest,
+    RecommendationResponse,
+    RefineRequest,
+)
 from backend.repositories import RepositoryError, RepositoryNotFoundError
-from backend.services import CandidateService
+from backend.services import CandidateService, RecommendationService
 
 
 router = APIRouter(prefix="/api")
@@ -16,6 +24,10 @@ router = APIRouter(prefix="/api")
 
 def _candidate_service(request: Request) -> CandidateService:
     return request.app.state.candidate_service
+
+
+def _recommendation_service(request: Request) -> RecommendationService:
+    return request.app.state.recommendation_service
 
 
 def _flight_query(
@@ -138,6 +150,38 @@ async def get_candidates(
 
     try:
         return await _candidate_service(request).prepare(query)
+    except RepositoryError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Destination data is temporarily unavailable.",
+        ) from error
+
+
+@router.post("/recommend", response_model=RecommendationResponse)
+async def recommend(
+    request: Request,
+    body: RecommendRequest,
+) -> RecommendationResponse:
+    """Parse a trip request, rank Cosmos candidates, and explain the shortlist."""
+
+    try:
+        return await _recommendation_service(request).recommend(body)
+    except RepositoryError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Destination data is temporarily unavailable.",
+        ) from error
+
+
+@router.post("/refine", response_model=RecommendationResponse)
+async def refine(
+    request: Request,
+    body: RefineRequest,
+) -> RecommendationResponse:
+    """Apply user feedback, then rank and explain again."""
+
+    try:
+        return await _recommendation_service(request).refine(body)
     except RepositoryError as error:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

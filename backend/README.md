@@ -3,10 +3,11 @@
 FastAPI and Cosmos candidate retrieval live here, along with the AI request
 parser, grounded explanations, and feedback interpretation.
 
-The running application does **not** call `parse_request`, `explain_ranked_trips`,
-or `interpret_feedback` yet. Those functions are available for later wiring.
-HTTP routes serve origins, raw Cosmos flight documents, and prepared unranked
-candidates. Ranking lives in `ranking/` and is not invoked from those routes.
+The running application serves origins, raw Cosmos flight documents, prepared
+unranked candidates, and the recommend/refine workflow. `parse_request`,
+`rank_candidates`, `explain_ranked_trips`, and `interpret_feedback` are called
+from `POST /api/recommend` and `POST /api/refine`. `/api/candidates` stays
+unranked.
 
 ## Setup
 
@@ -44,23 +45,59 @@ API documentation is available at `http://localhost:8000/docs`.
 - `GET /api/candidates` — prepared, unranked `candidates` plus `rejected`
   reasons. Required: `origin_id`. Optional: `departure_date`, `return_date`,
   `max_price`, `min_temp`, `country`, `max_changeovers`, `max_duration_minutes`.
+- `POST /api/recommend` — parse user text (and optional form fields), resolve
+  origin IATA to a Cosmos origin, load candidates, rank them, and explain.
+- `POST /api/refine` — interpret feedback against a saved `TripRequest`, then
+  search and rank again. Explicit field changes (budget, direct flights) are
+  applied. Intents such as cheaper/warmer are passed to Ivan's
+  `preferences_from_intents` so ranking weights update.
 
 Example requests:
 
 ```http
 GET /api/flights?origin_id=zagreb-hr
 GET /api/candidates?origin_id=zagreb-hr&max_price=300&max_changeovers=0
+POST /api/recommend
+POST /api/refine
 ```
+
+Example recommend body:
+
+```json
+{
+  "text": "From ZAG, 21–25 September 2026, under EUR 400, somewhere warm and relaxing."
+}
+```
+
+Example refine body:
+
+```json
+{
+  "text": "Cheaper",
+  "request": {
+    "origin": "ZAG",
+    "departure_date": "2026-09-21",
+    "return_date": "2026-09-25",
+    "budget": 400,
+    "currency": "EUR",
+    "moods": ["relaxing"],
+    "weather_preference": "warm"
+  }
+}
+```
+
+`ranking_preferences` is optional on both bodies. On refine, recognized
+cheaper/warmer intents replace those weights using Ivan's presets. If the
+feedback has no ranking intent, the supplied weights (or defaults) stay.
 
 ## Integration placeholders
 
-- The agent developer can convert user messages into `FlightQuery` fields
-  before calling the candidate service. `parse_request` is available for that
-  conversion but is not wired into the routes yet.
-- The ranking developer can pass `CandidateResponse.candidates` into their
-  algorithm.
-- A final recommendations endpoint should be added when the agent and ranking
-  implementations are merged.
+- `POST /api/recommend` and `POST /api/refine` now call the AI functions, Cosmos,
+  and ranking in one backend path.
+- Origin IATA codes such as `ZAG` are resolved through Cosmos `city_iata` /
+  `airports`. Unmatched or ambiguous codes return `needs_input`.
+- Refine calls Ivan's `preferences_from_intents` for cheaper/warmer. Luyanda
+  can still send `ranking_preferences` as the starting weights.
 - Authentication and authorization are not implemented yet.
 
 # AI request parser and explanations
@@ -68,8 +105,8 @@ GET /api/candidates?origin_id=zagreb-hr&max_price=300&max_changeovers=0
 Turns user text and optional form fields into a structured travel request, then
 explains ranked destinations using only supplied facts.
 
-These functions do not rank destinations, query Cosmos, or expose HTTP routes.
-Call them from application code when that wiring is added.
+These functions do not rank destinations or query Cosmos. FastAPI calls them
+from `/api/recommend` and `/api/refine`.
 
 ## interpret_feedback
 
@@ -244,7 +281,7 @@ Live checks need the `openai` package from `requirements.txt`.
 
 ```text
 python -m pip install -r requirements.txt
-python -m pytest tests/test_parse_request.py tests/test_explanations.py tests/test_llm_config.py tests/test_feedback.py
+python -m pytest tests/test_parse_request.py tests/test_explanations.py tests/test_llm_config.py tests/test_feedback.py tests/test_recommendations.py
 python backend/scripts/live_llm_check.py
 python backend/scripts/live_feedback_check.py
 ```
