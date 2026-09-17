@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from math import fsum, isclose
 from typing import TYPE_CHECKING
 
 from .ranking import RankingPreferences
@@ -11,27 +12,55 @@ if TYPE_CHECKING:
     from backend.models.feedback import RankingIntent
 
 
-_PRESETS = {
-    "stronger_price_preference": {
-        "price_weight": 0.50,
-        "weather_weight": 0.20,
-        "changeovers_weight": 0.15,
-        "duration_weight": 0.15,
-    },
-    "prefer_warmer": {
-        "price_weight": 0.20,
-        "weather_weight": 0.50,
-        "changeovers_weight": 0.15,
-        "duration_weight": 0.15,
-    },
+_INTENT_CRITERIA = {
+    "stronger_price_preference": "price",
+    "prefer_warmer": "weather",
 }
+_ADJUSTMENT_STEP = 0.10
+_MIN_WEIGHT = 0.05
+_MAX_WEIGHT = 0.70
+
+
+def _redistribute_weights(
+    weights: dict[str, float], total: float = 1.0,
+) -> dict[str, float]:
+    """Allocate a total proportionally, pinning bounds and redistributing.
+
+    Clamp incoming weights first so legacy zero/out-of-range relative weights
+    also have a deterministic, feasible baseline. For an already bounded
+    state, ratios are preserved until a criterion hits a bound.
+    """
+    remaining = {
+        field: min(_MAX_WEIGHT, max(_MIN_WEIGHT, weight))
+        for field, weight in weights.items()
+    }
+    result = {}
+    while remaining:
+        budget = total - fsum(result.values())
+        denominator = fsum(remaining.values())
+        shares = {
+            field: weight / denominator * budget
+            for field, weight in remaining.items()
+        }
+        bounded = {
+            field: min(_MAX_WEIGHT, max(_MIN_WEIGHT, share))
+            for field, share in shares.items()
+            if share < _MIN_WEIGHT or share > _MAX_WEIGHT
+        }
+        if not bounded:
+            result.update(shares)
+            break
+        result.update(bounded)
+        for field in bounded:
+            del remaining[field]
+    return result
 
 
 def preferences_from_intents(
     intents: Iterable[str | RankingIntent],
     current: RankingPreferences | None = None,
 ) -> RankingPreferences:
-    """Apply fixed presets without mutating or compounding current weights.
+    """Increment current normalized preferences without mutating the input.
 
     Accept semantic codes or ``interpret_feedback(...).intents`` directly.
     Structured intents must target ``ranking_preferences``; hard constraints,
@@ -39,11 +68,16 @@ def preferences_from_intents(
     ignored. No fewer-changeovers or shorter-flight codes exist in the current
     AI contract.
 
-    Multiple distinct recognized intents contribute equally: sum their preset
-    weights and normalize to one (equivalent to averaging these unit presets).
-    Codes are deduplicated and sorted so order and repetition have no effect.
-    Recognized feedback replaces current weights. If nothing is recognized,
-    return the supplied immutable preferences unchanged, or model defaults.
+    Deduplicate targets and increase each by 0.10, capped at 0.70, together.
+    If donors cannot fund all increases while keeping their 0.05 floors,
+    scale the increases by the same factor. Allocate the remaining total
+    proportionally across non-targets, pinning any that reach their floor
+    and redistributing again. Fixed criterion order makes intent order
+    irrelevant. Repeated events build on the supplied current state.
+
+    Legacy relative weights are normalized and bounded before adjustment.
+    With no recognized intent, preserve current exactly (even legacy weights
+    outside these policy bounds), or return model defaults.
     """
     codes = set()
     for intent in intents:
@@ -53,18 +87,33 @@ def preferences_from_intents(
             code = intent.code
         else:
             continue
-        if code in _PRESETS:
+        if code in _INTENT_CRITERIA:
             codes.add(code)
 
     if not codes:
         return current if current is not None else RankingPreferences()
 
-    presets = [_PRESETS[code] for code in sorted(codes)]
-    weights = {
-        field: sum(preset[field] for preset in presets)
-        for field in presets[0]
+    weights = _redistribute_weights(
+        (current if current is not None else RankingPreferences()).normalized_weights()
+    )
+    targets = {_INTENT_CRITERIA[code] for code in codes}
+    increases = {
+        field: min(_ADJUSTMENT_STEP, _MAX_WEIGHT - weight)
+        for field, weight in weights.items() if field in targets
     }
-    total = sum(weights.values())
-    return RankingPreferences(**{
-        field: weight / total for field, weight in weights.items()
-    })
+    donors = {field: weight for field, weight in weights.items() if field not in targets}
+    available = max(0.0, fsum(weight - _MIN_WEIGHT for weight in donors.values()))
+    requested = fsum(increases.values())
+    scale = min(1.0, available / requested) if requested else 0.0
+    adjusted = {field: weights[field] + increase * scale for field, increase in increases.items()}
+    adjusted.update(_redistribute_weights(donors, 1.0 - fsum(adjusted.values())))
+    if not isclose(fsum(adjusted.values()), 1.0, abs_tol=1e-12) or any(
+        not _MIN_WEIGHT <= weight <= _MAX_WEIGHT for weight in adjusted.values()
+    ):
+        raise ValueError("Adjusted ranking weights must sum to one and respect policy bounds.")
+    return RankingPreferences(
+        price_weight=adjusted["price"],
+        weather_weight=adjusted["weather"],
+        changeovers_weight=adjusted["stops"],
+        duration_weight=adjusted["duration"],
+    )

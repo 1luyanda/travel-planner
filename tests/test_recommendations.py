@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import asdict
 from datetime import date
 from typing import Any
 from unittest.mock import AsyncMock, patch
@@ -200,7 +201,7 @@ class RecommendServiceTests(unittest.IsolatedAsyncioTestCase):
 
 
 class RefineServiceTests(unittest.IsolatedAsyncioTestCase):
-    async def test_cheaper_keeps_budget_and_applies_price_weight_preset(self) -> None:
+    async def test_cheaper_keeps_budget_and_adjusts_price_weight(self) -> None:
         service, data = _service(
             [
                 _feedback_payload(stronger_price_preference=True),
@@ -244,23 +245,26 @@ class RefineServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(data.last_query.max_price_eur if data.last_query else None, 400)
 
-    async def test_price_and_weather_feedback_change_order_using_policy_presets(self) -> None:
+    async def test_price_and_weather_feedback_change_order_using_dynamic_weights(self) -> None:
         cases = [
-            ("Cheaper", "stronger_price_preference", 2, 0,
-             RankingPreferences(0.50, 0.20, 0.15, 0.15), [MALTA_ID, ROME_ID], [ROME_ID, MALTA_ID]),
-            ("Warmer", "prefer_warmer", 0, 2,
-             RankingPreferences(0.20, 0.50, 0.15, 0.15), [ROME_ID, MALTA_ID], [MALTA_ID, ROME_ID]),
+            ("Cheaper", "stronger_price_preference", 1, 0,
+             RankingPreferences(0.40, 9 / 35, 6 / 35, 6 / 35),
+             [MALTA_ID, ROME_ID, LISBON_ID], [ROME_ID, MALTA_ID, LISBON_ID]),
+            ("Warmer", "prefer_warmer", 0, 1,
+             RankingPreferences(9 / 35, 0.40, 6 / 35, 6 / 35),
+             [ROME_ID, MALTA_ID, LISBON_ID], [MALTA_ID, ROME_ID, LISBON_ID]),
         ]
         for text, code, cheap_stops, warm_stops, expected, before, after in cases:
-            for supplied in (None, RankingPreferencesBody(price_weight=0.8)):
+            for supplied in (None, RankingPreferencesBody(**asdict(RankingPreferences()))):
                 with self.subTest(text=text, supplied=supplied):
-                    records = cosmos_records()[:2]
+                    records = cosmos_records()
                     records[0].update(price_eur=50, temp_max_c=10, outbound_stops=cheap_stops)
                     records[1].update(price_eur=200, temp_max_c=30, outbound_stops=warm_stops)
+                    records[2].update(price_eur=200, temp_max_c=10, outbound_stops=3)
                     data = RecordingDataService()
                     data.get_destination_records = AsyncMock(return_value=records)
                     service, _ = _service(
-                        [_feedback_payload(**{code: True}), _explain_payload(ROME_ID, MALTA_ID)],
+                        [_feedback_payload(**{code: True}), _explain_payload()],
                         data,
                     )
                     body = RefineRequest(text=text, request=_trip(), ranking_preferences=supplied)
@@ -276,7 +280,8 @@ class RefineServiceTests(unittest.IsolatedAsyncioTestCase):
 
                     self.assertEqual(result.status, "ready")
                     ranking.assert_called_once()
-                    self.assertEqual(ranking.call_args.args[1], expected)
+                    for field, weight in asdict(expected).items():
+                        self.assertAlmostEqual(getattr(ranking.call_args.args[1], field), weight)
                     self.assertEqual([item.code for item in result.intents], [code])
                     self.assertEqual([item.destination_id for item in result.recommendations], after)
                     self.assertGreater(
@@ -284,6 +289,57 @@ class RefineServiceTests(unittest.IsolatedAsyncioTestCase):
                         result.recommendations[1].final_score,
                     )
                     self.assertEqual(body.model_dump(), snapshot)
+
+    async def test_repeated_cheaper_refinements_use_supplied_current_state_until_cap(self) -> None:
+        service, data = _service([
+            response
+            for _ in range(6)
+            for response in (_feedback_payload(stronger_price_preference=True), _explain_payload())
+        ])
+        current = RankingPreferences()
+        trip = _trip()
+        for expected_price in (0.4, 0.5, 0.6, 0.7, 0.7, 0.7):
+            # The service is stateless: the caller supplies current preferences.
+            body = RefineRequest(
+                text="Cheaper", request=trip,
+                ranking_preferences=RankingPreferencesBody(**asdict(current)),
+            )
+            snapshot = body.model_dump()
+            with patch(
+                "backend.services.recommendations.rank_candidates", wraps=rank_candidates,
+            ) as ranking:
+                result = await service.refine(body)
+            self.assertEqual(result.status, "ready")
+            ranking.assert_called_once()
+            current = ranking.call_args.args[1]
+            self.assertAlmostEqual(current.price_weight, expected_price)
+            self.assertAlmostEqual(sum(asdict(current).values()), 1)
+            self.assertTrue(all(0.05 <= weight <= 0.70 for weight in asdict(current).values()))
+            self.assertEqual(data.last_query.max_price_eur, 400)
+            self.assertEqual(body.model_dump(), snapshot)
+            trip = result.updated_request
+
+    async def test_ranking_intent_and_hard_constraints_can_apply_together(self) -> None:
+        service, data = _service([
+            _feedback_payload(stronger_price_preference=True, budget=70, currency="EUR",
+                              direct_flights_only=True),
+            _explain_payload(ROME_ID),
+        ])
+        with patch(
+            "backend.services.recommendations.rank_candidates", wraps=rank_candidates,
+        ) as ranking:
+            result = await service.refine(RefineRequest(
+                text="Cheaper, my budget is now EUR 70, direct flights only", request=_trip(),
+                ranking_preferences=RankingPreferencesBody(
+                    price_weight=0.4, weather_weight=0.3,
+                    changeovers_weight=0.2, duration_weight=0.1,
+                ),
+            ))
+        self.assertEqual(result.status, "ready")
+        self.assertAlmostEqual(ranking.call_args.args[1].price_weight, 0.5)
+        self.assertEqual(data.last_query.max_price_eur, 70)
+        self.assertEqual(data.last_query.max_changeovers, 0)
+        self.assertEqual([item.destination_id for item in result.recommendations], [ROME_ID])
 
     async def test_constraint_only_feedback_preserves_default_or_supplied_weights(self) -> None:
         cases = [
