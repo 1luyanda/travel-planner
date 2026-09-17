@@ -7,6 +7,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from backend.api import router
 from backend.config import get_settings
@@ -40,14 +42,44 @@ def create_app() -> FastAPI:
         title="Travel Planner API",
         version="0.1.0",
         lifespan=lifespan,
+        docs_url=None if settings.app_environment == "production" else "/docs",
+        redoc_url=None if settings.app_environment == "production" else "/redoc",
+        openapi_url=(
+            None
+            if settings.app_environment == "production"
+            else "/openapi.json"
+        ),
+    )
+    application.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=list(settings.trusted_hosts),
     )
     application.add_middleware(
         CORSMiddleware,
         allow_origins=list(settings.frontend_origins),
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_credentials=False,
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type", "X-API-Key"],
     )
+
+    @application.middleware("http")
+    async def limit_request_size(request, call_next):
+        content_length = request.headers.get("content-length")
+        if content_length is not None:
+            try:
+                request_size = int(content_length)
+            except ValueError:
+                return JSONResponse(
+                    status_code=400,
+                    content={"detail": "Invalid Content-Length header."},
+                )
+            if request_size < 0 or request_size > settings.max_request_bytes:
+                return JSONResponse(
+                    status_code=413,
+                    content={"detail": "Request body is too large."},
+                )
+        return await call_next(request)
+
     application.include_router(router)
     return application
 

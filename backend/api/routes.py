@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from backend.contracts import (
     CandidateResponse,
@@ -16,6 +16,7 @@ from backend.contracts import (
     RefineRequest,
 )
 from backend.repositories import RepositoryError, RepositoryNotFoundError
+from backend.security import require_api_key
 from backend.services import CandidateService, RecommendationService
 
 
@@ -39,6 +40,7 @@ def _flight_query(
     country: str | None = None,
     max_changeovers: int | None = None,
     max_duration_minutes: int | None = None,
+    limit: int = 100,
 ) -> FlightQuery:
     return FlightQuery(
         origin_id=origin_id,
@@ -49,6 +51,7 @@ def _flight_query(
         destination_country_code=country,
         max_changeovers=max_changeovers,
         max_flight_duration_minutes=max_duration_minutes,
+        limit=limit,
     )
 
 
@@ -57,7 +60,11 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@router.get("/origins", response_model=list[OriginItem])
+@router.get(
+    "/origins",
+    response_model=list[OriginItem],
+    dependencies=[Depends(require_api_key)],
+)
 async def search_origins(
     request: Request,
     q: str = Query(min_length=1, max_length=100),
@@ -74,7 +81,11 @@ async def search_origins(
         ) from error
 
 
-@router.get("/origins/{origin_id}", response_model=OriginItem)
+@router.get(
+    "/origins/{origin_id}",
+    response_model=OriginItem,
+    dependencies=[Depends(require_api_key)],
+)
 async def get_origin(origin_id: str, request: Request) -> OriginItem:
     """Point-read one origin by its city/country identifier."""
 
@@ -92,15 +103,20 @@ async def get_origin(origin_id: str, request: Request) -> OriginItem:
         ) from error
 
 
-@router.get("/flights", response_model=FlightListResponse)
+@router.get(
+    "/flights",
+    response_model=FlightListResponse,
+    dependencies=[Depends(require_api_key)],
+)
 async def get_flights(
     request: Request,
     origin_id: str = Query(min_length=3, max_length=150),
     departure_date: date | None = None,
     return_date: date | None = None,
-    max_price: float | None = Query(default=None, gt=0),
-    min_temp: float | None = None,
+    max_price: float | None = Query(default=None, gt=0, le=1_000_000),
+    min_temp: float | None = Query(default=None, ge=-100, le=100),
     country: str | None = Query(default=None, min_length=2, max_length=2),
+    limit: int = Query(default=100, ge=1, le=200),
 ) -> FlightListResponse:
     """Load every Cosmos flight document for one origin partition."""
 
@@ -111,6 +127,7 @@ async def get_flights(
         max_price,
         min_temp,
         country,
+        limit=limit,
     )
 
     try:
@@ -123,17 +140,22 @@ async def get_flights(
         ) from error
 
 
-@router.get("/candidates", response_model=CandidateResponse)
+@router.get(
+    "/candidates",
+    response_model=CandidateResponse,
+    dependencies=[Depends(require_api_key)],
+)
 async def get_candidates(
     request: Request,
     origin_id: str = Query(min_length=3, max_length=150),
     departure_date: date | None = None,
     return_date: date | None = None,
-    max_price: float | None = Query(default=None, gt=0),
-    min_temp: float | None = None,
+    max_price: float | None = Query(default=None, gt=0, le=1_000_000),
+    min_temp: float | None = Query(default=None, ge=-100, le=100),
     country: str | None = Query(default=None, min_length=2, max_length=2),
-    max_changeovers: int | None = Query(default=None, ge=0),
-    max_duration_minutes: int | None = Query(default=None, gt=0),
+    max_changeovers: int | None = Query(default=None, ge=0, le=20),
+    max_duration_minutes: int | None = Query(default=None, gt=0, le=10_080),
+    limit: int = Query(default=100, ge=1, le=200),
 ) -> CandidateResponse:
     """Validate Cosmos flights and return ranking-ready candidates."""
 
@@ -146,6 +168,7 @@ async def get_candidates(
         country,
         max_changeovers,
         max_duration_minutes,
+        limit,
     )
 
     try:
@@ -157,7 +180,11 @@ async def get_candidates(
         ) from error
 
 
-@router.post("/recommend", response_model=RecommendationResponse)
+@router.post(
+    "/recommend",
+    response_model=RecommendationResponse,
+    dependencies=[Depends(require_api_key)],
+)
 async def recommend(
     request: Request,
     body: RecommendRequest,
@@ -173,7 +200,11 @@ async def recommend(
         ) from error
 
 
-@router.post("/refine", response_model=RecommendationResponse)
+@router.post(
+    "/refine",
+    response_model=RecommendationResponse,
+    dependencies=[Depends(require_api_key)],
+)
 async def refine(
     request: Request,
     body: RefineRequest,

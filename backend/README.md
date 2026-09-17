@@ -21,6 +21,10 @@ unranked.
 
    - `COSMOS_CONNECTION_STRING` — the PRIMARY CONNECTION STRING.
    - `COSMOS_DATABASE=TravelPlaner` — spelling and case matter.
+   - `API_AUTH_KEY` — a server-side key used by the Vite development proxy
+     or production gateway. Generate it with
+     `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
+   - `TRUSTED_HOSTS` — comma-separated host names accepted by the API.
 
    The backend uses the fixed `origins` and `flights` container names.
 
@@ -98,7 +102,12 @@ feedback has no ranking intent, the supplied weights (or defaults) stay.
   `airports`. Unmatched or ambiguous codes return `needs_input`.
 - Refine calls Ivan's `preferences_from_intents` for cheaper/warmer. Luyanda
   can still send `ranking_preferences` as the starting weights.
-- Authentication and authorization are not implemented yet.
+- Data and recommendation routes require the server-side `X-API-Key`
+  configured through `API_AUTH_KEY`. The health endpoint remains public.
+  The browser must not receive this key; local Vite and production gateways
+  inject it server-side. User authentication with Microsoft Entra External ID
+  is planned separately. Production rate limits should be enforced by the
+  gateway and returned as `429 Too Many Requests`.
 
 # AI request parser and explanations
 

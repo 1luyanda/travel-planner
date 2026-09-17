@@ -63,11 +63,15 @@ async function requestJson(path, { signal } = {}) {
 
   if (!response.ok) {
     const fallback =
-      response.status === 503
-        ? 'Stored travel data is temporarily unavailable.'
-        : response.status === 404
-          ? 'That stored origin was not found.'
-          : 'Could not load stored travel data. Please try again.'
+      response.status === 401
+        ? 'The travel API authentication configuration is invalid.'
+        : response.status === 503
+          ? 'Stored travel data is temporarily unavailable.'
+          : response.status === 404
+            ? 'That stored origin was not found.'
+            : response.status === 429
+              ? 'Too many requests. Please wait and try again.'
+              : 'Could not load stored travel data. Please try again.'
     throw new ApiError(detailMessage(body, fallback), {
       status: response.status,
       body,

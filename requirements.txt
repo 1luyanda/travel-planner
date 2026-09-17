@@ -1,3 +1,4 @@
+# Authoritative runtime and test dependencies for the repository.
 azure-cosmos>=4.7,<5
 fastapi>=0.115,<1
 openai>=1.40,<2

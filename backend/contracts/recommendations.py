@@ -22,24 +22,24 @@ class RankingPreferencesBody(BaseModel):
     ``preferences_from_intents``.
     """
 
-    price_weight: float | None = None
-    weather_weight: float | None = None
-    changeovers_weight: float | None = None
-    duration_weight: float | None = None
+    price_weight: float | None = Field(default=None, ge=0, le=1)
+    weather_weight: float | None = Field(default=None, ge=0, le=1)
+    changeovers_weight: float | None = Field(default=None, ge=0, le=1)
+    duration_weight: float | None = Field(default=None, ge=0, le=1)
 
 
 class RecommendRequest(BaseModel):
     """First-search body: free text plus optional form fields."""
 
-    text: str = ""
-    form_fields: dict[str, Any] | None = None
+    text: str = Field(default="", max_length=4000)
+    form_fields: dict[str, Any] | None = Field(default=None, max_length=20)
     ranking_preferences: RankingPreferencesBody | None = None
 
 
 class RefineRequest(BaseModel):
     """Feedback body against a previously validated trip request."""
 
-    text: str = Field(min_length=1)
+    text: str = Field(min_length=1, max_length=2000)
     request: TripRequest
     ranking_preferences: RankingPreferencesBody | None = None
 

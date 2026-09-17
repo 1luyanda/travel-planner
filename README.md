@@ -13,8 +13,9 @@ root. Do not commit secrets.
 # Getting Started
 
 Run the API and the UI in two terminals. Copy `.env.example` to `.env` and
-set `COSMOS_CONNECTION_STRING` and `COSMOS_DATABASE` before starting the
-backend.
+set `COSMOS_CONNECTION_STRING`, `COSMOS_DATABASE`, and a generated
+`API_AUTH_KEY` before starting the backend. The Vite development proxy injects
+the key server-side; do not expose it in a `VITE_` frontend variable.
 
 ## Terminal 1: backend
 

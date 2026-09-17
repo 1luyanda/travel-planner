@@ -5,6 +5,7 @@ from __future__ import annotations
 from backend.contracts import (
     CandidateItem,
     CandidateResponse,
+    FlightItem,
     FlightListResponse,
     FlightQuery,
     OriginItem,
@@ -40,9 +41,9 @@ class CandidateService:
         flights = await self._data_service.get_destination_records(request)
         return FlightListResponse(
             origin_id=request.origin_id,
-            flights=flights,
+            flights=[FlightItem.model_validate(flight) for flight in flights],
             count=len(flights),
-            data_source=self._data_service.source_name,
+            data_source="stored",
         )
 
     async def prepare(self, request: FlightQuery) -> CandidateResponse:
@@ -82,5 +83,5 @@ class CandidateService:
                 )
                 for item in prepared.rejected
             ],
-            data_source=self._data_service.source_name,
+            data_source="stored",
         )

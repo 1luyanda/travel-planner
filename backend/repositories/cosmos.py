@@ -147,7 +147,10 @@ class CosmosDestinationRepository:
         if self._flights is None:
             raise RepositoryError("Cosmos repository has not been connected")
 
-        query = "SELECT * FROM c WHERE c.origin_id = @origin_id"
+        query = (
+            f"SELECT TOP {request.limit} * FROM c "
+            "WHERE c.origin_id = @origin_id"
+        )
         parameters: list[dict[str, Any]] = [
             {"name": "@origin_id", "value": request.origin_id}
         ]

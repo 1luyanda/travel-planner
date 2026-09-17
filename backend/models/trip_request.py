@@ -58,6 +58,7 @@ class ExtractedPreferences(BaseModel):
     )
     origin_text: str | None = Field(
         default=None,
+        max_length=200,
         description="Origin place name when the user did not give an IATA code.",
     )
     departure_date: date | None = None
@@ -68,9 +69,9 @@ class ExtractedPreferences(BaseModel):
     )
     budget: float | None = None
     currency: str | None = None
-    moods: list[str] = Field(default_factory=list)
+    moods: list[str] = Field(default_factory=list, max_length=10)
     direct_flights_only: bool | None = None
-    weather_preference: str | None = None
+    weather_preference: str | None = Field(default=None, max_length=100)
 
     @field_validator("origin", "currency")
     @classmethod
@@ -80,7 +81,10 @@ class ExtractedPreferences(BaseModel):
     @field_validator("moods")
     @classmethod
     def _clean_moods(cls, value: list[str]) -> list[str]:
-        return [item.strip() for item in value if item and str(item).strip()]
+        cleaned = [item.strip() for item in value if item and str(item).strip()]
+        if any(len(item) > 50 for item in cleaned):
+            raise ValueError("Each mood must be 50 characters or fewer.")
+        return cleaned
 
     @field_validator("origin_text", "weather_preference")
     @classmethod
@@ -97,17 +101,25 @@ class TripRequest(BaseModel):
     origin: str = Field(description="3-letter origin IATA code.")
     departure_date: date
     return_date: date
-    duration_days: int | None = None
-    budget: float
+    duration_days: int | None = Field(default=None, gt=0, le=60)
+    budget: float = Field(gt=0, le=1_000_000)
     currency: str
-    moods: list[str] = Field(default_factory=list)
+    moods: list[str] = Field(default_factory=list, max_length=10)
     direct_flights_only: bool | None = None
-    weather_preference: str | None = None
+    weather_preference: str | None = Field(default=None, max_length=100)
 
     @field_validator("origin", "currency")
     @classmethod
     def _uppercase_code(cls, value: str) -> str:
         return value.upper()
+
+    @field_validator("moods")
+    @classmethod
+    def _validate_moods(cls, value: list[str]) -> list[str]:
+        cleaned = [item.strip() for item in value if item and str(item).strip()]
+        if any(len(item) > 50 for item in cleaned):
+            raise ValueError("Each mood must be 50 characters or fewer.")
+        return cleaned
 
 
 class ParseRequestResult(BaseModel):
