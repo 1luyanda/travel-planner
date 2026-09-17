@@ -1,5 +1,6 @@
 """FastAPI request and response contracts."""
 
+from .auth import AuthResponse, LoginRequest, RegisterRequest
 from .candidates import (
     CandidateItem,
     CandidateResponse,
@@ -18,6 +19,7 @@ from .recommendations import (
 )
 
 __all__ = [
+    "AuthResponse",
     "CandidateItem",
     "CandidateResponse",
     "FlightItem",
@@ -28,6 +30,8 @@ __all__ = [
     "RecommendRequest",
     "RecommendationResponse",
     "RefineRequest",
+    "LoginRequest",
+    "RegisterRequest",
     "RejectedCandidateItem",
     "RejectionItem",
 ]

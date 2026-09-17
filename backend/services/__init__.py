@@ -10,6 +10,11 @@ from .llm import (
     parse_request,
 )
 from .recommendations import RecommendationService
+from .users import (
+    DuplicateEmailError,
+    InvalidCredentialsError,
+    UserService,
+)
 
 __all__ = [
     "CandidateService",
@@ -21,4 +26,7 @@ __all__ = [
     "interpret_feedback",
     "load_llm_environment",
     "parse_request",
+    "DuplicateEmailError",
+    "InvalidCredentialsError",
+    "UserService",
 ]

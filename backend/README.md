@@ -24,9 +24,17 @@ unranked.
    - `API_AUTH_KEY` — a server-side key used by the Vite development proxy
      or production gateway. Generate it with
      `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
+   - `AUTH_SESSION_SECRET` — a separate secret used to sign short-lived
+     HttpOnly authentication cookies.
+   - `AUTH_COOKIE_SECURE=false` for local HTTP demos; production must use
+     `true`.
+   - `COSMOS_USERS_CONTAINER=users` — the users container name.
    - `TRUSTED_HOSTS` — comma-separated host names accepted by the API.
 
-   The backend uses the fixed `origins` and `flights` container names.
+   The backend uses the fixed `origins` and `flights` container names plus the
+   configured users container. Create the users container with partition key
+   `/email_normalized` and a unique key on `/email_normalized` before
+   registering accounts.
 
 3. Start FastAPI:
 
@@ -39,10 +47,14 @@ API documentation is available at `http://localhost:8000/docs`.
 ## Endpoints
 
 - `GET /api/health`
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `POST /api/auth/logout`
+- `GET /api/auth/me`
 - `GET /api/origins?q=zag&country=HR`
 - `GET /api/origins/{origin_id}`
-- `GET /api/flights` — raw Cosmos flight documents for one origin partition
-  (airline, coordinates, weather, and other stored fields).
+- `GET /api/flights` — allowlisted flight fields for one origin partition
+  (airline, coordinates, and display fields).
   Required: `origin_id`. Optional: `departure_date`, `return_date`, `max_price`,
   `min_temp`, `country`. Does not accept `max_changeovers` or
   `max_duration_minutes`.
@@ -105,9 +117,10 @@ feedback has no ranking intent, the supplied weights (or defaults) stay.
 - Data and recommendation routes require the server-side `X-API-Key`
   configured through `API_AUTH_KEY`. The health endpoint remains public.
   The browser must not receive this key; local Vite and production gateways
-  inject it server-side. User authentication with Microsoft Entra External ID
-  is planned separately. Production rate limits should be enforced by the
-  gateway and returned as `429 Too Many Requests`.
+  inject it server-side. Local accounts use Argon2id password hashes and
+  signed HttpOnly cookies. Passwords and session cookies are never logged.
+  Production rate limits should be enforced by the gateway and returned as
+  `429 Too Many Requests`.
 
 # AI request parser and explanations
 

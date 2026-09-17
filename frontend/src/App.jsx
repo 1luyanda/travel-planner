@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { List, Map as MapIcon, Menu, SlidersHorizontal } from 'lucide-react'
+import { useAuth } from './auth/AuthProvider'
 import Sidebar from './components/Sidebar'
 import Composer from './components/Composer'
 import OriginSelect from './components/OriginSelect'
@@ -54,6 +55,8 @@ function describeResults(results, filters, { dataSource, unmappedCount, rejected
 
 export default function App() {
   const { path, navigate } = useRoute()
+  const { user, loading: authLoading, logout } = useAuth()
+  const userId = user?.id || null
   const [form, setForm] = useState(initialForm)
   const [selectedOrigin, setSelectedOrigin] = useState(null)
   const [searchSnapshot, setSearchSnapshot] = useState(initialForm)
@@ -75,7 +78,8 @@ export default function App() {
   const [draft, setDraft] = useState('')
   const [messages, setMessages] = useState([])
   const [history, setHistory] = useState([])
-  const [savedIds, setSavedIds] = useState(() => loadSavedIds())
+  const [savedIds, setSavedIds] = useState([])
+  const [savedOwner, setSavedOwner] = useState(null)
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [mobilePane, setMobilePane] = useState('list')
@@ -103,14 +107,64 @@ export default function App() {
   const showInspiration = view === 'explore' && !hasSearched
 
   useEffect(() => {
-    persistSavedIds(savedIds)
-  }, [savedIds])
+    const ownerId = user?.id || null
+    setSavedIds(ownerId ? loadSavedIds(ownerId) : [])
+    setSavedOwner(ownerId)
+  }, [user])
+
+  useEffect(() => {
+    if (user && savedOwner === user.id) {
+      persistSavedIds(user.id, savedIds)
+    }
+  }, [savedIds, savedOwner, user])
+
+  const previousWorkspaceUserRef = useRef(undefined)
+  useEffect(() => {
+    if (previousWorkspaceUserRef.current === userId) return
+    previousWorkspaceUserRef.current = userId
+
+    searchAbortRef.current?.abort()
+    searchSeqRef.current += 1
+    setForm(initialForm)
+    setSelectedOrigin(null)
+    setSearchSnapshot(initialForm)
+    setAdaptedResults([])
+    setRejected([])
+    setDataSource(null)
+    setResults([])
+    setWeights(null)
+    setPreviousRanks({})
+    setAppliedFilters(null)
+    setSelectedTrip(null)
+    setSelectedDestinationId(null)
+    setViewportMode('bounds')
+    setLoading(false)
+    setError('')
+    setFlightWarning('')
+    setHasSearched(false)
+    setView('explore')
+    setDraft('')
+    setMessages([])
+    setHistory([])
+    setFiltersOpen(false)
+    setSidebarOpen(false)
+    setMobilePane('list')
+    setPendingSelectId(null)
+    setOriginError('')
+    setFocusOrigin(false)
+  }, [userId])
 
   useEffect(() => {
     if (path !== ROUTES.home && !isPlannerPath(path)) {
       navigate(ROUTES.home, { replace: true })
     }
   }, [navigate, path])
+
+  useEffect(() => {
+    if (!authLoading && isPlannerPath(path) && !user) {
+      navigate(ROUTES.home, { replace: true })
+    }
+  }, [authLoading, navigate, path, user])
 
   useEffect(() => {
     const media = window.matchMedia('(max-width: 780px)')
@@ -484,6 +538,10 @@ export default function App() {
     )
   }
 
+  if (authLoading || !user) {
+    return <div className={styles.workspace}>Loading your account…</div>
+  }
+
   return (
     <div
       className={styles.workspace}
@@ -494,6 +552,8 @@ export default function App() {
         view={view}
         history={history}
         savedCount={savedIds.length}
+        user={user}
+        onLogout={logout}
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         onNewTrip={handleNewTrip}

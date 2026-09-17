@@ -7,6 +7,8 @@ export default function Sidebar({
   view,
   history,
   savedCount,
+  user,
+  onLogout,
   open,
   onClose,
   onNewTrip,
@@ -33,6 +35,12 @@ export default function Sidebar({
         </div>
 
         <p className={styles.demoBadge}>Stored snapshot</p>
+        <div className={styles.accountBox}>
+          <strong>{user.display_name}</strong>
+          <button type="button" className={styles.accountAction} onClick={onLogout}>
+            Log out
+          </button>
+        </div>
 
         <button type="button" className={styles.newTrip} onClick={onNewTrip} title="New trip">
           <Plus size={16} strokeWidth={2} />

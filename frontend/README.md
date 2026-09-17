@@ -12,6 +12,10 @@ npm run dev
 
 Open the URL shown by Vite, normally `http://localhost:5173`.
 
+The landing page provides local registration, sign-in, and logout. Authentication
+uses credentials-inclusive requests and an HttpOnly cookie; the frontend never
+stores a password or session token in localStorage.
+
 ## Build
 
 ```powershell

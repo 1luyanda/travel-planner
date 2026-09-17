@@ -1,4 +1,5 @@
 import BrandMark from './BrandMark'
+import AuthPanel from './AuthPanel'
 import { getDestinationImage } from '../data/destinationImages'
 import { AppLink, ROUTES } from '../utils/routes.jsx'
 import styles from '../landing.module.css'
@@ -26,6 +27,7 @@ export default function LandingPage() {
           <AppLink to={ROUTES.planner} className={styles.startBtn}>
             Start planning
           </AppLink>
+          <AuthPanel />
         </nav>
       </header>
 

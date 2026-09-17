@@ -10,11 +10,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from backend.api import router
+from backend.api import auth_router, router
 from backend.config import get_settings
 from backend.data import DestinationDataService
 from backend.repositories import CosmosDestinationRepository
-from backend.services import CandidateService, RecommendationService
+from backend.services import CandidateService, RecommendationService, UserService
 
 
 @asynccontextmanager
@@ -30,6 +30,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.recommendation_service = RecommendationService(
         candidate_service=app.state.candidate_service
     )
+    app.state.user_service = UserService(repository)
     try:
         yield
     finally:
@@ -57,7 +58,7 @@ def create_app() -> FastAPI:
     application.add_middleware(
         CORSMiddleware,
         allow_origins=list(settings.frontend_origins),
-        allow_credentials=False,
+        allow_credentials=True,
         allow_methods=["GET", "POST"],
         allow_headers=["Content-Type", "X-API-Key"],
     )
@@ -80,6 +81,7 @@ def create_app() -> FastAPI:
                 )
         return await call_next(request)
 
+    application.include_router(auth_router)
     application.include_router(router)
     return application
 

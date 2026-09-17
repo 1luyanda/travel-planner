@@ -137,6 +137,7 @@ def test_cors_allows_configured_origin_and_rejects_other_origins(
     )
 
     assert allowed.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert allowed.headers["access-control-allow-credentials"] == "true"
     assert "access-control-allow-origin" not in disallowed.headers
 
 

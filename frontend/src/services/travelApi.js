@@ -51,7 +51,10 @@ function detailMessage(body, fallback) {
 async function requestJson(path, { signal } = {}) {
   let response
   try {
-    response = await fetch(path, { signal })
+    response = await fetch(path, {
+      signal,
+      credentials: 'include',
+    })
   } catch (error) {
     if (error?.name === 'AbortError') throw error
     throw new ApiError('Could not reach stored travel data. Check that the API is running.', {

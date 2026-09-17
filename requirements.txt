@@ -2,7 +2,8 @@
 azure-cosmos>=4.7,<5
 fastapi>=0.115,<1
 openai>=1.40,<2
-pydantic>=2.9,<3
+pydantic[email]>=2.9,<3
+pwdlib[argon2]>=0.2,<1
 pytest>=8.0
 python-dotenv>=1.0,<2
 uvicorn[standard]>=0.30,<1

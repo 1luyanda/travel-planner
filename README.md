@@ -14,8 +14,14 @@ root. Do not commit secrets.
 
 Run the API and the UI in two terminals. Copy `.env.example` to `.env` and
 set `COSMOS_CONNECTION_STRING`, `COSMOS_DATABASE`, and a generated
-`API_AUTH_KEY` before starting the backend. The Vite development proxy injects
-the key server-side; do not expose it in a `VITE_` frontend variable.
+`API_AUTH_KEY` plus a generated `AUTH_SESSION_SECRET` before starting the
+backend. The Vite development proxy injects the API key server-side; do not
+expose it in a `VITE_` frontend variable.
+
+Create a Cosmos `users` container with partition key `/email_normalized` and a
+unique key on `/email_normalized` before using registration. Local
+authentication stores only Argon2id password hashes and uses short-lived
+signed HttpOnly cookies.
 
 ## Terminal 1: backend
 

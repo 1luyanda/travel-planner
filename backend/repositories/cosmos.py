@@ -9,6 +9,7 @@ from azure.cosmos.exceptions import CosmosHttpResponseError
 
 from backend.config import Settings
 from backend.contracts import FlightQuery, OriginItem
+from backend.models.user import UserDocument
 
 
 ORIGINS_CONTAINER = "origins"
@@ -23,6 +24,10 @@ class RepositoryNotFoundError(RepositoryError):
     """Raised when a requested Cosmos item does not exist."""
 
 
+class RepositoryConflictError(RepositoryError):
+    """Raised when a Cosmos create conflicts with an existing item."""
+
+
 class CosmosDestinationRepository:
     """Reads the data team's flat ``origins`` and ``flights`` containers."""
 
@@ -31,6 +36,7 @@ class CosmosDestinationRepository:
         self._client: CosmosClient | None = None
         self._origins: ContainerProxy | None = None
         self._flights: ContainerProxy | None = None
+        self._users: ContainerProxy | None = None
 
     @property
     def source_name(self) -> str:
@@ -47,6 +53,9 @@ class CosmosDestinationRepository:
         )
         self._origins = database.get_container_client(ORIGINS_CONTAINER)
         self._flights = database.get_container_client(FLIGHTS_CONTAINER)
+        self._users = database.get_container_client(
+            self._settings.users_container_name
+        )
 
     async def search_origins(
         self,
@@ -216,6 +225,78 @@ class CosmosDestinationRepository:
             )
         )
         return rows
+
+    async def find_user_by_email(
+        self,
+        email_normalized: str,
+    ) -> UserDocument | None:
+        """Find a user by normalized email in the users container."""
+
+        if self._users is None:
+            raise RepositoryError("Cosmos repository has not been connected")
+
+        try:
+            rows = [
+                UserDocument.model_validate(item)
+                async for item in self._users.query_items(
+                    query=(
+                        "SELECT TOP 1 * FROM c "
+                        "WHERE c.email_normalized = @email"
+                    ),
+                    parameters=[
+                        {"name": "@email", "value": email_normalized}
+                    ],
+                    partition_key=email_normalized,
+                )
+            ]
+        except (CosmosHttpResponseError, TypeError, ValueError) as error:
+            raise RepositoryError("User lookup failed.") from error
+        return rows[0] if rows else None
+
+    async def get_user(self, user_id: str) -> UserDocument:
+        """Read a user by ID across the users container partitions."""
+
+        if self._users is None:
+            raise RepositoryError("Cosmos repository has not been connected")
+        try:
+            rows = [
+                UserDocument.model_validate(item)
+                async for item in self._users.query_items(
+                    query=(
+                        "SELECT TOP 1 * FROM c "
+                        "WHERE c.id = @user_id"
+                    ),
+                    parameters=[{"name": "@user_id", "value": user_id}],
+                )
+            ]
+        except CosmosHttpResponseError as error:
+            if error.status_code == 404:
+                raise RepositoryNotFoundError(
+                    f"User {user_id!r} was not found"
+                ) from error
+            raise RepositoryError("User lookup failed.") from error
+        if not rows:
+            raise RepositoryNotFoundError(
+                f"User {user_id!r} was not found"
+            )
+        return rows[0]
+
+    async def create_user(self, user: UserDocument) -> UserDocument:
+        """Create a user and preserve duplicate-email conflict handling."""
+
+        if self._users is None:
+            raise RepositoryError("Cosmos repository has not been connected")
+        try:
+            item = await self._users.create_item(
+                body=user.model_dump(mode="json")
+            )
+        except CosmosHttpResponseError as error:
+            if error.status_code == 409:
+                raise RepositoryConflictError(
+                    "User already exists."
+                ) from error
+            raise RepositoryError("User creation failed.") from error
+        return UserDocument.model_validate(item)
 
     async def close(self) -> None:
         if self._client is not None:

@@ -13,6 +13,7 @@ from backend.models.trip_request import (
     ParseRequestResult,
     TripRequest,
 )
+from backend.models.user import UserDocument, UserResponse
 
 __all__ = [
     "DestinationExplanation",
@@ -24,4 +25,6 @@ __all__ = [
     "ParseRequestResult",
     "RankingIntent",
     "TripRequest",
+    "UserDocument",
+    "UserResponse",
 ]
