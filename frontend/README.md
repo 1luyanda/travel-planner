@@ -1,6 +1,10 @@
 # Travel Planner frontend
 
-React UI for Team 4's Travel Planner. It searches stored Cosmos snapshots through FastAPI (`/api/origins`, `/api/candidates`, `/api/flights`) and ranks results in the browser. Fares are not live or bookable. Start the backend first so the Vite `/api` proxy can reach `http://127.0.0.1:8000`.
+React UI for Team 4's Travel Planner. The main planner flow calls FastAPI
+`POST /api/recommend` and `POST /api/refine`. Origin autocomplete uses
+`GET /api/origins`. `/api/flights` is only used to enrich map pins and photos;
+it does not rank results. Fares are not live or bookable. Start the backend
+first so the Vite `/api` proxy can reach `http://127.0.0.1:8000`.
 
 ## Run locally (Windows PowerShell)
 
@@ -22,6 +26,10 @@ npm run build
 
 ## Notes
 
-- Choose a stored origin city before searching. `origin_id` values such as `zagreb-hr` are not IATA codes.
-- Ranking runs once in the browser because `/api/candidates` is unranked.
-- Missing optional fields stay unavailable; map pins require valid destination coordinates from flight documents.
+- Natural-language parsing, ranking, and explanations run in the planner service.
+- Origin autocomplete is optional. A 3-letter IATA code in the prompt or a
+  selected origin is sent as `form_fields.origin`.
+- Missing dates, budget, or currency are returned as `needs_input` with
+  `clarification_questions`.
+- Missing optional fields stay unavailable; map pins require valid destination
+  coordinates from flight documents.

@@ -11,9 +11,8 @@ import {
   formatTemperature,
 } from '../utils/format'
 import { snapshotLabel } from '../utils/adaptResults'
-import { scoreBreakdown } from '../utils/ranking'
+import { backendScoreItems, explanationView } from '../utils/plannerFlow'
 
-/** Omit a details row when the mock JSON has no value for that field. */
 function Row({ label, value }) {
   if (value == null || value === '') return null
   return (
@@ -25,13 +24,10 @@ function Row({ label, value }) {
 }
 
 /**
- * Right-hand slide-over with real mock fields and the ranking breakdown.
+ * Right-hand slide-over with planner explanation, evidence, and scores.
  * Escape, overlay click, and Close all dismiss it and restore focus.
- * @param {object | null} destination Selected trip, or null when closed.
- * @param {object | null} weights Current ranking weights.
- * @param {() => void} onClose
  */
-export default function TripDetailsDrawer({ destination, weights, onClose }) {
+export default function TripDetailsDrawer({ destination, onClose }) {
   const titleId = useId()
   const closeRef = useRef(null)
   const flight = destination?.flight || {}
@@ -39,9 +35,9 @@ export default function TripDetailsDrawer({ destination, weights, onClose }) {
   const weather = destination?.weather || {}
   const country = destination?.country || {}
   const airline = formatAirline(flight)
-  const breakdown = destination ? scoreBreakdown(destination, weights) : []
+  const breakdown = destination ? backendScoreItems(destination) : []
+  const { summary, evidence } = explanationView(destination)
 
-  // Trap nothing heavy: focus Close, lock body scroll, and listen for Escape.
   useEffect(() => {
     if (!destination) return undefined
 
@@ -77,6 +73,15 @@ export default function TripDetailsDrawer({ destination, weights, onClose }) {
           </button>
         </div>
 
+        {summary && <p className="drawer-summary">{summary}</p>}
+        {evidence.length > 0 && (
+          <ul className="drawer-evidence">
+            {evidence.map((item) => (
+              <li key={item.id || item.statement}>{item.statement}</li>
+            ))}
+          </ul>
+        )}
+
         <dl className="drawer-list">
           <Row label="Airport" value={place.airport || NOT_AVAILABLE} />
           <Row label="Price" value={formatPrice(flight) || NOT_AVAILABLE} />
@@ -94,10 +99,12 @@ export default function TripDetailsDrawer({ destination, weights, onClose }) {
           <Row label="Data" value={snapshotLabel(destination.dataSource)} />
         </dl>
 
-        <section className="drawer-score" aria-labelledby={`${titleId}-score`}>
-          <h3 id={`${titleId}-score`}>Ranking breakdown</h3>
-          <ScoreBreakdown items={breakdown} total={destination.scores?.total} />
-        </section>
+        {breakdown.length > 0 && (
+          <section className="drawer-score" aria-labelledby={`${titleId}-score`}>
+            <h3 id={`${titleId}-score`}>Planner scores</h3>
+            <ScoreBreakdown items={breakdown} total={destination.scores?.total} />
+          </section>
+        )}
       </aside>
     </div>
   )

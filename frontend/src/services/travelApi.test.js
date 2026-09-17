@@ -5,6 +5,8 @@ import {
   fetchCandidates,
   fetchFlights,
   fetchOrigin,
+  recommendTrip,
+  refineTrip,
   searchOrigins,
 } from './travelApi'
 
@@ -152,3 +154,150 @@ describe('fetchFlights', () => {
     expect(payload.flights[0].id).toBe('ZAG-ROM-2026-09-18')
   })
 })
+
+const tripRequest = {
+  origin: 'ZAG',
+  departure_date: '2026-09-21',
+  return_date: '2026-09-25',
+  budget: 400,
+  currency: 'EUR',
+  moods: ['relaxing'],
+  weather_preference: 'warm',
+}
+
+const readyRecommendation = {
+  status: 'ready',
+  request: tripRequest,
+  updated_request: null,
+  origin_id: 'zagreb-hr',
+  origin: { id: 'zagreb-hr', city: 'Zagreb', country: 'Croatia', country_code: 'HR' },
+  recommendations: [
+    {
+      destination_id: 'ZAG-ROM-2026-09-18',
+      destination_iata: 'FCO',
+      city: 'Rome',
+      rank: 1,
+      price_eur: 65,
+      changeover_count: 0,
+      flight_duration_minutes: 170,
+      average_max_temperature_c: 27.8,
+      price_score: 1,
+      weather_score: 0.4,
+      stops_score: 1,
+      duration_score: 0.8,
+      final_score: 0.82,
+      summary: 'Rome stays within budget and is a short hop from Zagreb.',
+      evidence: [{ id: 'e1', code: 'within_budget', statement: 'Fare is EUR 65 against a EUR 400 budget.' }],
+    },
+  ],
+  rejected: [],
+  issues: [],
+  clarification_questions: [],
+  data_source: 'cosmos://TravelPlaner/flights',
+}
+
+describe('recommendTrip', () => {
+  it('POSTs JSON to /api/recommend using backend field names', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url, options) => {
+        expect(url).toBe('/api/recommend')
+        expect(options.method).toBe('POST')
+        expect(options.headers['Content-Type']).toBe('application/json')
+        expect(JSON.parse(options.body)).toEqual({
+          text: 'Warm trip from ZAG',
+          form_fields: { origin: 'ZAG', budget: 400, currency: 'EUR' },
+        })
+        return { ok: true, json: async () => readyRecommendation }
+      }),
+    )
+
+    const payload = await recommendTrip({
+      text: 'Warm trip from ZAG',
+      form_fields: { origin: 'ZAG', budget: 400, currency: 'EUR' },
+    })
+    expect(payload.status).toBe('ready')
+    expect(payload.request).toEqual(tripRequest)
+    expect(payload.recommendations[0].city).toBe('Rome')
+  })
+
+  it('keeps GET origin autocomplete working alongside POST', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url) => {
+        expect(String(url)).toContain('/api/origins?q=zag')
+        return { ok: true, json: async () => [{ id: 'zagreb-hr', city: 'Zagreb' }] }
+      }),
+    )
+    const origins = await searchOrigins('zag')
+    expect(origins[0].id).toBe('zagreb-hr')
+  })
+
+  it('propagates abort without returning mock recommendations', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url, { signal }) => {
+        if (signal?.aborted) {
+          const error = new Error('Aborted')
+          error.name = 'AbortError'
+          throw error
+        }
+        return { ok: true, json: async () => readyRecommendation }
+      }),
+    )
+    await expect(recommendTrip({ text: 'From ZAG' }, { signal: controller.signal })).rejects.toMatchObject({
+      name: 'AbortError',
+    })
+  })
+
+  it('surfaces backend error messages and empty non-JSON bodies', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: false,
+        status: 503,
+        json: async () => {
+          throw new Error('not json')
+        },
+      })),
+    )
+    await expect(recommendTrip({ text: 'From ZAG' })).rejects.toMatchObject({
+      name: 'ApiError',
+      status: 503,
+      message: 'Stored travel data is temporarily unavailable.',
+    })
+  })
+})
+
+describe('refineTrip', () => {
+  it('POSTs the saved TripRequest to /api/refine', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url, options) => {
+        expect(url).toBe('/api/refine')
+        expect(options.method).toBe('POST')
+        expect(JSON.parse(options.body)).toEqual({ text: 'Cheaper', request: tripRequest })
+        return {
+          ok: true,
+          json: async () => ({
+            ...readyRecommendation,
+            request: tripRequest,
+            updated_request: { ...tripRequest, weather_preference: 'warm' },
+          }),
+        }
+      }),
+    )
+    const payload = await refineTrip({ text: 'Cheaper', request: tripRequest })
+    expect(payload.updated_request.origin).toBe('ZAG')
+  })
+
+  it('rejects refine without a saved request', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(refineTrip({ text: 'Cheaper' })).rejects.toBeInstanceOf(ApiError)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+

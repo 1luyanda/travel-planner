@@ -5,7 +5,6 @@ import styles from '../workspace.module.css'
 export default function ResultsList({
   results,
   previousRanks,
-  weights,
   selectedId,
   savedIds,
   onSelect,
@@ -34,12 +33,11 @@ export default function ResultsList({
             <DestinationCard
               key={destination.id || `${destination.destination?.city}-${index}`}
               destination={destination}
-              rank={index + 1}
+              rank={destination.rank || index + 1}
               previousRank={previousRanks[destination.id]}
               isBestMatch={index === 0 && destination.scores?.total != null}
               isSelected={destination.id === selectedId}
               isSaved={savedIds.includes(destination.id)}
-              weights={weights}
               onSelect={onSelect}
               onToggleSaved={onToggleSaved}
               onViewDetails={onViewDetails}

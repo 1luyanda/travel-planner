@@ -38,8 +38,8 @@ export default function FiltersPopover({
           </button>
         </header>
         <p className={styles.panelHint}>
-          Budget and direct-flight changes request an updated stored shortlist. Weather preference
-          only re-ranks the trips already loaded. Origin is set in Flying from.
+          Budget, direct-flight, and weather changes request an updated recommendation from the
+          planner. Origin is set in Flying from.
         </p>
 
         <label htmlFor="filter-budget">

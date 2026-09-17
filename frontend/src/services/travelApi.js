@@ -48,10 +48,18 @@ function detailMessage(body, fallback) {
   return fallback
 }
 
-async function requestJson(path, { signal } = {}) {
+const RECOMMEND_STATUSES = new Set(['ready', 'needs_input', 'error'])
+
+async function requestJson(path, { signal, method = 'GET', body } = {}) {
+  const options = { method, signal }
+  if (body !== undefined) {
+    options.headers = { 'Content-Type': 'application/json', Accept: 'application/json' }
+    options.body = JSON.stringify(body)
+  }
+
   let response
   try {
-    response = await fetch(path, { signal })
+    response = await fetch(path, options)
   } catch (error) {
     if (error?.name === 'AbortError') throw error
     throw new ApiError('Could not reach stored travel data. Check that the API is running.', {
@@ -59,7 +67,7 @@ async function requestJson(path, { signal } = {}) {
     })
   }
 
-  const body = await parseJsonBody(response)
+  const payload = await parseJsonBody(response)
 
   if (!response.ok) {
     const fallback =
@@ -67,20 +75,95 @@ async function requestJson(path, { signal } = {}) {
         ? 'Stored travel data is temporarily unavailable.'
         : response.status === 404
           ? 'That stored origin was not found.'
-          : 'Could not load stored travel data. Please try again.'
-    throw new ApiError(detailMessage(body, fallback), {
+          : response.status === 422
+            ? 'The planner could not read that request. Please check the details and try again.'
+            : 'Could not load stored travel data. Please try again.'
+    throw new ApiError(detailMessage(payload, fallback), {
       status: response.status,
-      body,
+      body: payload,
     })
   }
 
-  if (body == null) {
+  if (payload == null) {
     throw new ApiError('Stored travel data could not be read. Please try again.', {
       status: response.status,
     })
   }
 
-  return body
+  return payload
+}
+
+function asObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : null
+}
+
+function asList(value) {
+  return Array.isArray(value) ? value : []
+}
+
+function normalizeRecommendationResponse(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    throw new ApiError('The planner returned an unexpected response.')
+  }
+  if (!RECOMMEND_STATUSES.has(data.status)) {
+    throw new ApiError('The planner returned an unexpected response.')
+  }
+  return {
+    status: data.status,
+    request: asObject(data.request),
+    updated_request: asObject(data.updated_request),
+    preferences: asObject(data.preferences),
+    origin: asObject(data.origin),
+    origin_id: typeof data.origin_id === 'string' ? data.origin_id : null,
+    recommendations: asList(data.recommendations),
+    rejected: asList(data.rejected),
+    intents: asList(data.intents),
+    changes: asList(data.changes),
+    issues: asList(data.issues).filter((item) => typeof item === 'string' && item.trim()),
+    clarification_questions: asList(data.clarification_questions).filter(
+      (item) => typeof item === 'string' && item.trim(),
+    ),
+    data_source: typeof data.data_source === 'string' ? data.data_source : null,
+  }
+}
+
+export async function recommendTrip(payload = {}, { signal } = {}) {
+  const body = {
+    text: typeof payload.text === 'string' ? payload.text : '',
+  }
+  if (payload.form_fields && typeof payload.form_fields === 'object' && !Array.isArray(payload.form_fields)) {
+    body.form_fields = payload.form_fields
+  }
+  if (
+    payload.ranking_preferences &&
+    typeof payload.ranking_preferences === 'object' &&
+    !Array.isArray(payload.ranking_preferences)
+  ) {
+    body.ranking_preferences = payload.ranking_preferences
+  }
+  const data = await requestJson('/api/recommend', { method: 'POST', body, signal })
+  return normalizeRecommendationResponse(data)
+}
+
+export async function refineTrip(payload = {}, { signal } = {}) {
+  const text = typeof payload.text === 'string' ? payload.text.trim() : ''
+  if (!text) {
+    throw new ApiError('Feedback text is required to refine this trip.')
+  }
+  const request = asObject(payload.request)
+  if (!request) {
+    throw new ApiError('A saved trip request is required to refine results.')
+  }
+  const body = { text, request }
+  if (
+    payload.ranking_preferences &&
+    typeof payload.ranking_preferences === 'object' &&
+    !Array.isArray(payload.ranking_preferences)
+  ) {
+    body.ranking_preferences = payload.ranking_preferences
+  }
+  const data = await requestJson('/api/refine', { method: 'POST', body, signal })
+  return normalizeRecommendationResponse(data)
 }
 
 export async function searchOrigins(query, { country, signal } = {}) {
