@@ -9,6 +9,10 @@ from functools import lru_cache
 from dotenv import load_dotenv
 
 
+FLEXIBLE_DATE_WINDOW_DAYS = 7
+MIN_RECOMMENDATION_RESULTS = 3
+
+
 class ConfigurationError(RuntimeError):
     """Raised when required backend configuration is missing."""
 

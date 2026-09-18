@@ -10,6 +10,7 @@ from backend.contracts.candidates import OriginItem, RejectedCandidateItem
 from backend.models.explanation import DestinationExplanation
 from backend.models.feedback import FieldChange, RankingIntent
 from backend.models.trip_request import ExtractedPreferences, TripRequest
+from backend.contracts.flight_dates import DateFallbackSummary, FlightDateMetadata
 
 RecommendStatus = Literal["ready", "needs_input", "error"]
 
@@ -44,7 +45,11 @@ class RefineRequest(BaseModel):
     ranking_preferences: RankingPreferencesBody | None = None
 
 
-class RecommendationResponse(BaseModel):
+class RecommendationItem(DestinationExplanation, FlightDateMetadata):
+    """Ranked explanation with retrieval-owned dates; the AI model is unchanged."""
+
+
+class RecommendationResponse(DateFallbackSummary):
     """Shared recommend/refine result for the React client."""
 
     status: RecommendStatus
@@ -53,7 +58,7 @@ class RecommendationResponse(BaseModel):
     preferences: ExtractedPreferences | None = None
     origin: OriginItem | None = None
     origin_id: str | None = None
-    recommendations: list[DestinationExplanation] = Field(default_factory=list)
+    recommendations: list[RecommendationItem] = Field(default_factory=list)
     rejected: list[RejectedCandidateItem] = Field(default_factory=list)
     intents: list[RankingIntent] = Field(default_factory=list)
     changes: list[FieldChange] = Field(default_factory=list)

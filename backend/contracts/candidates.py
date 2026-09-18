@@ -7,6 +7,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from .flight_dates import DateFallbackSummary, FlightDateMetadata
+
 
 class FlightQuery(BaseModel):
     """Partition-scoped flight query produced after resolving an origin."""
@@ -62,7 +64,7 @@ class OriginItem(BaseModel):
     photo_url_small: str | None = None
 
 
-class CandidateItem(BaseModel):
+class CandidateItem(FlightDateMetadata):
     """Validated data that the colleague's ranking algorithm can consume."""
 
     destination_id: str
@@ -95,7 +97,7 @@ class RejectedCandidateItem(BaseModel):
     reasons: list[RejectionItem]
 
 
-class CandidateResponse(BaseModel):
+class CandidateResponse(DateFallbackSummary):
     origin_id: str
     candidates: list[CandidateItem]
     rejected: list[RejectedCandidateItem]
