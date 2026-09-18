@@ -12,8 +12,8 @@ export default defineConfig(({ mode }) => {
       environment: 'node',
     },
     server: {
-      // The key is read by Vite's Node process and is never exposed as a
-      // VITE_ browser variable.
+      // Forward /api from the Vite dev server to FastAPI. The API key is read
+      // by Vite's Node process and is never exposed as a VITE_ browser variable.
       proxy: {
         '/api': {
           target: 'http://127.0.0.1:8000',

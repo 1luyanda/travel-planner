@@ -7,7 +7,7 @@ import {
   formatPrice,
   tripFactsLine,
 } from '../utils/format'
-import { rankingReason, scoreBreakdown } from '../utils/ranking'
+import { backendScoreItems, explanationView } from '../utils/plannerFlow'
 import styles from '../workspace.module.css'
 
 export default function DestinationCard({
@@ -17,7 +17,6 @@ export default function DestinationCard({
   isBestMatch,
   isSelected,
   isSaved,
-  weights,
   onSelect,
   onToggleSaved,
   onViewDetails,
@@ -28,9 +27,10 @@ export default function DestinationCard({
   const country = destination.country || {}
   const airline = formatAirline(flight)
   const moved = previousRank && previousRank !== rank
-  const breakdown = scoreBreakdown(destination, weights)
-  const reason = rankingReason(destination, weights)
+  const breakdown = backendScoreItems(destination)
+  const { summary, evidence } = explanationView(destination)
   const facts = tripFactsLine(destination)
+  const displayRank = destination.rank || rank
 
   return (
     <article
@@ -39,7 +39,12 @@ export default function DestinationCard({
       aria-current={isSelected ? 'true' : undefined}
     >
       <button type="button" className={styles.cardHit} onClick={() => onSelect?.(destination)}>
-        <DestinationPhoto destination={destination} className={styles.cardPhoto} sizes="280px" />
+        <DestinationPhoto
+          key={destination.id}
+          destination={destination}
+          className={styles.cardPhoto}
+          sizes="280px"
+        />
       </button>
 
       <div className={styles.cardBody}>
@@ -47,7 +52,7 @@ export default function DestinationCard({
           <div>
             <div className={styles.cardLabels}>
               {isBestMatch && <span className={styles.bestMatch}>Best match</span>}
-              <span className={styles.rank}>#{rank}</span>
+              <span className={styles.rank}>#{displayRank}</span>
             </div>
             <h3>{place.city || 'Unknown city'}</h3>
             <p>{country.common_name || place.country_code || displayValue(null)}</p>
@@ -72,12 +77,21 @@ export default function DestinationCard({
         {moved && <p className={styles.movement}>Moved from #{previousRank}</p>}
         {facts && <p className={styles.facts}>{facts}{airline ? ` · ${airline}` : ''}</p>}
         {!facts && <p className={styles.facts}>{displayValue(null)}</p>}
-        {reason && <p className={styles.reason}>{reason}</p>}
+        {summary && <p className={styles.reason}>{summary}</p>}
+        {evidence.length > 0 && (
+          <ul className={styles.evidence}>
+            {evidence.map((item) => (
+              <li key={item.id || item.statement}>{item.statement}</li>
+            ))}
+          </ul>
+        )}
 
-        <details className={styles.why}>
-          <summary>How it’s ranked</summary>
-          <ScoreBreakdown items={breakdown} total={destination.scores?.total} />
-        </details>
+        {breakdown.length > 0 && (
+          <details className={styles.why}>
+            <summary>Planner scores</summary>
+            <ScoreBreakdown items={breakdown} total={destination.scores?.total} />
+          </details>
+        )}
 
         {onViewDetails && (
           <button

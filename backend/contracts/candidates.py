@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import date, datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from .flight_dates import DateFallbackSummary, FlightDateMetadata
+
 
 class FlightQuery(BaseModel):
     """Partition-scoped flight query produced after resolving an origin."""
@@ -96,7 +98,7 @@ class FlightItem(BaseModel):
     photo_url_small: str | None = None
 
 
-class CandidateItem(BaseModel):
+class CandidateItem(FlightDateMetadata):
     """Validated data that the ranking algorithm can consume."""
 
     destination_id: str
@@ -129,7 +131,7 @@ class RejectedCandidateItem(BaseModel):
     reasons: list[RejectionItem]
 
 
-class CandidateResponse(BaseModel):
+class CandidateResponse(DateFallbackSummary):
     origin_id: str
     candidates: list[CandidateItem]
     rejected: list[RejectedCandidateItem]

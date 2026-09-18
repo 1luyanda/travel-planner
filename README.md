@@ -64,8 +64,9 @@ Backend checks:
 python -m pytest
 ```
 
-Current HTTP routes include `/api/origins`, `/api/flights`, and
-`/api/candidates`. There is no `/api/destinations` mock-file endpoint.
+Current HTTP routes include `/api/origins`, `/api/flights`, `/api/candidates`,
+`POST /api/recommend`, and `POST /api/refine`. There is no `/api/destinations`
+mock-file endpoint.
 
 # Contribute
 

@@ -237,7 +237,7 @@ def test_requested_mood_is_not_treated_as_destination_quality():
     assert "is relaxing" not in result.explanations[0].summary.lower()
 
 
-def test_cooler_weather_preference_is_not_claimed_as_satisfied():
+def test_cooler_weather_preference_uses_ranking_note():
     ranked = [_ranked(ROME_ID, "Rome", average_max_temperature_c=27.8)]
     result, _ = _explain(
         _request(weather_preference="cool"),
@@ -249,7 +249,7 @@ def test_cooler_weather_preference_is_not_claimed_as_satisfied():
                         "destination_id": ROME_ID,
                         "evidence_ids": [
                             f"{ROME_ID}::cool_match",
-                            f"{ROME_ID}::cool_preference_not_supported",
+                            f"{ROME_ID}::cool_preference_ranking_note",
                         ],
                     }
                 ]
@@ -258,10 +258,10 @@ def test_cooler_weather_preference_is_not_claimed_as_satisfied():
     )
 
     codes = {item.code for item in result.explanations[0].evidence}
-    assert "cool_preference_not_supported" in codes
+    assert "cool_preference_ranking_note" in codes
     assert "cool_match" not in codes
     summary = result.explanations[0].summary.lower()
-    assert "not shown as satisfied" in summary
+    assert "lower maximum temperatures" in summary
     assert "is cool" not in summary
 
 

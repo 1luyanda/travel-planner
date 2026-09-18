@@ -1,24 +1,34 @@
-import { useState } from 'react'
-import { getDestinationImage } from '../data/destinationImages'
-import { resolveDestinationPhoto } from '../utils/photos'
+import { useEffect, useState } from 'react'
+import { cityTone } from '../utils/format'
+import { destinationPhotoAlt, resolveDestinationPhoto } from '../utils/photos'
 import styles from '../workspace.module.css'
 
 /**
- * Photo order: API url, exact bundled city match, then a neutral placeholder.
+ * Photo order: API url, exact bundled city match, then a teal placeholder.
  * Never uses another destination's image.
  */
 export default function DestinationPhoto({ destination, className, sizes = '320px' }) {
   const city = destination?.destination?.city || 'Destination'
   const resolved = resolveDestinationPhoto(destination)
-  const bundled = getDestinationImage(city)
   const src = resolved.src
-  const alt = resolved.kind === 'api' ? city : bundled?.alt || city
-  const title = resolved.kind === 'api' ? 'Stored city photo' : bundled?.attribution
-  const [failed, setFailed] = useState(false)
+  const alt = destinationPhotoAlt(destination, resolved)
+  const title = resolved.kind === 'api' ? 'Stored city photo' : resolved.attribution
+  const [failedSrc, setFailedSrc] = useState(null)
+  const destinationId = destination?.id
+  const failed = Boolean(src) && failedSrc === src
+
+  useEffect(() => {
+    setFailedSrc(null)
+  }, [destinationId])
 
   if (!src || failed) {
     return (
-      <div className={`${styles.photoFallback} ${className || ''}`}>
+      <div
+        className={`${styles.photoFallback} ${className || ''}`}
+        style={{ '--tone': cityTone(city) }}
+        role="img"
+        aria-label={city}
+      >
         <span>{city}</span>
       </div>
     )
@@ -30,9 +40,12 @@ export default function DestinationPhoto({ destination, className, sizes = '320p
       src={src}
       alt={alt}
       title={title}
+      width={640}
+      height={400}
       loading="lazy"
+      decoding="async"
       sizes={sizes}
-      onError={() => setFailed(true)}
+      onError={() => setFailedSrc(src)}
     />
   )
 }

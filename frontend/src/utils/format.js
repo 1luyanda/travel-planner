@@ -1,5 +1,9 @@
 export const NOT_AVAILABLE = 'Not available'
 
+export function percent(value) {
+  return `${Math.round(Number(value || 0) * 100)}%`
+}
+
 export function displayValue(value) {
   if (value == null || value === '') return NOT_AVAILABLE
   return value
@@ -18,6 +22,12 @@ export function formatDuration(minutes) {
   const hours = Math.floor(total / 60)
   const remaining = total % 60
   return `${hours}h ${remaining}m`
+}
+
+export function formatTripDays(days) {
+  if (days == null || Number.isNaN(Number(days))) return null
+  const total = Math.round(Number(days))
+  return total === 1 ? '1 day' : `${total} days`
 }
 
 export function formatStops(stops) {

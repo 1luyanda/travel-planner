@@ -122,6 +122,40 @@ feedback has no ranking intent, the supplied weights (or defaults) stay.
   Production rate limits should be enforced by the gateway and returned as
   `429 Too Many Requests`.
 
+## Flexible-date shortlist fallback
+
+`CandidateService.prepare()` (used by `/api/candidates`, `/api/recommend`, and
+`/api/refine`) first runs the existing exact-date query and validates the results.
+When there are at least `MIN_RECOMMENDATION_RESULTS = 3` distinct valid flights,
+it returns all exact matches without a second query. Otherwise it keeps every
+exact match and fills only the missing slots with nearby stored flights.
+
+`FLEXIBLE_DATE_WINDOW_DAYS = 7` in `backend/config.py` applies independently to
+departure and return dates, inclusive. ISO datetimes are parsed and compared by
+the local calendar date represented in each record, without converting to UTC.
+Both requested dates must be present to enable fallback.
+
+The second lookup reuses the existing origin-partition query with only its date
+restrictions removed, preserving all other repository filters. The service
+checks the date window before candidate preparation and applies the same budget,
+changeover, duration, and data-validation rules. Origin, country, and minimum
+temperature are also checked for alternatives. This approach may read more
+stored records from that origin partition, but requires no new Cosmos indexes.
+
+Alternatives are deduplicated by flight/destination ID and selected by total
+absolute departure/return date difference, then absolute trip-length difference,
+then ID. Exact matches stay first. Recommendation scores use the unchanged
+ranking algorithm; exact matches retain their score order, followed by
+alternatives in date-distance order. Fewer than three valid flights remain fewer
+than three; hard filters are never relaxed. `/api/flights` is unchanged.
+
+Candidate and recommendation items add `is_flexible_date_option` (false for
+exact matches), `requested_departure_date`, `requested_return_date`,
+`actual_departure_date`, and `actual_return_date`. Dates are ISO calendar dates
+or null when unavailable. Responses also add `exact_match_count`, `fallback_count`,
+and `flexible_date_fallback_used`; the latter is true only if alternatives were
+actually added. Existing response fields and request models are unchanged.
+
 # AI request parser and explanations
 
 Turns user text and optional form fields into a structured travel request, then

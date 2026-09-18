@@ -65,7 +65,7 @@ export default function LandingPage() {
             <span>1</span>
             <div>
               <h3>Choose where you fly from</h3>
-              <p>Search stored origin cities, then add a mood or budget. A departure city is required.</p>
+              <p>Search stored origin cities or include an IATA code in your request. Dates, budget, and origin can also be clarified in chat.</p>
             </div>
           </li>
           <li>
@@ -79,7 +79,7 @@ export default function LandingPage() {
             <span>3</span>
             <div>
               <h3>Refine your shortlist</h3>
-              <p>Re-rank cheaper, warmer, direct, or shorter trips in the browser.</p>
+              <p>Ask for cheaper, warmer, direct, or shorter trips. The planner service updates the shortlist.</p>
             </div>
           </li>
         </ol>
@@ -88,8 +88,8 @@ export default function LandingPage() {
       <section className={styles.explore} id="explore-destinations" aria-labelledby="explore-title">
         <h2 id="explore-title">Explore destinations</h2>
         <p>
-          Snapshot trips load after you pick a departure city in the planner. There is no all-origins
-          catalogue endpoint.
+          Snapshot trips load from the planner service. Origin autocomplete is optional. There is no
+          all-origins catalogue endpoint.
         </p>
         <AppLink to={ROUTES.planner} className={styles.startBtn}>
           Open the planner

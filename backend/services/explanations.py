@@ -42,8 +42,35 @@ MAX_MODEL_ATTEMPTS = 2
 MAX_EVIDENCE_PER_DESTINATION = 4
 RANKING_CURRENCY = "EUR"
 
-WARM_WEATHER_TERMS = frozenset({"warm", "warmer", "hot", "sunny"})
-COOL_WEATHER_TERMS = frozenset({"cool", "cooler", "cold", "colder", "chilly"})
+WARM_WEATHER_TERMS = frozenset(
+    {
+        "warm",
+        "warmer",
+        "hot",
+        "hotter",
+        "sunny",
+        "sunnier",
+        "sunshine",
+        "less rain",
+        "drier",
+    }
+)
+COOL_WEATHER_TERMS = frozenset(
+    {
+        "cool",
+        "cooler",
+        "cold",
+        "colder",
+        "chilly",
+        "rain",
+        "rainy",
+        "rainier",
+        "more rain",
+        "wetter",
+        "less sunshine",
+        "cloudier",
+    }
+)
 
 EXPLAIN_TOOL: dict[str, Any] = {
     "type": "function",
@@ -284,11 +311,11 @@ def _catalog_for_trip(
         )
     if weather in COOL_WEATHER_TERMS:
         add(
-            "cool_preference_not_supported",
+            "cool_preference_ranking_note",
             (
-                f"The request prefers {request.weather_preference}, but the "
-                "current ranking treats higher maximum temperature as better. "
-                "A cooler-weather preference is not shown as satisfied."
+                f"The request prefers {request.weather_preference}. The ranking "
+                "uses lower maximum temperatures for the cooler-weather "
+                "preference; this does not prove local conditions."
             ),
         )
 
@@ -491,8 +518,8 @@ def _system_prompt() -> str:
         "- Do not invent prices, temperatures, dates, attractions, availability "
         "or total holiday costs.\n"
         "- A requested mood does not prove a destination has that quality.\n"
-        "- Do not claim a cooler-weather preference is satisfied. Ranking treats "
-        "higher maximum temperature as better.\n"
+        "- For cooler requests, use the supplied cooler-weather ranking evidence "
+        "without claiming conditions beyond the recorded temperature.\n"
         "- Scores are relative ranking values, not confidence or match percentages.\n"
         "- Compare price with budget only through the provided budget evidence.\n"
         "- Duration evidence is round-trip air minutes, not calendar stay length.\n"
