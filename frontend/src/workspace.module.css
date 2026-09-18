@@ -772,6 +772,30 @@
   color: var(--tp-accent);
 }
 
+.priceChanged {
+  color: var(--tp-accent);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.unavailable,
+.unavailableNote {
+  color: var(--tp-error-text);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.unavailableNote,
+.savedAt {
+  margin: 8px 0 0;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.savedAt {
+  color: var(--tp-text-muted);
+}
+
 .rank {
   color: var(--tp-text-muted);
 }

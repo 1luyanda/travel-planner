@@ -4,6 +4,8 @@ import styles from '../workspace.module.css'
 
 export default function ResultsList({
   results,
+  heading,
+  showRanking = true,
   previousRanks,
   selectedId,
   savedIds,
@@ -12,7 +14,7 @@ export default function ResultsList({
   onViewDetails,
 }) {
   const count = results.length
-  const heading = count === 1 ? '1 matching trip' : `${count} matching trips`
+  const title = heading || (count === 1 ? '1 matching trip' : `${count} matching trips`)
   const cardRefs = useRef({})
 
   useEffect(() => {
@@ -22,7 +24,7 @@ export default function ResultsList({
 
   return (
     <section className={styles.results} aria-labelledby="results-title">
-      <h2 id="results-title">{heading}</h2>
+      <h2 id="results-title">{title}</h2>
       {count === 0 ? (
         <p className={styles.notice}>
           No stored trips match these filters. Try a higher budget or fewer constraints.
@@ -34,8 +36,9 @@ export default function ResultsList({
               key={destination.id || `${destination.destination?.city}-${index}`}
               destination={destination}
               rank={destination.rank || index + 1}
-              previousRank={previousRanks[destination.id]}
-              isBestMatch={index === 0 && destination.scores?.total != null}
+              previousRank={showRanking ? previousRanks[destination.id] : null}
+              isBestMatch={showRanking && index === 0 && destination.scores?.total != null}
+              showRanking={showRanking}
               isSelected={destination.id === selectedId}
               isSaved={savedIds.includes(destination.id)}
               onSelect={onSelect}

@@ -18,7 +18,8 @@ Open the URL shown by Vite, normally `http://localhost:5173`.
 
 The landing page provides local registration, sign-in, and logout. Authentication
 uses credentials-inclusive requests and an HttpOnly cookie; the frontend never
-stores a password or session token in localStorage.
+stores a password or session token in localStorage. Saved flights are stored
+on the backend for the signed-in user and are not kept in localStorage.
 
 ## Build
 
@@ -37,3 +38,7 @@ npm run build
   `clarification_questions`.
 - Missing optional fields stay unavailable; map pins require valid destination
   coordinates from flight documents.
+- Saved uses `GET/POST/DELETE /api/saved-flights`. It is independent of the
+  current shortlist and filters, and does not show Explore chat or the
+  composer. Only flight IDs are stored; details come from the flights
+  container.

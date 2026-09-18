@@ -67,7 +67,7 @@ async function requestJson(path, { signal, method = 'GET', body } = {}) {
     })
   }
 
-  const payload = await parseJsonBody(response)
+  const payload = response.status === 204 ? null : await parseJsonBody(response)
 
   if (!response.ok) {
     const fallback =
@@ -88,7 +88,7 @@ async function requestJson(path, { signal, method = 'GET', body } = {}) {
     })
   }
 
-  if (payload == null) {
+  if (payload == null && response.status !== 204) {
     throw new ApiError('Stored travel data could not be read. Please try again.', {
       status: response.status,
     })
@@ -215,6 +215,40 @@ export async function fetchCandidates(params, { signal } = {}) {
     rejected: Array.isArray(data.rejected) ? data.rejected : [],
     data_source: typeof data.data_source === 'string' ? data.data_source : null,
   }
+}
+
+export async function fetchSavedFlights({ signal } = {}) {
+  const data = await requestJson('/api/saved-flights', { signal })
+  if (!data || typeof data !== 'object' || !Array.isArray(data.items)) {
+    throw new ApiError('Saved flights returned an unexpected response.')
+  }
+  return {
+    items: data.items.filter((item) => item && typeof item === 'object'),
+  }
+}
+
+export async function saveFlight(flight, { signal } = {}) {
+  const flightId = typeof flight?.flight_id === 'string' ? flight.flight_id.trim() : ''
+  if (!flightId) {
+    throw new ApiError('A flight id is required to save this trip.')
+  }
+  const body = { flight_id: flightId }
+  const data = await requestJson('/api/saved-flights', { method: 'POST', body, signal })
+  if (!data || typeof data !== 'object' || typeof data.flight_id !== 'string') {
+    throw new ApiError('Saving that flight returned an unexpected response.')
+  }
+  return data
+}
+
+export async function deleteSavedFlight(flightId, { signal } = {}) {
+  const id = typeof flightId === 'string' ? flightId.trim() : ''
+  if (!id) {
+    throw new ApiError('flight_id is required.')
+  }
+  await requestJson(`/api/saved-flights/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    signal,
+  })
 }
 
 export async function fetchFlights(params, { signal } = {}) {
