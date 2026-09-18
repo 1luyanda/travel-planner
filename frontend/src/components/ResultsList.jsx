@@ -27,7 +27,7 @@ export default function ResultsList({
       <h2 id="results-title">{title}</h2>
       {count === 0 ? (
         <p className={styles.notice}>
-          No stored trips match these filters. Try a higher budget or fewer constraints.
+          No trips match these filters. Try a higher budget or fewer constraints.
         </p>
       ) : (
         <div className={styles.cardStack}>

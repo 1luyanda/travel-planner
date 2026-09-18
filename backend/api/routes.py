@@ -14,10 +14,19 @@ from backend.contracts import (
     RecommendRequest,
     RecommendationResponse,
     RefineRequest,
+    SaveFlightRequest,
+    SavedFlightItem,
+    SavedFlightsResponse,
 )
+from backend.models.user import UserDocument
 from backend.repositories import RepositoryError, RepositoryNotFoundError
-from backend.security import require_api_key
-from backend.services import CandidateService, RecommendationService
+from backend.security import require_api_key, require_user
+from backend.services import (
+    CandidateService,
+    RecommendationService,
+    SavedFlightNotFoundError,
+    SavedFlightsService,
+)
 
 
 router = APIRouter(prefix="/api")
@@ -29,6 +38,10 @@ def _candidate_service(request: Request) -> CandidateService:
 
 def _recommendation_service(request: Request) -> RecommendationService:
     return request.app.state.recommendation_service
+
+
+def _saved_flights_service(request: Request) -> SavedFlightsService:
+    return request.app.state.saved_flights_service
 
 
 def _flight_query(
@@ -217,4 +230,72 @@ async def refine(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Destination data is temporarily unavailable.",
+        ) from error
+
+
+@router.get(
+    "/saved-flights",
+    response_model=SavedFlightsResponse,
+    dependencies=[Depends(require_api_key)],
+)
+async def list_saved_flights(
+    user: UserDocument = Depends(require_user),
+    saved_flights: SavedFlightsService = Depends(_saved_flights_service),
+) -> SavedFlightsResponse:
+    """Return the authenticated user's saved flights, independent of search filters."""
+
+    try:
+        items = await saved_flights.list_for_user(user.id)
+    except RepositoryError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Saved flights are temporarily unavailable.",
+        ) from error
+    return SavedFlightsResponse(items=items)
+
+
+@router.post(
+    "/saved-flights",
+    response_model=SavedFlightItem,
+    dependencies=[Depends(require_api_key)],
+)
+async def save_flight(
+    body: SaveFlightRequest,
+    user: UserDocument = Depends(require_user),
+    saved_flights: SavedFlightsService = Depends(_saved_flights_service),
+) -> SavedFlightItem:
+    """Add a flight ID to the authenticated user's saved list."""
+
+    try:
+        return await saved_flights.save(user.id, body)
+    except SavedFlightNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(error),
+        ) from error
+    except RepositoryError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Saved flights are temporarily unavailable.",
+        ) from error
+
+
+@router.delete(
+    "/saved-flights/{flight_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_api_key)],
+)
+async def delete_saved_flight(
+    flight_id: str,
+    user: UserDocument = Depends(require_user),
+    saved_flights: SavedFlightsService = Depends(_saved_flights_service),
+) -> None:
+    """Remove a flight ID from the authenticated user's saved list."""
+
+    try:
+        await saved_flights.delete(user.id, flight_id)
+    except RepositoryError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Saved flights are temporarily unavailable.",
         ) from error

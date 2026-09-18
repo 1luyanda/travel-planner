@@ -14,7 +14,6 @@ import TripDetailsDrawer from './components/TripDetailsDrawer'
 import LandingPage from './components/LandingPage'
 import {
   deleteSavedFlight,
-  fetchFlights,
   fetchSavedFlights,
   recommendTrip,
   refineTrip,
@@ -24,7 +23,6 @@ import {
 import {
   adaptRecommendations,
   attachDestinationCityPhotos,
-  enrichRecommendations,
 } from './utils/adaptRecommendations'
 import {
   INITIAL_PLANNER_FORM,
@@ -296,23 +294,9 @@ export default function App() {
     if (hasSearched && !same) invalidateResults()
   }
 
-  async function enrichMappedResults(mapped, originId, signal, seq) {
-    let next = mapped
-    if (originId) {
-      try {
-        const flights = await fetchFlights({ origin_id: originId }, { signal })
-        if (seq !== searchSeqRef.current) return mapped
-        next = enrichRecommendations(mapped, flights)
-      } catch (err) {
-        if (err?.name === 'AbortError') throw err
-        if (seq === searchSeqRef.current) {
-          setFlightWarning('Trips loaded from stored data, but map pins and some flight details are unavailable.')
-        }
-      }
-    }
-
-    if (seq != null && seq !== searchSeqRef.current) return next
-    return attachCityPhotos(next, signal)
+  async function enrichMappedResults(mapped, signal, seq) {
+    if (seq != null && seq !== searchSeqRef.current) return mapped
+    return attachCityPhotos(mapped, signal)
   }
 
   async function attachCityPhotos(results, signal) {
@@ -574,17 +558,12 @@ export default function App() {
     })
 
     try {
-      const enriched = await enrichMappedResults(
-        adapted.results,
-        adapted.originId || response.origin_id,
-        request.signal,
-        seq,
-      )
+      const enriched = await enrichMappedResults(adapted.results, request.signal, seq)
       if (seq !== searchSeqRef.current) return
       setResults(enriched)
     } catch (err) {
       if (err?.name === 'AbortError' || seq !== searchSeqRef.current) return
-      setFlightWarning('Trips loaded from stored data, but map pins and some flight details are unavailable.')
+      setFlightWarning('Destination photos are unavailable.')
     }
     } catch (err) {
       if (err?.name === 'AbortError' || seq !== searchSeqRef.current) return
@@ -702,17 +681,12 @@ export default function App() {
       ])
 
       try {
-        const enriched = await enrichMappedResults(
-          adapted.results,
-          adapted.originId || response.origin_id,
-          request.signal,
-          seq,
-        )
+        const enriched = await enrichMappedResults(adapted.results, request.signal, seq)
         if (seq !== searchSeqRef.current) return
         setResults(enriched)
       } catch (err) {
         if (err?.name === 'AbortError' || seq !== searchSeqRef.current) return
-        setFlightWarning('Trips loaded from stored data, but map pins and some flight details are unavailable.')
+        setFlightWarning('Destination photos are unavailable.')
       }
     } catch (err) {
       if (err?.name === 'AbortError' || seq !== searchSeqRef.current) return
@@ -1121,7 +1095,6 @@ export default function App() {
 
         {showPlannerComposer(view) && (
           <div className={styles.composerDock}>
-            <p className={styles.dockHint}>Stored travel data · Snapshot, not live fares</p>
             <OriginSelect
               value={selectedOrigin}
               onChange={handleOriginChange}

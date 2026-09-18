@@ -19,7 +19,7 @@ export default function SavedPane({
     <div className={styles.conversation}>
       <h1 className={styles.savedTitle}>Saved</h1>
       <p className={styles.panelHint}>
-        Saved to your account. Flight details come from stored flight data.
+        Saved to your account.
       </p>
       {error ? <p className={styles.noticeError}>{error}</p> : null}
       {loading ? (

@@ -2,7 +2,8 @@
  * Map POST /api/recommend and /api/refine payloads onto the planner view model.
  * Preserves server order. Does not rank, filter, or invent explanation/fare facts.
  *
- * Optional /api/flights enrichment is joined on destination_id === flight.id only.
+ * Flight display fields come from the recommend/refine payload. Optional extra
+ * flights are joined on destination_id === flight.id only.
  */
 
 import { indexFlightsById } from './adaptResults'
@@ -170,7 +171,7 @@ export function adaptRecommendations(response, { flightsResponse = null, selecte
   const originCity = textOrNull(response?.origin?.city) || textOrNull(selectedOrigin?.city)
   const originCountry = textOrNull(response?.origin?.country) || textOrNull(selectedOrigin?.country)
   const dataSource = textOrNull(response?.data_source) || textOrNull(flightsResponse?.data_source)
-  const flightIndex = indexFlightsById(flightsResponse?.flights)
+  const flightIndex = indexFlightsById(flightsResponse?.flights ?? response?.flights)
   const recommendations = Array.isArray(response?.recommendations) ? response.recommendations : []
 
   return {

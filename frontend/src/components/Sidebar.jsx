@@ -34,7 +34,6 @@ export default function Sidebar({
           </button>
         </div>
 
-        <p className={styles.demoBadge}>Stored snapshot</p>
         <div className={styles.accountBox}>
           <strong>{user.display_name}</strong>
           <button type="button" className={styles.accountAction} onClick={onLogout}>

@@ -19,9 +19,10 @@ backend. The Vite development proxy injects the API key server-side; do not
 expose it in a `VITE_` frontend variable.
 
 Create a Cosmos `users` container with partition key `/email_normalized` and a
-unique key on `/email_normalized` before using registration. Local
-authentication stores only Argon2id password hashes and uses short-lived
-signed HttpOnly cookies.
+unique key on `/email_normalized` before using registration. Create a
+`user-flights` container with partition key `/id` (the user id) for a list of
+saved flight IDs. Local authentication stores only Argon2id password hashes and
+uses short-lived signed HttpOnly cookies.
 
 ## Terminal 1: backend
 
@@ -65,8 +66,8 @@ python -m pytest
 ```
 
 Current HTTP routes include `/api/origins`, `/api/flights`, `/api/candidates`,
-`POST /api/recommend`, and `POST /api/refine`. There is no `/api/destinations`
-mock-file endpoint.
+`POST /api/recommend`, `POST /api/refine`, and authenticated
+`/api/saved-flights`. There is no `/api/destinations` mock-file endpoint.
 
 # Contribute
 

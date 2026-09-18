@@ -194,6 +194,14 @@ const readyRecommendation = {
     },
   ],
   rejected: [],
+  flights: [
+    {
+      id: 'ZAG-ROM-2026-09-18',
+      destination_city: 'Rome',
+      latitude: 41.79,
+      longitude: 12.25,
+    },
+  ],
   issues: [],
   clarification_questions: [],
   data_source: 'cosmos://TravelPlaner/flights',
@@ -222,6 +230,7 @@ describe('recommendTrip', () => {
     expect(payload.status).toBe('ready')
     expect(payload.request).toEqual(tripRequest)
     expect(payload.recommendations[0].city).toBe('Rome')
+    expect(payload.flights[0].id).toBe('ZAG-ROM-2026-09-18')
   })
 
   it('keeps GET origin autocomplete working alongside POST', async () => {

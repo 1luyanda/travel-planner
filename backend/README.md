@@ -29,12 +29,17 @@ unranked.
    - `AUTH_COOKIE_SECURE=false` for local HTTP demos; production must use
      `true`.
    - `COSMOS_USERS_CONTAINER=users` — the users container name.
+   - `COSMOS_USER_FLIGHTS_CONTAINER=user-flights` — one document per user
+     containing only saved flight IDs. Flight facts stay in `flights`.
    - `TRUSTED_HOSTS` — comma-separated host names accepted by the API.
 
    The backend uses the fixed `origins` and `flights` container names plus the
-   configured users container. Create the users container with partition key
-   `/email_normalized` and a unique key on `/email_normalized` before
-   registering accounts.
+   configured users and user-flights containers. Create the users container
+   with partition key `/email_normalized` and a unique key on
+   `/email_normalized` before registering accounts. Create the user-flights
+   container with partition key `/id`. Each item's `id` is the user id and
+   the only other field is `flight_ids`. Do not store airline, destination,
+   weather, or route fields there.
 
 3. Start FastAPI:
 
@@ -67,6 +72,12 @@ API documentation is available at `http://localhost:8000/docs`.
   search and rank again. Explicit field changes (budget, direct flights) are
   applied. Intents such as cheaper/warmer are passed to Ivan's
   `preferences_from_intents` so ranking weights update.
+- `GET /api/saved-flights` — the authenticated user's saved flight IDs,
+  hydrated from the `flights` container. Independent of recommendation filters.
+- `POST /api/saved-flights` — save `{ flight_id }` for the session user.
+  Idempotent.
+- `DELETE /api/saved-flights/{flight_id}` — remove that id from the user's
+  list only.
 
 Example requests:
 
@@ -120,7 +131,26 @@ feedback has no ranking intent, the supplied weights (or defaults) stay.
   inject it server-side. Local accounts use Argon2id password hashes and
   signed HttpOnly cookies. Passwords and session cookies are never logged.
   Production rate limits should be enforced by the gateway and returned as
-  `429 Too Many Requests`.
+  `429 Too Many Requests`. Saved-flight routes also require the signed
+  session cookie. The user id is taken from that session, never from the
+  request body.
+
+## Saved flights
+
+The `user-flights` container stores one document per user. The item id and
+partition key are the user id. The only extra field is the list of flight
+IDs, newest first:
+
+```json
+{
+  "id": "<authenticated-user-id>",
+  "flight_ids": ["ZAG-ROM-2026-09-18"]
+}
+```
+
+`GET /api/saved-flights` looks up those IDs in the `flights` container and
+returns the current allowlisted flight data. Missing flights stay in the
+user's list and are returned as `availability: "unavailable"`.
 
 ## Flexible-date shortlist fallback
 

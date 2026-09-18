@@ -10,10 +10,55 @@ from azure.cosmos.exceptions import CosmosHttpResponseError
 from backend.config import Settings
 from backend.contracts import FlightQuery, OriginItem
 from backend.models.user import UserDocument
+from backend.models.user_flight import UserSavedFlightsDocument
 
 
 ORIGINS_CONTAINER = "origins"
 FLIGHTS_CONTAINER = "flights"
+FLIGHT_SELECT_FIELDS = (
+    "c.id",
+    "c.origin_id",
+    "c.origin_iata",
+    "c.origin_airport",
+    "c.destination_iata",
+    "c.destination_airport",
+    "c.destination_city",
+    "c.destination_country",
+    "c.destination_country_code",
+    "c.airport_name",
+    "c.price_eur",
+    "c.currency",
+    "c.departure_at",
+    "c.return_at",
+    "c.outbound_stops",
+    "c.return_stops",
+    "c.duration_minutes",
+    "c.outbound_duration_minutes",
+    "c.return_duration_minutes",
+    "c.trip_duration_days",
+    "c.airline_code",
+    "c.airline_name",
+    "c.flight_number",
+    "c.latitude",
+    "c.longitude",
+    "c.photo_url",
+    "c.photo_url_small",
+    "c.temp_max_c",
+    "c.temp_min_c",
+    "c.rain_pct",
+    "c.sunshine_hours",
+    "c.max_wind_speed_kmh",
+    "c.airport_distance_km",
+    "c.flight_retrieved_at",
+    "c.weather_retrieved_at",
+)
+
+
+def _flight_select(limit: int | None = None) -> str:
+    fields = ", ".join(FLIGHT_SELECT_FIELDS)
+    if limit is None:
+        return f"SELECT {fields} FROM c"
+    return f"SELECT TOP {int(limit)} {fields} FROM c"
 
 
 class RepositoryError(RuntimeError):
@@ -37,6 +82,7 @@ class CosmosDestinationRepository:
         self._origins: ContainerProxy | None = None
         self._flights: ContainerProxy | None = None
         self._users: ContainerProxy | None = None
+        self._user_flights: ContainerProxy | None = None
 
     @property
     def source_name(self) -> str:
@@ -55,6 +101,9 @@ class CosmosDestinationRepository:
         self._flights = database.get_container_client(FLIGHTS_CONTAINER)
         self._users = database.get_container_client(
             self._settings.users_container_name
+        )
+        self._user_flights = database.get_container_client(
+            self._settings.user_flights_container_name
         )
 
     async def search_origins(
@@ -169,7 +218,7 @@ class CosmosDestinationRepository:
             raise RepositoryError("Cosmos repository has not been connected")
 
         query = (
-            f"SELECT TOP {request.limit} * FROM c "
+            f"{_flight_select(request.limit)} "
             "WHERE c.origin_id = @origin_id"
         )
         parameters: list[dict[str, Any]] = [
@@ -309,6 +358,114 @@ class CosmosDestinationRepository:
                 ) from error
             raise RepositoryError("User creation failed.") from error
         return UserDocument.model_validate(item)
+
+    async def get_flight_by_id(self, flight_id: str) -> dict[str, Any]:
+        """Find one flight by document id. This may cross partitions."""
+
+        flights = await self.get_flights_by_ids([flight_id])
+        if not flights:
+            raise RepositoryNotFoundError(f"Flight {flight_id!r} was not found")
+        return flights[0]
+
+    async def get_flights_by_ids(self, flight_ids: list[str]) -> list[dict[str, Any]]:
+        """Load saved flights by id from the flights container."""
+
+        if self._flights is None:
+            raise RepositoryError("Cosmos repository has not been connected")
+        ids = [flight_id.strip() for flight_id in flight_ids if flight_id and flight_id.strip()]
+        if not ids:
+            return []
+        try:
+            rows = [
+                item
+                async for item in self._flights.query_items(
+                    query=f"{_flight_select()} WHERE ARRAY_CONTAINS(@ids, c.id)",
+                    parameters=[{"name": "@ids", "value": ids}],
+                )
+            ]
+        except (CosmosHttpResponseError, TypeError, ValueError) as error:
+            raise RepositoryError("Flight lookup failed.") from error
+        return rows
+
+    def _require_user_flights(self) -> ContainerProxy:
+        if self._user_flights is None:
+            raise RepositoryError("Cosmos repository has not been connected")
+        return self._user_flights
+
+    async def _read_user_saved_flights(
+        self,
+        user_id: str,
+    ) -> UserSavedFlightsDocument | None:
+        container = self._require_user_flights()
+        try:
+            item = await container.read_item(item=user_id, partition_key=user_id)
+        except CosmosHttpResponseError as error:
+            if error.status_code == 404:
+                return None
+            raise RepositoryError("Saved flight lookup failed.") from error
+        return UserSavedFlightsDocument.model_validate(item)
+
+    async def list_user_saved_flight_ids(self, user_id: str) -> list[str]:
+        """Return the authenticated user's saved flight IDs, newest first."""
+
+        document = await self._read_user_saved_flights(user_id)
+        return list(document.flight_ids) if document else []
+
+    async def add_user_saved_flight(self, user_id: str, flight_id: str) -> list[str]:
+        """Add a flight ID to the user's list. Idempotent."""
+
+        container = self._require_user_flights()
+        document = await self._read_user_saved_flights(user_id)
+        if document is None:
+            created = UserSavedFlightsDocument(id=user_id, flight_ids=[flight_id])
+            try:
+                item = await container.create_item(body=created.model_dump(mode="json"))
+            except CosmosHttpResponseError as error:
+                if error.status_code == 409:
+                    return await self.add_user_saved_flight(user_id, flight_id)
+                raise RepositoryError("Saved flight create failed.") from error
+            return UserSavedFlightsDocument.model_validate(item).flight_ids
+
+        if flight_id in document.flight_ids:
+            return list(document.flight_ids)
+
+        updated = document.model_copy(
+            update={"flight_ids": [flight_id, *document.flight_ids]}
+        )
+        try:
+            item = await container.replace_item(
+                item=updated.id,
+                body=updated.model_dump(mode="json"),
+            )
+        except CosmosHttpResponseError as error:
+            if error.status_code == 404:
+                return await self.add_user_saved_flight(user_id, flight_id)
+            raise RepositoryError("Saved flight update failed.") from error
+        return UserSavedFlightsDocument.model_validate(item).flight_ids
+
+    async def remove_user_saved_flight(self, user_id: str, flight_id: str) -> None:
+        """Remove a flight ID from the authenticated user's list only."""
+
+        container = self._require_user_flights()
+        document = await self._read_user_saved_flights(user_id)
+        if document is None or flight_id not in document.flight_ids:
+            return
+        updated = document.model_copy(
+            update={
+                "flight_ids": [
+                    item for item in document.flight_ids if item != flight_id
+                ]
+            }
+        )
+        try:
+            await container.replace_item(
+                item=updated.id,
+                body=updated.model_dump(mode="json"),
+            )
+        except CosmosHttpResponseError as error:
+            if error.status_code == 404:
+                return
+            raise RepositoryError("Saved flight delete failed.") from error
 
     async def close(self) -> None:
         if self._client is not None:

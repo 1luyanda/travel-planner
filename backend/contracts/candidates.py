@@ -96,6 +96,11 @@ class FlightItem(BaseModel):
     longitude: float | None = None
     photo_url: str | None = None
     photo_url_small: str | None = None
+    temp_max_c: float | None = None
+    temp_min_c: float | None = None
+    rain_pct: float | None = None
+    sunshine_hours: float | None = None
+    max_wind_speed_kmh: float | None = None
 
 
 class CandidateItem(FlightDateMetadata):
@@ -135,6 +140,7 @@ class CandidateResponse(DateFallbackSummary):
     origin_id: str
     candidates: list[CandidateItem]
     rejected: list[RejectedCandidateItem]
+    flights: list[FlightItem] = Field(default_factory=list)
     data_source: str
 
 

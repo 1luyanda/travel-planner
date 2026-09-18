@@ -372,12 +372,12 @@ export function assistantTextForResponse(response, results = [], { unmappedCount
     : ''
 
   if (count === 0) {
-    return `No stored trips match that request.${issueLine} Recommendations come from the planner service and stored snapshot data. Not live or bookable.`
+    return `No trips match that request.${issueLine}`
   }
 
   const noun = count === 1 ? 'trip' : 'trips'
   const cityLine = cities.length ? ` Shortlist: ${cities.join(', ')}.` : ''
-  return `I found ${count} matching ${noun} from the planner service.${cityLine}${mapLine}${issueLine} Ranked from stored snapshot data. Not live or bookable.`
+  return `I found ${count} matching ${noun}.${cityLine}${mapLine}${issueLine}`
 }
 
 export function refinementFeedbackText(label) {

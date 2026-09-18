@@ -2,8 +2,9 @@
 
 React UI for Team 4's Travel Planner. The main planner flow calls FastAPI
 `POST /api/recommend` and `POST /api/refine`. Origin autocomplete uses
-`GET /api/origins`. `/api/flights` is only used to enrich map pins and photos;
-it does not rank results. Fares are not live or bookable. Start the backend
+`GET /api/origins`. Recommend and refine already include flight display fields
+for map pins. `/api/flights` remains available but is not called after search.
+Fares are not live or bookable. Start the backend
 first so the Vite `/api` proxy can reach `http://127.0.0.1:8000`.
 
 ## Run locally (Windows PowerShell)

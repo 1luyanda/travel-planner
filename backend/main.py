@@ -14,7 +14,12 @@ from backend.api import auth_router, router
 from backend.config import get_settings
 from backend.data import DestinationDataService
 from backend.repositories import CosmosDestinationRepository
-from backend.services import CandidateService, RecommendationService, UserService
+from backend.services import (
+    CandidateService,
+    RecommendationService,
+    SavedFlightsService,
+    UserService,
+)
 
 
 @asynccontextmanager
@@ -31,6 +36,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         candidate_service=app.state.candidate_service
     )
     app.state.user_service = UserService(repository)
+    app.state.saved_flights_service = SavedFlightsService(repository)
     try:
         yield
     finally:
@@ -59,7 +65,7 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=list(settings.frontend_origins),
         allow_credentials=True,
-        allow_methods=["GET", "POST"],
+        allow_methods=["GET", "POST", "DELETE"],
         allow_headers=["Content-Type", "X-API-Key"],
     )
 

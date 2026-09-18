@@ -120,6 +120,7 @@ function normalizeRecommendationResponse(data) {
     origin: asObject(data.origin),
     origin_id: typeof data.origin_id === 'string' ? data.origin_id : null,
     recommendations: asList(data.recommendations),
+    flights: asList(data.flights),
     rejected: asList(data.rejected),
     intents: asList(data.intents),
     changes: asList(data.changes),

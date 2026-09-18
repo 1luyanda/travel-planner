@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from backend.contracts.candidates import OriginItem, RejectedCandidateItem
+from backend.contracts.candidates import FlightItem, OriginItem, RejectedCandidateItem
 from backend.models.explanation import DestinationExplanation
 from backend.models.feedback import FieldChange, RankingIntent
 from backend.models.trip_request import ExtractedPreferences, TripRequest
@@ -60,6 +60,7 @@ class RecommendationResponse(DateFallbackSummary):
     origin_id: str | None = None
     recommendations: list[RecommendationItem] = Field(default_factory=list)
     rejected: list[RejectedCandidateItem] = Field(default_factory=list)
+    flights: list[FlightItem] = Field(default_factory=list)
     intents: list[RankingIntent] = Field(default_factory=list)
     changes: list[FieldChange] = Field(default_factory=list)
     issues: list[str] = Field(default_factory=list)
