@@ -11,45 +11,42 @@ import DestinationMap from './components/DestinationMap'
 import FiltersPopover from './components/FiltersPopover'
 import TripDetailsDrawer from './components/TripDetailsDrawer'
 import LandingPage from './components/LandingPage'
-import { fetchCandidates, fetchFlights } from './services/travelApi'
-import { adaptSearchResults, snapshotLabel } from './utils/adaptResults'
-import { parsePrompt } from './utils/parsePrompt'
-import { ORIGIN_REQUIRED_MESSAGE, formatOriginLabel, requireSelectedOrigin } from './utils/origins'
+import { fetchFlights, recommendTrip, refineTrip } from './services/travelApi'
+import { adaptRecommendations, enrichRecommendations } from './utils/adaptRecommendations'
+import {
+  INITIAL_PLANNER_FORM,
+  assistantTextForResponse,
+  buildClarificationRecommendPayload,
+  buildRecommendPayload,
+  createClarificationContext,
+  formFieldsFromPlanner,
+  formPatchFromTripRequest,
+  newTripPlannerState,
+  recordClarificationAnswer,
+  refinementFeedbackText,
+  tripRequestAfterRecommend,
+  tripRequestAfterRefine,
+} from './utils/plannerFlow'
+import { formatOriginLabel, parseOriginItem } from './utils/origins'
+import {
+  PLANNER_TIMEOUT_MESSAGE,
+  createPlannerRequest,
+  runPlannerRequest,
+} from './utils/plannerRequest'
 import { loadSavedIds, persistSavedIds, toggleSavedId } from './utils/savedDestinations'
 import { AppLink, ROUTES, isPlannerPath, useRoute } from './utils/routes.jsx'
-import { buildCandidateQuery, buildFlightQuery } from './utils/searchQuery'
-import { applyBrowserRanking } from './utils/ranking'
 import styles from './workspace.module.css'
 
-const initialForm = {
-  originId: '',
-  originIata: '',
-  maxBudget: 400,
-  directOnly: false,
-  preferWarm: false,
-  mood: '',
-}
+const initialForm = INITIAL_PLANNER_FORM
 
 function nextId() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
-function describeResults(results, filters, { dataSource, unmappedCount, rejectedCount } = {}) {
-  const count = results.length
-  const cities = [...new Set(results.map((item) => item.destination?.city).filter(Boolean))]
-  const budget = filters?.maxBudget != null ? ` up to €${filters.maxBudget}` : ''
-  const source = snapshotLabel(dataSource)
-  const sourceLine = source ? ` ${source}.` : ' Stored travel data.'
-  if (count === 0) {
-    const rejected = rejectedCount ? ` ${rejectedCount} stored offer(s) were excluded as incomplete.` : ''
-    return `No stored trips match those filters${budget}.${rejected} This is a snapshot — not a live search, booking, or AI.`
-  }
-  const noun = count === 1 ? 'trip' : 'trips'
-  const cityLine = cities.length ? ` Shortlist: ${cities.join(', ')}.` : ''
-  const mapLine = unmappedCount
-    ? ` ${unmappedCount} listed ${unmappedCount === 1 ? 'trip has' : 'trips have'} no mappable coordinates.`
-    : ''
-  return `I found ${count} matching ${noun} in the stored snapshot${budget}.${cityLine}${mapLine} Ranked in the browser by price, weather, stops, and duration.${sourceLine} Not live or bookable.`
+function unmappedTripCount(results) {
+  return results.filter(
+    (item) => item.destination?.latitude == null || item.destination?.longitude == null,
+  ).length
 }
 
 export default function App() {
@@ -57,17 +54,21 @@ export default function App() {
   const [form, setForm] = useState(initialForm)
   const [selectedOrigin, setSelectedOrigin] = useState(null)
   const [searchSnapshot, setSearchSnapshot] = useState(initialForm)
-  const [adaptedResults, setAdaptedResults] = useState([])
+  const [tripRequest, setTripRequest] = useState(null)
+  const [pendingSearchText, setPendingSearchText] = useState('')
+  const [clarifyKind, setClarifyKind] = useState(null)
+  const [clarification, setClarification] = useState(null)
+  const [clarificationQuestions, setClarificationQuestions] = useState([])
   const [rejected, setRejected] = useState([])
   const [dataSource, setDataSource] = useState(null)
   const [results, setResults] = useState([])
-  const [weights, setWeights] = useState(null)
   const [previousRanks, setPreviousRanks] = useState({})
   const [appliedFilters, setAppliedFilters] = useState(null)
   const [selectedTrip, setSelectedTrip] = useState(null)
   const [selectedDestinationId, setSelectedDestinationId] = useState(null)
   const [viewportMode, setViewportMode] = useState('bounds')
   const [loading, setLoading] = useState(false)
+  const [refining, setRefining] = useState(false)
   const [error, setError] = useState('')
   const [flightWarning, setFlightWarning] = useState('')
   const [hasSearched, setHasSearched] = useState(false)
@@ -82,6 +83,7 @@ export default function App() {
   const [pendingSelectId, setPendingSelectId] = useState(null)
   const [originError, setOriginError] = useState('')
   const [focusOrigin, setFocusOrigin] = useState(false)
+  const [activeRefinement, setActiveRefinement] = useState(null)
   const [isNarrow, setIsNarrow] = useState(
     () => typeof window !== 'undefined' && window.matchMedia('(max-width: 780px)').matches,
   )
@@ -90,10 +92,22 @@ export default function App() {
   const originInputRef = useRef(null)
   const searchAbortRef = useRef(null)
   const searchSeqRef = useRef(0)
+  const tripRequestRef = useRef(null)
+  const resultsRef = useRef([])
 
-  const prices = adaptedResults.map((item) => Number(item.flight?.price)).filter((value) => Number.isFinite(value))
-  const maxBudgetCap = prices.length ? Math.max(...prices, Number(form.maxBudget) || 0) : Math.max(500, Number(form.maxBudget) || 0)
-  const savedDestinations = adaptedResults.filter((item) => savedIds.includes(item.id))
+  useEffect(() => {
+    tripRequestRef.current = tripRequest
+  }, [tripRequest])
+
+  useEffect(() => {
+    resultsRef.current = results
+  }, [results])
+
+  const prices = results.map((item) => Number(item.flight?.price)).filter((value) => Number.isFinite(value))
+  const maxBudgetCap = prices.length
+    ? Math.max(...prices, Number(form.maxBudget) || 0)
+    : Math.max(500, Number(form.maxBudget) || 0)
+  const savedDestinations = results.filter((item) => savedIds.includes(item.id))
   const rankedSaved = results.filter((item) => savedIds.includes(item.id))
   const mapResults = view === 'saved' ? rankedSaved : results
   const drawerTrip = selectedTrip
@@ -101,6 +115,16 @@ export default function App() {
     : null
   const showMap = view === 'saved' || hasSearched
   const showInspiration = view === 'explore' && !hasSearched
+  const busy = loading || refining
+  const conversationPhase = loading
+    ? 'loading'
+    : refining
+      ? 'refining'
+      : clarifyKind
+        ? 'clarifying'
+        : error && results.length === 0
+          ? 'error'
+          : 'ready'
 
   useEffect(() => {
     persistSavedIds(savedIds)
@@ -146,28 +170,21 @@ export default function App() {
     }
   }, [pendingSelectId, results, savedDestinations, view])
 
-  function ensureOrigin(origin = selectedOrigin) {
-    const check = requireSelectedOrigin(origin)
-    if (check.ok) {
-      setOriginError('')
-      return true
-    }
-    setOriginError(ORIGIN_REQUIRED_MESSAGE)
-    setFocusOrigin(true)
-    return false
-  }
-
   function invalidateResults() {
     setHasSearched(false)
     setResults([])
-    setAdaptedResults([])
     setRejected([])
     setDataSource(null)
     setAppliedFilters(null)
-    setWeights(null)
     setPreviousRanks({})
     setSelectedTrip(null)
     setSelectedDestinationId(null)
+    setTripRequest(null)
+    setPendingSearchText('')
+    setClarifyKind(null)
+    setClarification(null)
+    setClarificationQuestions([])
+    setActiveRefinement(null)
     setMessages([])
     setError('')
     setFlightWarning('')
@@ -188,30 +205,41 @@ export default function App() {
     if (hasSearched && !same) invalidateResults()
   }
 
-  async function runSearch(nextForm, userText, refinement = null, origin = selectedOrigin) {
-    if (!ensureOrigin(origin)) {
-      if (userText) setDraft(userText)
-      return
+  async function enrichMappedResults(mapped, originId, signal, seq) {
+    if (!originId) return mapped
+    try {
+      const flights = await fetchFlights({ origin_id: originId }, { signal })
+      if (seq !== searchSeqRef.current) return mapped
+      return enrichRecommendations(mapped, flights)
+    } catch (err) {
+      if (err?.name === 'AbortError') throw err
+      if (seq === searchSeqRef.current) {
+        setFlightWarning('Trips loaded from stored data, but map pins and some flight details are unavailable.')
+      }
+      return mapped
     }
+  }
 
-    const requestForm = {
-      ...nextForm,
-      originId: origin.originId,
-      originIata: origin.iata || '',
-    }
-    const candidateQuery = buildCandidateQuery(requestForm)
-    if (!candidateQuery) {
-      setOriginError(ORIGIN_REQUIRED_MESSAGE)
-      setFocusOrigin(true)
-      return
-    }
+  async function runRecommend(userText, options = {}) {
+    const {
+      nextForm = form,
+      origin = selectedOrigin,
+      mode = 'fresh',
+      userMessage = null,
+    } = options
+    const typed = (userText || '').trim()
+    const apiText = mode === 'filters' ? pendingSearchText || typed : typed
+    if (mode !== 'clarify' && !apiText) return
+    if (mode === 'clarify' && !typed) return
 
     const seq = ++searchSeqRef.current
     searchAbortRef.current?.abort()
-    const controller = new AbortController()
-    searchAbortRef.current = controller
+    searchAbortRef.current?.dispose?.()
+    const request = createPlannerRequest()
+    searchAbortRef.current = request
 
     setLoading(true)
+    setRefining(false)
     setError('')
     setFlightWarning('')
     setSelectedTrip(null)
@@ -221,184 +249,408 @@ export default function App() {
     setMobilePane('list')
     setSidebarOpen(false)
     setFiltersOpen(false)
-    const text = userText || requestForm.mood || 'Find my getaway'
-    setForm(requestForm)
-    setMessages((current) => [...current, { id: nextId(), role: 'user', text }])
+    setHasSearched(true)
+    setForm(nextForm)
+    if (mode === 'fresh') {
+      setPendingSearchText(typed)
+      setClarifyKind(null)
+      setClarification(null)
+      setClarificationQuestions([])
+    }
+    if (userMessage || typed) {
+      setMessages((current) => [
+        ...current,
+        { id: nextId(), role: 'user', text: userMessage || typed },
+      ])
+    }
+
+    if (mode === 'fresh') {
+      setTripRequest(null)
+      setResults([])
+      setRejected([])
+      setPreviousRanks({})
+      setActiveRefinement(null)
+    } else if (mode === 'clarify') {
+      setResults([])
+    }
 
     try {
-      const flightQuery = buildFlightQuery(candidateQuery)
-      const [candidateResult, flightResult] = await Promise.allSettled([
-        fetchCandidates(candidateQuery, { signal: controller.signal }),
-        fetchFlights(flightQuery, { signal: controller.signal }),
+      const payload =
+        mode === 'clarify'
+          ? buildClarificationRecommendPayload({
+              ...(clarification || createClarificationContext({ originalPrompt: pendingSearchText })),
+              answer: typed,
+            })
+          : buildRecommendPayload(apiText, nextForm, origin)
+
+      const outcome = await runPlannerRequest({
+      request,
+      seq,
+      isCurrent: (value) => value === searchSeqRef.current,
+      setBusy: (busy) => {
+        if (!busy) {
+          setLoading(false)
+          setRefining(false)
+        }
+      },
+      execute: (signal) => recommendTrip(payload, { signal }),
+    })
+
+    if (seq !== searchSeqRef.current || outcome.status === 'stale') return
+
+    if (outcome.status === 'aborted') {
+      setError(PLANNER_TIMEOUT_MESSAGE)
+      setMessages((current) => [
+        ...current,
+        { id: nextId(), role: 'assistant', text: PLANNER_TIMEOUT_MESSAGE },
       ])
+      return
+    }
 
+    if (outcome.status === 'failed') {
+      const message = outcome.error?.message || 'Could not reach the planner service. Please try again.'
+      setError(message)
+      setMessages((current) => [...current, { id: nextId(), role: 'assistant', text: message }])
+      return
+    }
+
+    const response = outcome.result
+    if (response.status === 'needs_input') {
+      const nextContext =
+        mode === 'clarify'
+          ? recordClarificationAnswer(
+              clarification,
+              typed,
+              response.clarification_questions,
+            )
+          : createClarificationContext({
+              originalPrompt: mode === 'filters' ? pendingSearchText || typed : typed,
+              formFields: formFieldsFromPlanner(nextForm, origin),
+              questions: response.clarification_questions,
+            })
+      setClarifyKind('recommend')
+      setClarification(nextContext)
+      setClarificationQuestions(response.clarification_questions)
+      setResults([])
+      setRejected(response.rejected)
+      setDataSource(response.data_source)
+      setAppliedFilters(nextForm)
+      setMessages((current) => [
+        ...current,
+        { id: nextId(), role: 'assistant', text: assistantTextForResponse(response, []) },
+      ])
+      return
+    }
+
+    if (response.status === 'error') {
+      const message = assistantTextForResponse(response, [])
+      setError(message)
+      setMessages((current) => [...current, { id: nextId(), role: 'assistant', text: message }])
+      return
+    }
+
+    const nextTrip = tripRequestAfterRecommend(null, response)
+    setTripRequest(nextTrip)
+    setClarifyKind(null)
+    setClarification(null)
+    setClarificationQuestions([])
+    if (nextTrip) {
+      setForm((current) => ({
+        ...current,
+        ...formPatchFromTripRequest(nextTrip),
+        budgetTouched: true,
+      }))
+    }
+    if (response.origin) {
+      const parsed = parseOriginItem(response.origin)
+      if (parsed) {
+        setSelectedOrigin(parsed)
+        setForm((current) => ({
+          ...current,
+          originId: parsed.originId,
+          originIata: parsed.iata || current.originIata,
+        }))
+      }
+    }
+
+    const adapted = adaptRecommendations(response, { selectedOrigin: origin })
+    setRejected(adapted.rejected)
+    setDataSource(adapted.dataSource)
+    setAppliedFilters(nextForm)
+    setResults(adapted.results)
+    setPreviousRanks({})
+    setActiveRefinement(null)
+    setSearchSnapshot(nextForm)
+    setMessages((current) => [
+      ...current,
+      {
+        id: nextId(),
+        role: 'assistant',
+        text: assistantTextForResponse(response, adapted.results, {
+          unmappedCount: unmappedTripCount(adapted.results),
+        }),
+      },
+    ])
+    setHistory((current) => {
+      const item = {
+        id: nextId(),
+        title: apiText.slice(0, 52),
+        text: apiText,
+        filters: nextForm,
+        origin: origin || selectedOrigin,
+      }
+      return [item, ...current.filter((entry) => entry.title !== item.title)].slice(0, 8)
+    })
+
+    try {
+      const enriched = await enrichMappedResults(
+        adapted.results,
+        adapted.originId || response.origin_id,
+        request.signal,
+        seq,
+      )
       if (seq !== searchSeqRef.current) return
-      if (candidateResult.status === 'rejected') throw candidateResult.reason
+      setResults(enriched)
+    } catch (err) {
+      if (err?.name === 'AbortError' || seq !== searchSeqRef.current) return
+      setFlightWarning('Trips loaded from stored data, but map pins and some flight details are unavailable.')
+    }
+    } catch (err) {
+      if (err?.name === 'AbortError' || seq !== searchSeqRef.current) return
+      const message = err.message || 'Could not reach the planner service. Please try again.'
+      setError(message)
+      setMessages((current) => [...current, { id: nextId(), role: 'assistant', text: message }])
+    } finally {
+      request.dispose()
+      if (seq === searchSeqRef.current) {
+        setLoading(false)
+        setRefining(false)
+      }
+    }
+  }
 
-      const candidatesResponse = candidateResult.value
-      let flightsResponse = null
-      if (flightResult.status === 'fulfilled') {
-        flightsResponse = flightResult.value
-      } else if (flightResult.reason?.name !== 'AbortError') {
-        setFlightWarning('Trips loaded from stored data, but map pins and some flight details are unavailable.')
+  async function runRefine(feedbackText, { label = null } = {}) {
+    const savedRequest = tripRequestRef.current
+    const text = (feedbackText || '').trim()
+    if (!savedRequest || !text || loading || refining) return
+
+    const seq = ++searchSeqRef.current
+    searchAbortRef.current?.abort()
+    searchAbortRef.current?.dispose?.()
+    const request = createPlannerRequest()
+    searchAbortRef.current = request
+
+    setRefining(true)
+    setError('')
+    setFlightWarning('')
+    setViewportMode('bounds')
+    setClarifyKind(null)
+    setMessages((current) => [...current, { id: nextId(), role: 'user', text: label || text }])
+
+    try {
+      const outcome = await runPlannerRequest({
+        request,
+        seq,
+        isCurrent: (value) => value === searchSeqRef.current,
+        setBusy: (busy) => {
+          if (!busy) {
+            setLoading(false)
+            setRefining(false)
+          }
+        },
+        execute: (signal) => refineTrip({ text, request: savedRequest }, { signal }),
+      })
+
+      if (seq !== searchSeqRef.current || outcome.status === 'stale') return
+
+      if (outcome.status === 'aborted') {
+        setError(PLANNER_TIMEOUT_MESSAGE)
+        setMessages((current) => [
+          ...current,
+          { id: nextId(), role: 'assistant', text: PLANNER_TIMEOUT_MESSAGE },
+        ])
+        return
       }
 
-      const adapted = adaptSearchResults({
-        candidatesResponse,
-        flightsResponse,
-        selectedOrigin: origin,
-      })
-      const { weights: nextWeights, ranked } = applyBrowserRanking(
-        adapted.results,
-        requestForm.preferWarm,
-        refinement,
-      )
-      const unmappedCount = ranked.filter(
-        (item) => item.destination?.latitude == null || item.destination?.longitude == null,
-      ).length
+      if (outcome.status === 'failed') {
+        const message = outcome.error?.message || 'Could not update recommendations. Please try again.'
+        setError(message)
+        setMessages((current) => [...current, { id: nextId(), role: 'assistant', text: message }])
+        return
+      }
 
-      setAdaptedResults(adapted.results)
+      const response = outcome.result
+      if (response.status === 'needs_input') {
+        setClarifyKind('refine')
+        setClarificationQuestions(response.clarification_questions)
+        setMessages((current) => [
+          ...current,
+          { id: nextId(), role: 'assistant', text: assistantTextForResponse(response, resultsRef.current) },
+        ])
+        return
+      }
+
+      if (response.status === 'error') {
+        const message = assistantTextForResponse(response, [])
+        setError(message)
+        setMessages((current) => [...current, { id: nextId(), role: 'assistant', text: message }])
+        return
+      }
+
+      const nextTrip = tripRequestAfterRefine(savedRequest, response)
+      setTripRequest(nextTrip)
+      setClarifyKind(null)
+      setClarification(null)
+      setClarificationQuestions([])
+      if (label) setActiveRefinement(label)
+      if (nextTrip) {
+        setForm((current) => ({
+          ...current,
+          ...formPatchFromTripRequest(nextTrip),
+          budgetTouched: true,
+        }))
+      }
+
+      const oldRanks = Object.fromEntries(
+        resultsRef.current.map((item, index) => [item.id, item.rank || index + 1]),
+      )
+      const adapted = adaptRecommendations(response, { selectedOrigin })
+      setPreviousRanks(oldRanks)
+      setResults(adapted.results)
       setRejected(adapted.rejected)
       setDataSource(adapted.dataSource)
-      setAppliedFilters(requestForm)
-      setWeights(nextWeights)
-      setResults(ranked)
-      setSearchSnapshot(requestForm)
-      setPreviousRanks({})
-      setHasSearched(true)
       setMessages((current) => [
         ...current,
         {
           id: nextId(),
           role: 'assistant',
-          text: describeResults(ranked, requestForm, {
-            dataSource: adapted.dataSource,
-            unmappedCount,
-            rejectedCount: adapted.rejected.length,
+          text: assistantTextForResponse(response, adapted.results, {
+            unmappedCount: unmappedTripCount(adapted.results),
           }),
         },
       ])
-      setHistory((current) => {
-        const item = {
-          id: nextId(),
-          title: text.slice(0, 52),
-          filters: requestForm,
-          origin,
-          refinement,
-        }
-        return [item, ...current.filter((entry) => entry.title !== item.title)].slice(0, 8)
-      })
+
+      try {
+        const enriched = await enrichMappedResults(
+          adapted.results,
+          adapted.originId || response.origin_id,
+          request.signal,
+          seq,
+        )
+        if (seq !== searchSeqRef.current) return
+        setResults(enriched)
+      } catch (err) {
+        if (err?.name === 'AbortError' || seq !== searchSeqRef.current) return
+        setFlightWarning('Trips loaded from stored data, but map pins and some flight details are unavailable.')
+      }
     } catch (err) {
       if (err?.name === 'AbortError' || seq !== searchSeqRef.current) return
-      const message = err.message || 'Could not load stored travel data.'
-      setResults([])
-      setAdaptedResults([])
-      setRejected([])
-      setDataSource(null)
-      setWeights(null)
-      setAppliedFilters(null)
-      setHasSearched(true)
+      const message = err.message || 'Could not update recommendations. Please try again.'
       setError(message)
       setMessages((current) => [...current, { id: nextId(), role: 'assistant', text: message }])
     } finally {
-      if (seq === searchSeqRef.current) setLoading(false)
+      request.dispose()
+      if (seq === searchSeqRef.current) {
+        setLoading(false)
+        setRefining(false)
+      }
     }
   }
 
   function handleComposerSubmit(event) {
     event.preventDefault()
     const text = draft.trim()
-    if (!text || loading) return
-    if (!ensureOrigin()) return
+    if (!text || busy) return
     setDraft('')
-    const parsed = parsePrompt(text)
-    if (!parsed.ok) {
-      setMessages((current) => [
-        ...current,
-        { id: nextId(), role: 'user', text },
-        { id: nextId(), role: 'assistant', text: parsed.message },
-      ])
+
+    if (clarifyKind === 'recommend') {
+      runRecommend(text, { mode: 'clarify' })
       return
     }
-    runSearch(
-      {
-        ...form,
-        ...parsed.filters,
-        originId: selectedOrigin.originId,
-        originIata: selectedOrigin.iata || '',
-      },
-      text,
-      parsed.refinement,
-    )
+    if (clarifyKind === 'refine' && tripRequest) {
+      runRefine(text)
+      return
+    }
+    if (tripRequest) {
+      runRefine(text)
+      return
+    }
+    runRecommend(text, { mode: 'fresh' })
   }
 
   function handleStarter(prompt) {
-    if (!ensureOrigin()) {
-      setDraft(prompt)
-      return
-    }
     setDraft('')
-    const parsed = parsePrompt(prompt)
-    if (!parsed.ok) return
-    runSearch(
-      {
+    runRecommend(prompt, {
+      mode: 'fresh',
+      nextForm: {
         ...initialForm,
-        ...parsed.filters,
-        originId: selectedOrigin.originId,
-        originIata: selectedOrigin.iata || '',
+        originId: selectedOrigin?.originId || '',
+        originIata: selectedOrigin?.iata || '',
       },
-      prompt,
-      parsed.refinement,
-    )
+      origin: selectedOrigin,
+    })
   }
 
   function handleFilterChange(field, value) {
-    const next = { ...form, [field]: value }
+    const next = {
+      ...form,
+      [field]: value,
+      budgetTouched: field === 'maxBudget' ? true : form.budgetTouched,
+    }
     setForm(next)
-    if (!hasSearched) return
-    if (field === 'preferWarm') {
-      const { weights: nextWeights, ranked } = applyBrowserRanking(adaptedResults, value)
-      setWeights(nextWeights)
-      setResults(ranked)
-      setPreviousRanks({})
-      return
-    }
-    if (field === 'maxBudget' || field === 'directOnly') {
-      runSearch(next, next.mood || 'Updated filters')
-    }
+    if (!hasSearched || !pendingSearchText || busy || clarifyKind) return
+    runRecommend(pendingSearchText, {
+      nextForm: next,
+      mode: 'filters',
+      userMessage: 'Updated filters',
+    })
   }
 
   function handleResetFilters() {
     const restored = searchSnapshot || initialForm
     setForm(restored)
-    if (!hasSearched) return
-    runSearch(restored, restored.mood || 'Reset filters')
+    if (!hasSearched || !pendingSearchText || clarifyKind) return
+    runRecommend(pendingSearchText, {
+      nextForm: restored,
+      mode: 'filters',
+      userMessage: 'Reset filters',
+    })
   }
 
   function handleNewTrip() {
+    const cleared = newTripPlannerState()
     searchAbortRef.current?.abort()
+    searchAbortRef.current?.dispose?.()
+    searchAbortRef.current = null
+    searchSeqRef.current += 1
     setHasSearched(false)
     setView('explore')
     setSelectedTrip(null)
     setSelectedDestinationId(null)
-    setError('')
+    setError(cleared.error)
     setFlightWarning('')
     setPreviousRanks({})
-    setResults([])
-    setAdaptedResults([])
-    setRejected([])
+    setResults(cleared.results)
+    setRejected(cleared.rejected)
     setDataSource(null)
-    setWeights(null)
-    setAppliedFilters(null)
+    setAppliedFilters(cleared.appliedFilters)
+    setTripRequest(cleared.tripRequest)
+    setPendingSearchText(cleared.pendingSearchText)
+    setClarifyKind(cleared.clarifyKind)
+    setClarification(cleared.clarification)
+    setClarificationQuestions(cleared.clarificationQuestions)
+    setActiveRefinement(null)
     setMessages([])
     setDraft('')
-    setForm(initialForm)
+    setForm(cleared.form)
     setSelectedOrigin(null)
     setOriginError('')
     setFiltersOpen(false)
     setSidebarOpen(false)
     setMobilePane('list')
     setViewportMode('bounds')
+    setLoading(false)
+    setRefining(false)
   }
 
   function handleSelectDestination(destination) {
@@ -435,13 +687,8 @@ export default function App() {
   }
 
   function handleRefine(preference) {
-    if (!adaptedResults.length) return
-    const oldRanks = Object.fromEntries(results.map((item, index) => [item.id, index + 1]))
-    const { weights: nextWeights, ranked } = applyBrowserRanking(adaptedResults, form.preferWarm, preference)
-    setPreviousRanks(oldRanks)
-    setWeights(nextWeights)
-    setResults(ranked)
-    setViewportMode('bounds')
+    if (!tripRequest || busy) return
+    runRefine(refinementFeedbackText(preference), { label: preference })
   }
 
   function handleToggleSaved(destination) {
@@ -451,20 +698,14 @@ export default function App() {
   function handlePreview(destination) {
     const city = destination.destination?.city || 'this destination'
     const price = Number(destination.flight?.price)
-    if (!ensureOrigin()) {
-      setDraft(`A getaway to ${city}`)
-      setPendingSelectId(destination.id)
-      return
-    }
     const nextForm = {
       ...initialForm,
-      originId: selectedOrigin.originId,
-      originIata: selectedOrigin.iata || '',
-      mood: `A getaway to ${city}`,
+      originId: selectedOrigin?.originId || '',
+      originIata: selectedOrigin?.iata || '',
       maxBudget: Number.isFinite(price) ? Math.max(400, price) : 400,
     }
     setPendingSelectId(destination.id)
-    runSearch(nextForm, nextForm.mood)
+    runRecommend(`A getaway to ${city}`, { nextForm, origin: selectedOrigin, mode: 'fresh' })
   }
 
   function handleExploreDestinations() {
@@ -473,16 +714,21 @@ export default function App() {
 
   function handleHistory(item) {
     const origin = item.origin || selectedOrigin
-    if (!ensureOrigin(origin)) return
-    setSelectedOrigin(origin)
-    runSearch(item.filters, item.title, item.refinement, origin)
+    if (origin) setSelectedOrigin(origin)
+    runRecommend(item.text || item.title, {
+      mode: 'fresh',
+      nextForm: item.filters || form,
+      origin,
+    })
   }
 
   if (!isPlannerPath(path)) {
-    return (
-      <LandingPage />
-    )
+    return <LandingPage />
   }
+
+  const composerPlaceholder = clarifyKind
+    ? clarificationQuestions[0] || 'Answer the planner’s question…'
+    : 'Ask for a mood, dates, or budget…'
 
   return (
     <div
@@ -553,7 +799,6 @@ export default function App() {
           {view === 'saved' ? (
             <SavedPane
               destinations={rankedSaved}
-              weights={weights}
               selectedId={selectedDestinationId}
               savedIds={savedIds}
               onSelect={handleSelectDestination}
@@ -573,14 +818,18 @@ export default function App() {
                 messages={messages}
                 filters={appliedFilters}
                 originLabel={formatOriginLabel(selectedOrigin)}
+                tripRequest={tripRequest}
                 dataSource={dataSource}
                 rejectedCount={rejected.length}
-                weights={weights}
                 results={results}
                 previousRanks={previousRanks}
                 selectedId={selectedDestinationId}
                 savedIds={savedIds}
                 loading={loading}
+                refining={refining}
+                phase={conversationPhase}
+                activeRefinement={activeRefinement}
+                canRefine={Boolean(tripRequest)}
                 onRefine={handleRefine}
                 onSelect={handleSelectDestination}
                 onToggleSaved={handleToggleSaved}
@@ -596,7 +845,7 @@ export default function App() {
                       key={message.id}
                       className={message.role === 'user' ? styles.bubbleUser : styles.bubbleAssistant}
                     >
-                      {message.role !== 'user' && <small>Stored snapshot</small>}
+                      {message.role !== 'user' && <small>Planner service</small>}
                       <p>{message.text}</p>
                     </div>
                   ))}
@@ -628,8 +877,8 @@ export default function App() {
             draft={draft}
             onDraftChange={setDraft}
             onSubmit={handleComposerSubmit}
-            loading={loading}
-            placeholder="Ask for a mood or budget…"
+            loading={busy}
+            placeholder={composerPlaceholder}
           />
         </div>
       </div>
@@ -663,7 +912,7 @@ export default function App() {
         onClose={() => setFiltersOpen(false)}
       />
 
-      <TripDetailsDrawer destination={drawerTrip} weights={weights} onClose={handleCloseDrawer} />
+      <TripDetailsDrawer destination={drawerTrip} onClose={handleCloseDrawer} />
     </div>
   )
 }

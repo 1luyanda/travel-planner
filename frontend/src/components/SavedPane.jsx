@@ -3,7 +3,6 @@ import styles from '../workspace.module.css'
 
 export default function SavedPane({
   destinations,
-  weights,
   selectedId,
   savedIds,
   onSelect,
@@ -26,7 +25,6 @@ export default function SavedPane({
         <ResultsList
           results={destinations}
           previousRanks={{}}
-          weights={weights}
           selectedId={selectedId}
           savedIds={savedIds}
           onSelect={onSelect}

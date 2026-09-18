@@ -1,5 +1,9 @@
 export const NOT_AVAILABLE = 'Not available'
 
+export function percent(value) {
+  return `${Math.round(Number(value || 0) * 100)}%`
+}
+
 export function displayValue(value) {
   if (value == null || value === '') return NOT_AVAILABLE
   return value

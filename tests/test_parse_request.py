@@ -266,3 +266,28 @@ def test_form_only_complete_request_skips_model():
     assert result.request is not None
     assert result.request.origin == "ZAG"
     assert client.calls == []
+
+
+def test_warm_and_warmer_form_and_text_do_not_conflict():
+    from backend.models.trip_request import ExtractedPreferences, merge_preferences
+
+    extracted = ExtractedPreferences(weather_preference="warm")
+    form = ExtractedPreferences(weather_preference="warmer")
+    merged, issues, questions = merge_preferences(extracted, form)
+
+    assert issues == []
+    assert questions == []
+    assert merged.weather_preference == "warm"
+
+    result = _parse(
+        COMPLETE_TEXT,
+        [COMPLETE_EXTRACTION],
+        form_fields={"weather_preference": "warmer"},
+    )
+
+    assert result.status == "ready"
+    assert result.request is not None
+    assert result.request.weather_preference == "warm"
+    assert not any("weather" in issue.lower() for issue in result.issues)
+    assert not any("weather" in question.lower() for question in result.clarification_questions)
+

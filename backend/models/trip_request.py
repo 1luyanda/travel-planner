@@ -47,6 +47,30 @@ FORM_FIELD_NAMES = (
 
 IATA_CODE_PATTERN = r"^[A-Za-z]{3}$"
 CURRENCY_PATTERN = r"^[A-Za-z]{3}$"
+WARM_WEATHER_EQUIVALENTS = frozenset(
+    {"warm", "warmer", "hot", "hotter", "sunny", "sunnier"}
+)
+COOL_WEATHER_EQUIVALENTS = frozenset(
+    {"cool", "cooler", "cold", "colder", "chilly"}
+)
+
+
+def canonical_weather_preference(value: str | None) -> str | None:
+    """Map equivalent weather words onto one parser value.
+
+    ``warm`` and ``warmer`` are the same preference. Ranking still treats the
+    stored string as a label, not a temperature.
+    """
+    if value is None:
+        return None
+    cleaned = str(value).strip().lower()
+    if not cleaned:
+        return None
+    if cleaned in WARM_WEATHER_EQUIVALENTS:
+        return "warm"
+    if cleaned in COOL_WEATHER_EQUIVALENTS:
+        return "cool"
+    return cleaned
 
 
 class ExtractedPreferences(BaseModel):
@@ -82,13 +106,18 @@ class ExtractedPreferences(BaseModel):
     def _clean_moods(cls, value: list[str]) -> list[str]:
         return [item.strip() for item in value if item and str(item).strip()]
 
-    @field_validator("origin_text", "weather_preference")
+    @field_validator("origin_text")
     @classmethod
     def _strip_optional_text(cls, value: str | None) -> str | None:
         if value is None:
             return None
         cleaned = value.strip()
         return cleaned or None
+
+    @field_validator("weather_preference")
+    @classmethod
+    def _canonical_weather_preference(cls, value: str | None) -> str | None:
+        return canonical_weather_preference(value)
 
 
 class TripRequest(BaseModel):
@@ -182,7 +211,7 @@ def merge_preferences(
         if form_value is None:
             continue
         if _has_extracted_value(field_name, extracted_value) and not _values_equal(
-            extracted_value, form_value
+            extracted_value, form_value, field_name=field_name
         ):
             issues.append(
                 f"The form and the message disagree about {field_name.replace('_', ' ')}."
@@ -326,7 +355,12 @@ def _has_extracted_value(field_name: str, value: Any) -> bool:
     return value is not None
 
 
-def _values_equal(left: Any, right: Any) -> bool:
+def _values_equal(left: Any, right: Any, field_name: str | None = None) -> bool:
+    if field_name == "weather_preference":
+        left_weather = canonical_weather_preference(left)
+        right_weather = canonical_weather_preference(right)
+        if left_weather is not None and right_weather is not None:
+            return left_weather == right_weather
     if isinstance(left, float) or isinstance(right, float):
         try:
             return float(left) == float(right)
