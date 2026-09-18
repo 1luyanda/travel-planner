@@ -12,6 +12,8 @@ from backend.contracts import (
     RefineRequest,
 )
 from backend.contracts.candidates import FlightQuery, OriginItem
+from backend.contracts.flight_dates import FlightDateMetadata
+from backend.contracts.recommendations import RecommendationItem
 from backend.models.explanation import DestinationExplanation
 from backend.models.trip_request import TripRequest
 from backend.services.candidates import CandidateService
@@ -144,12 +146,32 @@ class RecommendationService:
             [_to_ranking_candidate(item) for item in prepared.candidates],
             weights,
         )
+        # Keep exact matches first without changing score calculation. Nearby
+        # additions retain the date-distance order selected by CandidateService.
+        alternatives = {
+            item.destination_id: index
+            for index, item in enumerate(prepared.candidates)
+            if item.is_flexible_date_option
+        }
+        if alternatives:
+            ranked.sort(key=lambda item: (
+                item.destination_id in alternatives,
+                alternatives.get(item.destination_id, 0),
+            ))
         recommendations, explain_issues = _explanations_for(
             trip,
             ranked,
             llm_client=self._client(),
             ranking_weights=weights.normalized_weights(),
         )
+        dates_by_id = {
+            item.destination_id: item.model_dump(include=set(FlightDateMetadata.model_fields))
+            for item in prepared.candidates
+        }
+        recommendations = [
+            RecommendationItem(**item.model_dump(), **dates_by_id[item.destination_id])
+            for item in recommendations
+        ]
         issues.extend(explain_issues)
         return RecommendationResponse(
             status="ready",
@@ -163,6 +185,9 @@ class RecommendationService:
             changes=list(changes or []),
             issues=issues,
             data_source=prepared.data_source,
+            flexible_date_fallback_used=prepared.flexible_date_fallback_used,
+            exact_match_count=prepared.exact_match_count,
+            fallback_count=prepared.fallback_count,
         )
 
     async def _resolve_origin(

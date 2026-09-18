@@ -8,7 +8,8 @@ export default defineConfig({
   },
   server: {
     // Forward /api from the Vite dev server to FastAPI so the browser can
-    // call /api/origins, /api/candidates, and /api/flights in development.
+    // call /api/origins, /api/recommend, /api/refine, and optional
+    // /api/candidates or /api/flights enrichment in development.
     proxy: {
       '/api': {
         target: 'http://127.0.0.1:8000',

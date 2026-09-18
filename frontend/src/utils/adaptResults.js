@@ -1,5 +1,8 @@
 /**
  * Map FastAPI candidate + flight payloads onto the planner view model.
+ * Kept for debug/enrichment joins. The main planner flow uses
+ * adaptRecommendations.js against POST /api/recommend and /api/refine.
+ *
  * Only copies fields the APIs actually return. Missing values stay null.
  *
  * Join key: candidate.destination_id === flight.id
