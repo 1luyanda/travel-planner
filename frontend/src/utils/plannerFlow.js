@@ -22,6 +22,8 @@ export const INITIAL_PLANNER_FORM = {
   preferWarm: false,
   mood: '',
   currency: 'EUR',
+  departureDate: '',
+  returnDate: '',
 }
 
 const FORM_FIELD_LABELS = [
@@ -38,8 +40,60 @@ const FORM_FIELD_LABELS = [
 
 export function isIsoDate(value) {
   if (typeof value !== 'string' || !ISO_DATE.test(value)) return false
-  const parsed = new Date(`${value}T00:00:00Z`)
-  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value
+  const [year, month, day] = value.split('-').map(Number)
+  const parsed = new Date(Date.UTC(year, month - 1, day))
+  return (
+    parsed.getUTCFullYear() === year &&
+    parsed.getUTCMonth() === month - 1 &&
+    parsed.getUTCDate() === day
+  )
+}
+
+export function plannerDateValue(value) {
+  return isIsoDate(value) ? value : ''
+}
+
+export function dateRangeError(form = {}) {
+  const departure = plannerDateValue(form.departureDate)
+  const returnDate = plannerDateValue(form.returnDate)
+  if (form.departureDate && !departure) return 'Enter a valid departure date as YYYY-MM-DD.'
+  if (form.returnDate && !returnDate) return 'Enter a valid return date as YYYY-MM-DD.'
+  if (departure && returnDate && returnDate < departure) {
+    return 'Return date must be on or after the departure date.'
+  }
+  return ''
+}
+
+export function datesChangedFromTrip(form, trip) {
+  if (!trip) return false
+  return (
+    plannerDateValue(form?.departureDate) !== plannerDateValue(trip.departure_date) ||
+    plannerDateValue(form?.returnDate) !== plannerDateValue(trip.return_date)
+  )
+}
+
+export function shouldRecommendInsteadOfRefine(form, tripRequest, { clarifying = false } = {}) {
+  if (clarifying || !tripRequest) return false
+  return datesChangedFromTrip(form, tripRequest)
+}
+
+export function describePlannerDates(form = {}) {
+  const lines = []
+  if (plannerDateValue(form.departureDate)) lines.push(`departure date: ${form.departureDate}`)
+  if (plannerDateValue(form.returnDate)) lines.push(`return date: ${form.returnDate}`)
+  return lines.join('\n')
+}
+
+function describedFormDate(formSelectionsText, label) {
+  const match = String(formSelectionsText || '').match(new RegExp(`${label}: (\\d{4}-\\d{2}-\\d{2})`))
+  return match ? match[1] : ''
+}
+
+export function plannerDatesChangedSinceClarification(form, formSelectionsText) {
+  return (
+    plannerDateValue(form?.departureDate) !== describedFormDate(formSelectionsText, 'departure date') ||
+    plannerDateValue(form?.returnDate) !== describedFormDate(formSelectionsText, 'return date')
+  )
 }
 
 function trimText(value) {
@@ -103,10 +157,154 @@ export function describeFormFields(formFields) {
   return lines.join('\n')
 }
 
-export function createClarificationContext({ originalPrompt, formFields, questions = [] } = {}) {
+function isoDateFromUnknown(value) {
+  if (isIsoDate(value)) return value
+  if (value && typeof value === 'string' && isIsoDate(value.slice(0, 10))) return value.slice(0, 10)
+  return ''
+}
+
+export function formFieldsFromPreferences(preferences) {
+  if (!preferences || typeof preferences !== 'object') return {}
+  const fields = {}
+  const origin = trimText(preferences.origin)
+  if (IATA.test(origin)) fields.origin = origin.toUpperCase()
+  const departure = isoDateFromUnknown(preferences.departure_date)
+  const returnDate = isoDateFromUnknown(preferences.return_date)
+  if (departure) fields.departure_date = departure
+  if (returnDate) fields.return_date = returnDate
+  const budget = Number(preferences.budget)
+  if (Number.isFinite(budget) && budget > 0) fields.budget = budget
+  const currency = trimText(preferences.currency)
+  if (/^[A-Za-z]{3}$/.test(currency)) fields.currency = currency.toUpperCase()
+  if (typeof preferences.weather_preference === 'string' && preferences.weather_preference.trim()) {
+    fields.weather_preference = preferences.weather_preference.trim()
+  }
+  if (typeof preferences.direct_flights_only === 'boolean') {
+    fields.direct_flights_only = preferences.direct_flights_only
+  }
+  const moods = Array.isArray(preferences.moods) ? preferences.moods.map(trimText).filter(Boolean) : []
+  if (moods.length) fields.moods = moods
+  const duration = Number(preferences.duration_days)
+  if (Number.isFinite(duration) && duration > 0) fields.duration_days = duration
+  return fields
+}
+
+export function fieldsOmittedForClarification(questions = [], answer = '') {
+  const omitted = new Set()
+  for (const raw of questions) {
+    const question = String(raw || '')
+    if (/currency is the budget|currency/i.test(question)) omitted.add('currency')
+    if (/form has origin|disagree about origin|IATA code/i.test(question)) omitted.add('origin')
+    if (/departure date/i.test(question)) omitted.add('departure_date')
+    if (/return date/i.test(question)) omitted.add('return_date')
+    if (/must be on or after the departure date|confirm both dates/i.test(question)) {
+      omitted.add('departure_date')
+      omitted.add('return_date')
+    }
+    if (/currency is the budget/i.test(question)) {
+      omitted.delete('budget')
+    } else if (/\bbudget\b/i.test(question)) {
+      omitted.add('budget')
+    }
+    if (/weather/i.test(question)) omitted.add('weather_preference')
+    if (/direct[- ]flight/i.test(question)) omitted.add('direct_flights_only')
+    if (/\bmood/i.test(question)) omitted.add('moods')
+  }
+  for (const key of fieldsStatedInAnswer(answer)) omitted.add(key)
+  return omitted
+}
+
+export function fieldsStatedInAnswer(answer = '') {
+  const stated = new Set()
+  const text = String(answer || '')
+  const dates = text.match(/\d{4}-\d{2}-\d{2}/g) || []
+  if (dates.length >= 2) {
+    stated.add('departure_date')
+    stated.add('return_date')
+  } else if (dates.length === 1) {
+    if (/\breturn\b/i.test(text) && !/\bdepart/i.test(text)) stated.add('return_date')
+    else stated.add('departure_date')
+  }
+  const withoutDates = text.replace(/\d{4}-\d{2}-\d{2}/g, ' ')
+  if (
+    /(?:€|£|\$|eur|usd|gbp)\s*\d|\d\s*(?:€|£|\$|eur|usd|gbp)/i.test(withoutDates) ||
+    /budget\s*(?:is\s+now\s+)?\d/i.test(withoutDates)
+  ) {
+    stated.add('budget')
+  } else if (/^\s*\d{2,5}(?:[.,]\d+)?\s*$/i.test(withoutDates) && !/^\s*20[2-9]\d\s*$/.test(withoutDates)) {
+    stated.add('budget')
+  }
+  if (/\b(eur|usd|gbp)\b|€|£|\$/i.test(text)) stated.add('currency')
+  if (/\b(not\s+(?:want\s+)?(?:a\s+)?)?(warm|cool|hot|cold|sunny)/i.test(text)) {
+    stated.add('weather_preference')
+  }
+  return stated
+}
+
+export function formFieldsForClarification({ form, origin, preferences, questions, answer } = {}) {
+  const omitted = fieldsOmittedForClarification(questions, answer)
+  const fromPreferences = formFieldsFromPreferences(preferences)
+  const fromForm =
+    formFieldsFromPlanner(
+      {
+        ...form,
+        budgetTouched: false,
+        includeBudget: false,
+        preferWarm: false,
+        directOnly: form?.directOnly === true,
+      },
+      origin,
+    ) || {}
+  const merged = { ...fromPreferences, ...fromForm }
+  for (const key of omitted) delete merged[key]
+  return Object.keys(merged).length ? merged : null
+}
+
+export function plannerRequestSummary(filters, originLabel, tripRequest, preferences) {
+  const parsed = tripRequest || preferences
+  if (
+    parsed &&
+    (parsed.origin ||
+      parsed.budget != null ||
+      parsed.weather_preference ||
+      parsed.departure_date ||
+      parsed.return_date)
+  ) {
+    const departure = isoDateFromUnknown(parsed.departure_date)
+    const returnDate = isoDateFromUnknown(parsed.return_date)
+    return [
+      originLabel || parsed.origin,
+      parsed.budget != null ? `${parsed.currency || ''} ${parsed.budget}`.trim() : null,
+      parsed.direct_flights_only ? 'Direct only' : null,
+      parsed.weather_preference || null,
+      departure && returnDate ? `${departure} → ${returnDate}` : null,
+    ]
+      .filter(Boolean)
+      .join(' · ')
+  }
+  if (!filters) return ''
+  return [originLabel || filters.originIata || filters.originId].filter(Boolean).join(' · ')
+}
+
+export function composerPlaceholderFor(clarifyKind) {
+  return clarifyKind ? 'Type your answer…' : 'Ask for a mood, dates, or budget…'
+}
+
+export function isClarificationQuestionText(text, questions = []) {
+  const value = trimText(text)
+  if (!value) return false
+  return (questions || []).some((item) => trimText(item) === value)
+}
+
+export function createClarificationContext({ originalPrompt, formFields, preferences, questions = [] } = {}) {
+  const combined = {
+    ...formFieldsFromPreferences(preferences),
+    ...(formFields && typeof formFields === 'object' ? formFields : {}),
+  }
   return {
     originalPrompt: trimText(originalPrompt),
-    formSelectionsText: describeFormFields(formFields),
+    formSelectionsText: describeFormFields(combined),
+    preferences: preferences || null,
     questions: Array.isArray(questions) ? questions.filter(Boolean) : [],
     previousAnswers: [],
   }
@@ -135,6 +333,8 @@ export function buildClarificationRecommendPayload({
   previousAnswers = [],
   questions = [],
   answer,
+  updatedFormDatesText,
+  formFields,
 } = {}) {
   const sections = []
   const prompt = trimText(originalPrompt)
@@ -142,6 +342,11 @@ export function buildClarificationRecommendPayload({
 
   const formText = trimText(formSelectionsText)
   if (formText) sections.push(`Initial form selections:\n${formText}`)
+
+  const updatedDates = trimText(updatedFormDatesText)
+  if (updatedDates) {
+    sections.push(`Updated form dates (this overrides earlier form dates):\n${updatedDates}`)
+  }
 
   const earlier = (previousAnswers || []).map(trimText).filter(Boolean)
   if (earlier.length) {
@@ -158,7 +363,11 @@ export function buildClarificationRecommendPayload({
     )
   }
 
-  return { text: sections.join('\n\n') }
+  const payload = { text: sections.join('\n\n') }
+  if (formFields && typeof formFields === 'object' && !Array.isArray(formFields) && Object.keys(formFields).length) {
+    payload.form_fields = formFields
+  }
+  return payload
 }
 
 export function newTripPlannerState() {
@@ -195,8 +404,8 @@ export function formPatchFromTripRequest(trip) {
   if (typeof trip.weather_preference === 'string') {
     patch.preferWarm = /warm/i.test(trip.weather_preference)
   }
-  if (typeof trip.departure_date === 'string') patch.departureDate = trip.departure_date
-  if (typeof trip.return_date === 'string') patch.returnDate = trip.return_date
+  if (isIsoDate(trip.departure_date)) patch.departureDate = trip.departure_date
+  if (isIsoDate(trip.return_date)) patch.returnDate = trip.return_date
   if (typeof trip.currency === 'string') patch.currency = trip.currency
   return patch
 }
@@ -214,6 +423,24 @@ export function explanationView(destination) {
         .filter((item) => item.statement)
     : []
   return { summary, evidence }
+}
+
+function normalizeExplanationText(value) {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+}
+
+/** Drop evidence bullets that repeat the summary verbatim. */
+export function uniqueExplanationView(destination) {
+  const { summary, evidence } = explanationView(destination)
+  if (!summary) return { summary, evidence }
+  const summaryKey = normalizeExplanationText(summary)
+  return {
+    summary,
+    evidence: evidence.filter((item) => normalizeExplanationText(item.statement) !== summaryKey),
+  }
 }
 
 export function backendScoreItems(destination) {

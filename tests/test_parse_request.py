@@ -209,7 +209,182 @@ def test_missing_values_are_not_copied_from_fixtures():
     assert result.preferences.currency != fixture_request["currency"]
 
 
-def test_mood_or_duration_only_is_preserved():
+def test_euro_symbol_and_warm_escape_fill_missing_llm_fields():
+    result = _parse(
+        "A warm escape under €400",
+        [{"budget": 400}],
+        form_fields={
+            "origin": "ZAG",
+            "departure_date": "2026-10-08",
+            "return_date": "2026-10-15",
+        },
+    )
+
+    assert result.status == "ready"
+    assert result.request is not None
+    assert result.request.origin == "ZAG"
+    assert result.request.departure_date == date(2026, 10, 8)
+    assert result.request.return_date == date(2026, 10, 15)
+    assert result.request.budget == 400
+    assert result.request.currency == "EUR"
+    assert result.request.weather_preference == "warm"
+    assert result.clarification_questions == []
+
+
+def test_amount_with_eur_code_before_or_after_number():
+    form = {
+        "origin": "ZAG",
+        "departure_date": "2026-10-08",
+        "return_date": "2026-10-16",
+    }
+    after = _parse("My budget is 400 EUR and I prefer warmer weather.", [{"budget": 400}], form_fields=form)
+    before = _parse("EUR 400 somewhere warm.", [{"budget": 400}], form_fields=form)
+
+    assert after.status == "ready"
+    assert after.request.currency == "EUR"
+    assert after.request.weather_preference == "warm"
+    assert before.status == "ready"
+    assert before.request.currency == "EUR"
+
+
+def test_bare_amount_without_currency_cue_still_asks():
+    result = _parse(
+        "A getaway under 400",
+        [{"budget": 400}],
+        form_fields={
+            "origin": "ZAG",
+            "departure_date": "2026-10-08",
+            "return_date": "2026-10-15",
+        },
+    )
+
+    assert result.status == "needs_input"
+    assert result.request is None
+    assert result.preferences is not None
+    assert result.preferences.budget == 400
+    assert result.preferences.currency is None
+    assert any("currency" in question.lower() for question in result.clarification_questions)
+
+
+def test_currency_clarification_keeps_origin_dates_budget_and_weather():
+    result = parse_request(
+        "\n\n".join(
+            [
+                "Original request:\nA warm escape under €400",
+                "Initial form selections:\norigin: ZAG\ndeparture date: 2026-10-08\nreturn date: 2026-10-15\nbudget: 400\nweather preference: warm",
+                "The planner asked:\nWhat currency is the budget in (for example EUR)?",
+                "Authoritative answer (this overrides any conflicting initial form values):\nEUR",
+            ]
+        ),
+        form_fields={
+            "origin": "ZAG",
+            "departure_date": "2026-10-08",
+            "return_date": "2026-10-15",
+            "budget": 400,
+            "weather_preference": "warm",
+        },
+        reference_date=REFERENCE_DATE,
+        llm_client=FakeLLMClient([{"currency": "EUR"}]),
+    )
+
+    assert result.status == "ready"
+    assert result.request is not None
+    assert result.request.origin == "ZAG"
+    assert result.request.departure_date == date(2026, 10, 8)
+    assert result.request.return_date == date(2026, 10, 15)
+    assert result.request.budget == 400
+    assert result.request.currency == "EUR"
+    assert result.request.weather_preference == "warm"
+
+
+def test_negated_warm_is_not_treated_as_a_warm_preference():
+    result = _parse(
+        "I do not want a warm escape under €95",
+        [{"budget": 95}],
+        form_fields={
+            "origin": "ZAG",
+            "departure_date": "2026-09-24",
+            "return_date": "2026-10-01",
+        },
+    )
+
+    assert result.status == "ready"
+    assert result.request is not None
+    assert result.request.currency == "EUR"
+    assert result.request.budget == 95
+    assert result.request.weather_preference is None
+
+
+def test_conflicting_currencies_are_not_silently_resolved():
+    result = _parse(
+        "Under €95 or USD 95 from ZAG.",
+        [{"budget": 95}],
+        form_fields={
+            "origin": "ZAG",
+            "departure_date": "2026-09-24",
+            "return_date": "2026-10-01",
+        },
+    )
+
+    assert result.status == "needs_input"
+    assert result.request is None
+    assert result.preferences is not None
+    assert result.preferences.currency is None
+    assert any("currency" in question.lower() for question in result.clarification_questions)
+
+
+def test_clarification_answer_can_replace_dates_and_budget():
+    result = parse_request(
+        "\n\n".join(
+            [
+                "Original request:\nA warm escape under €400",
+                "Initial form selections:\norigin: ZAG\ndeparture date: 2026-10-08\nreturn date: 2026-10-15\nbudget: 400\nweather preference: warm",
+                "The planner asked:\nWhat currency is the budget in (for example EUR)?",
+                "Authoritative answer (this overrides any conflicting initial form values):\nEUR 95 from 2026-09-24 to 2026-10-01",
+            ]
+        ),
+        form_fields={
+            "origin": "ZAG",
+            "weather_preference": "warm",
+        },
+        reference_date=REFERENCE_DATE,
+        llm_client=FakeLLMClient([{"currency": "EUR"}]),
+    )
+
+    assert result.status == "ready"
+    assert result.request is not None
+    assert result.request.origin == "ZAG"
+    assert result.request.departure_date == date(2026, 9, 24)
+    assert result.request.return_date == date(2026, 10, 1)
+    assert result.request.budget == 95
+    assert result.request.currency == "EUR"
+    assert result.request.weather_preference == "warm"
+
+
+def test_clarification_usd_answer_is_not_overridden_by_earlier_euro_symbol():
+    result = parse_request(
+        "\n\n".join(
+            [
+                "Original request:\nA warm escape under €95",
+                "Initial form selections:\norigin: ZAG\ndeparture date: 2026-09-24\nreturn date: 2026-10-01\nbudget: 95",
+                "The planner asked:\nWhat currency is the budget in (for example EUR)?",
+                "Authoritative answer (this overrides any conflicting initial form values):\nUSD",
+            ]
+        ),
+        form_fields={
+            "origin": "ZAG",
+            "departure_date": "2026-09-24",
+            "return_date": "2026-10-01",
+            "budget": 95,
+        },
+        reference_date=REFERENCE_DATE,
+        llm_client=FakeLLMClient([{}]),
+    )
+
+    assert result.preferences is not None
+    assert result.preferences.currency == "USD"
+    assert result.preferences.budget == 95
+    assert result.preferences.departure_date == date(2026, 9, 24)
     result = _parse(
         "A relaxing 5-day trip.",
         [{"moods": ["relaxing"], "duration_days": 5}],

@@ -48,6 +48,7 @@ from pydantic import ValidationError
 from backend.models.trip_request import (
     ExtractedPreferences,
     ParseRequestResult,
+    apply_explicit_text_facts,
     merge_preferences,
     parse_form_fields,
     validate_preferences,
@@ -108,7 +109,10 @@ EXTRACTION_TOOL: dict[str, Any] = {
                 },
                 "currency": {
                     "type": ["string", "null"],
-                    "description": "3-letter currency code only if the user stated one.",
+                    "description": (
+                        "3-letter currency code if the user stated one. "
+                        "€ means EUR. £ means GBP. Null if no currency was stated."
+                    ),
                 },
                 "moods": {
                     "type": "array",
@@ -121,7 +125,10 @@ EXTRACTION_TOOL: dict[str, Any] = {
                 },
                 "weather_preference": {
                     "type": ["string", "null"],
-                    "description": "Weather preference such as warm, or null if not stated.",
+                    "description": (
+                        "Weather preference such as warm. "
+                        "'warm escape' or 'somewhere warm' is warm. Null if not stated."
+                    ),
                 },
             },
         },
@@ -390,6 +397,7 @@ def parse_request(
                 issues=[model_error],
                 clarification_questions=[],
             )
+        extracted = apply_explicit_text_facts(extracted, text)
     else:
         extracted = ExtractedPreferences()
 
@@ -524,8 +532,9 @@ def _system_prompt(reference_date: date) -> str:
         "- origin_iata: only when the user wrote an explicit 3-letter IATA code.\n"
         "- Never invent an airport or city code for a place name. Put the name in origin_text.\n"
         "- Do not use fixture data, default destinations, or assumed budgets.\n"
+        "- currency: € means EUR. '400 EUR' and 'EUR 400' are EUR. Do not invent EUR without a cue.\n"
         "- moods: mood words such as relaxing. Do not put weather words in moods.\n"
-        "- weather_preference: weather words such as warm.\n"
+        "- weather_preference: weather words such as warm. 'warm escape' is warm.\n"
         "- duration_days: only if the user stated a duration.\n"
         "- direct_flights_only: only if the user stated a direct-flight requirement.\n"
     )

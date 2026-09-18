@@ -1,40 +1,14 @@
 import { snapshotLabel } from '../utils/adaptResults'
-import { REFINEMENT_ACTIONS } from '../utils/plannerFlow'
+import { REFINEMENT_ACTIONS, plannerRequestSummary } from '../utils/plannerFlow'
 import ResultsList from './ResultsList'
 import styles from '../workspace.module.css'
-
-function summaryLine(filters, originLabel, tripRequest) {
-  if (tripRequest) {
-    return [
-      originLabel || tripRequest.origin,
-      tripRequest.budget != null
-        ? `${tripRequest.currency || 'EUR'} ${tripRequest.budget}`.trim()
-        : null,
-      tripRequest.direct_flights_only ? 'Direct only' : null,
-      tripRequest.weather_preference || null,
-      tripRequest.departure_date && tripRequest.return_date
-        ? `${tripRequest.departure_date} → ${tripRequest.return_date}`
-        : null,
-    ]
-      .filter(Boolean)
-      .join(' · ')
-  }
-  if (!filters) return ''
-  return [
-    originLabel || filters.originId,
-    filters.maxBudget != null ? `up to €${filters.maxBudget}` : null,
-    filters.directOnly ? 'Direct only' : 'Any stops',
-    filters.preferWarm ? 'Prefer warmer' : 'Any weather',
-  ]
-    .filter(Boolean)
-    .join(' · ')
-}
 
 export default function ConversationPane({
   messages,
   filters,
   originLabel,
   tripRequest = null,
+  preferences = null,
   dataSource,
   rejectedCount = 0,
   results,
@@ -53,13 +27,14 @@ export default function ConversationPane({
 }) {
   const showResults = phase !== 'clarifying' && (results.length > 0 || (!loading && phase === 'ready'))
   const busy = loading || refining
+  const summary = plannerRequestSummary(filters, originLabel, tripRequest, preferences)
 
   return (
     <div className={styles.conversation}>
-      {(filters || tripRequest) && (
+      {summary && (
         <p className={styles.requestSummary}>
           <span>Request</span>
-          {summaryLine(filters, originLabel, tripRequest)}
+          {summary}
         </p>
       )}
       {snapshotLabel(dataSource) && (
