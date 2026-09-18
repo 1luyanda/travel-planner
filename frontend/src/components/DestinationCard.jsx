@@ -39,7 +39,12 @@ export default function DestinationCard({
       aria-current={isSelected ? 'true' : undefined}
     >
       <button type="button" className={styles.cardHit} onClick={() => onSelect?.(destination)}>
-        <DestinationPhoto destination={destination} className={styles.cardPhoto} sizes="280px" />
+        <DestinationPhoto
+          key={destination.id}
+          destination={destination}
+          className={styles.cardPhoto}
+          sizes="280px"
+        />
       </button>
 
       <div className={styles.cardBody}>

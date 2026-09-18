@@ -24,6 +24,12 @@ export function formatDuration(minutes) {
   return `${hours}h ${remaining}m`
 }
 
+export function formatTripDays(days) {
+  if (days == null || Number.isNaN(Number(days))) return null
+  const total = Math.round(Number(days))
+  return total === 1 ? '1 day' : `${total} days`
+}
+
 export function formatStops(stops) {
   if (stops == null) return null
   if (stops === 0) return 'Direct'

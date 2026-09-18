@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { NOT_AVAILABLE, displayValue, formatPrice, tripFactsLine } from './format'
-import { resolveDestinationPhoto } from './photos'
+import { destinationPhotoAlt, resolveDestinationPhoto } from './photos'
 import { buildMapMarkers } from './mapMarkers'
 
 describe('displayValue', () => {
@@ -24,6 +24,15 @@ describe('resolveDestinationPhoto', () => {
     const photo = resolveDestinationPhoto({ destination: { city: 'Lisbon' } })
     const rome = resolveDestinationPhoto({ destination: { city: 'Rome' } })
     expect(photo.src).not.toBe(rome.src)
+  })
+
+  it('builds descriptive alt text from city and country', () => {
+    expect(
+      destinationPhotoAlt(
+        { destination: { city: 'Valencia' }, country: { common_name: 'Spain' } },
+        { kind: 'fallback' },
+      ),
+    ).toBe('Photo of Valencia, Spain')
   })
 })
 

@@ -29,7 +29,22 @@ function pickFlight(destinationId, flightIndex) {
   return { flight, joined: Boolean(flight), unsafe: false }
 }
 
-function mapRecommendation(item, { originId, originIata, dataSource, flightIndex }) {
+function flightWeather(item, flight) {
+  return {
+    average_max_temperature_c:
+      numberOrNull(item?.average_max_temperature_c) ?? numberOrNull(flight?.temp_max_c),
+    average_min_temperature_c:
+      numberOrNull(flight?.temp_min_c) ?? numberOrNull(flight?.average_min_temperature_c),
+    average_precipitation_probability_percent:
+      numberOrNull(flight?.rain_pct) ??
+      numberOrNull(flight?.average_precipitation_probability_percent),
+    average_sunshine_hours:
+      numberOrNull(flight?.sunshine_hours) ?? numberOrNull(flight?.average_sunshine_hours),
+    average_max_wind_speed_kmh: numberOrNull(flight?.average_max_wind_speed_kmh),
+  }
+}
+
+function mapRecommendation(item, { originId, originIata, originCity, originCountry, dataSource, flightIndex }) {
   const destinationId = textOrNull(item?.destination_id)
   const { flight, joined, unsafe } = pickFlight(destinationId, flightIndex)
   const joinedOriginIata = textOrNull(flight?.origin_iata) || originIata
@@ -42,12 +57,15 @@ function mapRecommendation(item, { originId, originIata, dataSource, flightIndex
     destinationIata: textOrNull(item?.destination_iata),
     originId: textOrNull(originId),
     originIata: joinedOriginIata,
+    originCity,
+    originCountry,
     documentId: textOrNull(flight?.id) || destinationId,
     dataSource: textOrNull(dataSource),
     photoUrl: textOrNull(flight?.photo_url),
     photoUrlSmall: textOrNull(flight?.photo_url_small),
     joinedFlight: joined,
     joinUnsafe: unsafe,
+    tripDurationDays: numberOrNull(item?.trip_duration_days),
     rank: rank != null && rank >= 1 ? rank : null,
     scores: {
       price: numberOrNull(item?.price_score),
@@ -85,15 +103,7 @@ function mapRecommendation(item, { originId, originIata, dataSource, flightIndex
       latitude: numberOrNull(flight?.latitude),
       longitude: numberOrNull(flight?.longitude),
     },
-    weather: {
-      average_max_temperature_c: numberOrNull(item?.average_max_temperature_c),
-      average_min_temperature_c: numberOrNull(flight?.average_min_temperature_c),
-      average_precipitation_probability_percent: numberOrNull(
-        flight?.average_precipitation_probability_percent,
-      ),
-      average_sunshine_hours: numberOrNull(flight?.average_sunshine_hours),
-      average_max_wind_speed_kmh: numberOrNull(flight?.average_max_wind_speed_kmh),
-    },
+    weather: flightWeather(item, flight),
     country: {
       common_name: textOrNull(flight?.destination_country),
     },
@@ -126,6 +136,12 @@ function fillMissingDisplayFields(result, flight) {
   if (nextDestination.longitude == null) nextDestination.longitude = numberOrNull(flight.longitude)
   if (!nextCountry.common_name) nextCountry.common_name = textOrNull(flight.destination_country)
 
+  const nextWeather = { ...result.weather }
+  const fromFlight = flightWeather(result, flight)
+  for (const [key, value] of Object.entries(fromFlight)) {
+    if (nextWeather[key] == null && value != null) nextWeather[key] = value
+  }
+
   return {
     ...result,
     originIata: result.originIata || textOrNull(flight.origin_iata),
@@ -136,6 +152,7 @@ function fillMissingDisplayFields(result, flight) {
     flight: nextFlight,
     destination: nextDestination,
     country: nextCountry,
+    weather: nextWeather,
   }
 }
 
@@ -146,8 +163,12 @@ export function adaptRecommendations(response, { flightsResponse = null, selecte
     textOrNull(selectedOrigin?.originId)
   const originIata =
     textOrNull(selectedOrigin?.iata) ||
+    textOrNull(response?.origin?.city_iata?.[0]) ||
+    textOrNull(response?.origin?.airports?.[0]) ||
     textOrNull(response?.request?.origin) ||
     textOrNull(response?.updated_request?.origin)
+  const originCity = textOrNull(response?.origin?.city) || textOrNull(selectedOrigin?.city)
+  const originCountry = textOrNull(response?.origin?.country) || textOrNull(selectedOrigin?.country)
   const dataSource = textOrNull(response?.data_source) || textOrNull(flightsResponse?.data_source)
   const flightIndex = indexFlightsById(flightsResponse?.flights)
   const recommendations = Array.isArray(response?.recommendations) ? response.recommendations : []
@@ -157,9 +178,65 @@ export function adaptRecommendations(response, { flightsResponse = null, selecte
     dataSource,
     rejected: Array.isArray(response?.rejected) ? response.rejected : [],
     results: recommendations.map((item) =>
-      mapRecommendation(item, { originId, originIata, dataSource, flightIndex }),
+      mapRecommendation(item, {
+        originId,
+        originIata,
+        originCity,
+        originCountry,
+        dataSource,
+        flightIndex,
+      }),
     ),
   }
+}
+
+function cityKey(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+}
+
+/**
+ * Attach photo URLs from origin-city documents whose city exactly matches the
+ * destination city. Flight documents do not store photos; origins do.
+ * Never copies a departure city's photo onto a different destination.
+ * Never adds, removes, reorders, or rescores items.
+ */
+export function attachDestinationCityPhotos(results, originItems = []) {
+  const list = Array.isArray(results) ? results : []
+  const photosByCity = new Map()
+  const photosByCityCountry = new Map()
+
+  for (const item of Array.isArray(originItems) ? originItems : []) {
+    const city = cityKey(item?.city)
+    const photoUrl = textOrNull(item?.photo_url)
+    const photoUrlSmall = textOrNull(item?.photo_url_small)
+    if (!city || (!photoUrl && !photoUrlSmall)) continue
+    const photos = { photoUrl, photoUrlSmall }
+    if (!photosByCity.has(city)) photosByCity.set(city, photos)
+    const country = cityKey(item?.country_code)
+    if (country) {
+      const key = `${city}|${country}`
+      if (!photosByCityCountry.has(key)) photosByCityCountry.set(key, photos)
+    }
+  }
+
+  return list.map((result) => {
+    if (result?.photoUrl || result?.photoUrlSmall) return result
+    const destCity = cityKey(result?.destination?.city)
+    if (!destCity) return result
+    const destCountry = cityKey(result?.destination?.country_code)
+    const match =
+      (destCountry && photosByCityCountry.get(`${destCity}|${destCountry}`)) ||
+      photosByCity.get(destCity) ||
+      null
+    if (!match) return result
+    return {
+      ...result,
+      photoUrl: result.photoUrl || match.photoUrl,
+      photoUrlSmall: result.photoUrlSmall || match.photoUrlSmall,
+    }
+  })
 }
 
 /**

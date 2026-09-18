@@ -28,4 +28,48 @@ describe('DestinationCard explanations', () => {
     expect(html).not.toMatch(/ranked in the browser/i)
     expect(explanationView(destination).summary).toBe(destination.explanation.summary)
   })
+
+  it('shows a destination photo with alt text and lazy loading', () => {
+    const html = renderToStaticMarkup(
+      <DestinationCard
+        destination={destination}
+        rank={1}
+        previousRank={null}
+        onViewDetails={() => {}}
+      />,
+    )
+    expect(html).toMatch(/loading="lazy"/)
+    expect(html).toMatch(/Photo of Rome, Italy|The Colosseum in Rome/)
+    expect(html).toContain('Trip details')
+  })
+
+  it('uses a stored destination photo URL when present', () => {
+    const html = renderToStaticMarkup(
+      <DestinationCard
+        destination={{ ...destination, photoUrl: 'https://images.example/rome.jpg' }}
+        rank={1}
+        previousRank={null}
+      />,
+    )
+    expect(html).toContain('https://images.example/rome.jpg')
+    expect(html).toContain('Stored city photo')
+  })
+
+  it('falls back to the city name when no photo is mapped', () => {
+    const html = renderToStaticMarkup(
+      <DestinationCard
+        destination={{
+          ...destination,
+          id: 'ZAG-NMA-1',
+          photoUrl: null,
+          destination: { city: 'Namangan' },
+          country: { common_name: 'Uzbekistan' },
+        }}
+        rank={1}
+        previousRank={null}
+      />,
+    )
+    expect(html).not.toMatch(/<img /)
+    expect(html).toContain('Namangan')
+  })
 })

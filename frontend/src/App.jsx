@@ -11,8 +11,12 @@ import DestinationMap from './components/DestinationMap'
 import FiltersPopover from './components/FiltersPopover'
 import TripDetailsDrawer from './components/TripDetailsDrawer'
 import LandingPage from './components/LandingPage'
-import { fetchFlights, recommendTrip, refineTrip } from './services/travelApi'
-import { adaptRecommendations, enrichRecommendations } from './utils/adaptRecommendations'
+import { fetchFlights, recommendTrip, refineTrip, searchOrigins } from './services/travelApi'
+import {
+  adaptRecommendations,
+  attachDestinationCityPhotos,
+  enrichRecommendations,
+} from './utils/adaptRecommendations'
 import {
   INITIAL_PLANNER_FORM,
   assistantTextForResponse,
@@ -206,17 +210,40 @@ export default function App() {
   }
 
   async function enrichMappedResults(mapped, originId, signal, seq) {
-    if (!originId) return mapped
+    let next = mapped
+    if (originId) {
+      try {
+        const flights = await fetchFlights({ origin_id: originId }, { signal })
+        if (seq !== searchSeqRef.current) return mapped
+        next = enrichRecommendations(mapped, flights)
+      } catch (err) {
+        if (err?.name === 'AbortError') throw err
+        if (seq === searchSeqRef.current) {
+          setFlightWarning('Trips loaded from stored data, but map pins and some flight details are unavailable.')
+        }
+      }
+    }
+
+    const cities = [
+      ...new Set(next.map((item) => item?.destination?.city).filter(Boolean)),
+    ]
+    if (!cities.length) return next
     try {
-      const flights = await fetchFlights({ origin_id: originId }, { signal })
-      if (seq !== searchSeqRef.current) return mapped
-      return enrichRecommendations(mapped, flights)
+      const batches = await Promise.all(
+        cities.map(async (city) => {
+          try {
+            return await searchOrigins(city, { signal })
+          } catch (err) {
+            if (err?.name === 'AbortError') throw err
+            return []
+          }
+        }),
+      )
+      if (seq !== searchSeqRef.current) return next
+      return attachDestinationCityPhotos(next, batches.flat())
     } catch (err) {
       if (err?.name === 'AbortError') throw err
-      if (seq === searchSeqRef.current) {
-        setFlightWarning('Trips loaded from stored data, but map pins and some flight details are unavailable.')
-      }
-      return mapped
+      return next
     }
   }
 
@@ -912,7 +939,12 @@ export default function App() {
         onClose={() => setFiltersOpen(false)}
       />
 
-      <TripDetailsDrawer destination={drawerTrip} onClose={handleCloseDrawer} />
+      <TripDetailsDrawer
+        destination={drawerTrip}
+        onClose={handleCloseDrawer}
+        isSaved={Boolean(drawerTrip && savedIds.includes(drawerTrip.id))}
+        onToggleSaved={handleToggleSaved}
+      />
     </div>
   )
 }

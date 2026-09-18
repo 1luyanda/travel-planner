@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { adaptRecommendations, enrichRecommendations } from './adaptRecommendations'
+import {
+  adaptRecommendations,
+  attachDestinationCityPhotos,
+  enrichRecommendations,
+} from './adaptRecommendations'
 
 const rome = {
   destination_id: 'ZAG-ROM-2026-09-18',
@@ -71,6 +75,19 @@ describe('adaptRecommendations', () => {
     expect(adapted.rejected).toHaveLength(1)
   })
 
+  it('keeps origin and Cosmos weather aliases without inventing photos', () => {
+    const adapted = adaptRecommendations({
+      origin_id: 'zagreb-hr',
+      origin: { id: 'zagreb-hr', city: 'Zagreb', country: 'Croatia', city_iata: ['ZAG'] },
+      recommendations: [rome],
+    })
+    expect(adapted.results[0].originCity).toBe('Zagreb')
+    expect(adapted.results[0].originCountry).toBe('Croatia')
+    expect(adapted.results[0].originIata).toBe('ZAG')
+    expect(adapted.results[0].photoUrl).toBeNull()
+    expect(adapted.results[0].tripDurationDays).toBeNull()
+  })
+
   it('does not invent coordinates or photos when enrichment is missing', () => {
     const adapted = adaptRecommendations({ recommendations: [rome] })
     expect(adapted.results[0].destination.latitude).toBeNull()
@@ -98,6 +115,16 @@ describe('enrichRecommendations', () => {
     expect(enriched[1].destination.latitude).toBeNull()
   })
 
+  it('maps Cosmos rain_pct and temp fields onto the view model', () => {
+    const adapted = adaptRecommendations({ recommendations: [rome] })
+    const enriched = enrichRecommendations(adapted.results, {
+      flights: [{ ...flight, rain_pct: 12, temp_min_c: 18.5, sunshine_hours: 9 }],
+    })
+    expect(enriched[0].weather.average_precipitation_probability_percent).toBe(12)
+    expect(enriched[0].weather.average_min_temperature_c).toBe(18.5)
+    expect(enriched[0].weather.average_sunshine_hours).toBe(9)
+  })
+
   it('does not drop recommendations when enrichment fails to match', () => {
     const adapted = adaptRecommendations({ recommendations: [rome, lisbon] })
     const enriched = enrichRecommendations(adapted.results, {
@@ -105,5 +132,40 @@ describe('enrichRecommendations', () => {
     })
     expect(enriched.map((item) => item.id)).toEqual(adapted.results.map((item) => item.id))
     expect(enriched[0].destination.latitude).toBeNull()
+  })
+})
+
+describe('attachDestinationCityPhotos', () => {
+  const zagrebOrigin = {
+    id: 'zagreb-hr',
+    city: 'Zagreb',
+    country_code: 'HR',
+    photo_url: 'https://images.example/zagreb.jpg',
+  }
+  const romeOrigin = {
+    id: 'rome-it',
+    city: 'Rome',
+    country_code: 'IT',
+    photo_url: 'https://images.example/rome-origin.jpg',
+    photo_url_small: 'https://images.example/rome-origin-small.jpg',
+  }
+
+  it('uses the destination city origin photo, not the departure city photo', () => {
+    const adapted = adaptRecommendations({ recommendations: [rome, lisbon] })
+    const withPhotos = attachDestinationCityPhotos(adapted.results, [zagrebOrigin, romeOrigin])
+
+    expect(withPhotos.map((item) => item.id)).toEqual(adapted.results.map((item) => item.id))
+    expect(withPhotos[0].photoUrl).toBe('https://images.example/rome-origin.jpg')
+    expect(withPhotos[0].photoUrlSmall).toBe('https://images.example/rome-origin-small.jpg')
+    expect(withPhotos[0].scores.total).toBe(adapted.results[0].scores.total)
+    expect(withPhotos[1].photoUrl).toBeNull()
+    expect(withPhotos.every((item) => item.photoUrl !== zagrebOrigin.photo_url)).toBe(true)
+  })
+
+  it('does not replace a flight photo_url with an origin photo', () => {
+    const adapted = adaptRecommendations({ recommendations: [rome] })
+    const fromFlight = enrichRecommendations(adapted.results, { flights: [flight] })
+    const withPhotos = attachDestinationCityPhotos(fromFlight, [romeOrigin])
+    expect(withPhotos[0].photoUrl).toBe('https://img/rome.jpg')
   })
 })

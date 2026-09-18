@@ -535,6 +535,12 @@
   color: var(--tp-on-accent);
   font-weight: 700;
   min-height: 72px;
+  background:
+    linear-gradient(
+      155deg,
+      color-mix(in srgb, var(--tp-accent) 82%, hsl(var(--tone, 168) 40% 28%)),
+      color-mix(in srgb, var(--tp-text) 78%, var(--tp-accent))
+    );
 }
 
 .preview span {
