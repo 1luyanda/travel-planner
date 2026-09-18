@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { List, Map as MapIcon, Menu, SlidersHorizontal } from 'lucide-react'
+import { useAuth } from './auth/AuthProvider'
 import Sidebar from './components/Sidebar'
 import Composer from './components/Composer'
 import OriginSelect from './components/OriginSelect'
@@ -11,11 +12,17 @@ import DestinationMap from './components/DestinationMap'
 import FiltersPopover from './components/FiltersPopover'
 import TripDetailsDrawer from './components/TripDetailsDrawer'
 import LandingPage from './components/LandingPage'
-import { fetchFlights, recommendTrip, refineTrip, searchOrigins } from './services/travelApi'
+import {
+  deleteSavedFlight,
+  fetchSavedFlights,
+  recommendTrip,
+  refineTrip,
+  saveFlight,
+  searchOrigins,
+} from './services/travelApi'
 import {
   adaptRecommendations,
   attachDestinationCityPhotos,
-  enrichRecommendations,
 } from './utils/adaptRecommendations'
 import {
   INITIAL_PLANNER_FORM,
@@ -38,7 +45,17 @@ import {
   createPlannerRequest,
   runPlannerRequest,
 } from './utils/plannerRequest'
-import { loadSavedIds, persistSavedIds, toggleSavedId } from './utils/savedDestinations'
+import {
+  adaptSavedFlight,
+  adaptSavedFlights,
+  destinationsForView,
+  flightReferenceFromDestination,
+  keepSavedFlightPhotos,
+  savedFlightIds,
+  showPlannerComposer,
+  showPlannerConversation,
+  showPlannerFilters,
+} from './utils/savedFlights'
 import { AppLink, ROUTES, isPlannerPath, useRoute } from './utils/routes.jsx'
 import styles from './workspace.module.css'
 
@@ -56,6 +73,8 @@ function unmappedTripCount(results) {
 
 export default function App() {
   const { path, navigate } = useRoute()
+  const { user, loading: authLoading, logout } = useAuth()
+  const userId = user?.id || null
   const [form, setForm] = useState(initialForm)
   const [selectedOrigin, setSelectedOrigin] = useState(null)
   const [searchSnapshot, setSearchSnapshot] = useState(initialForm)
@@ -81,7 +100,9 @@ export default function App() {
   const [draft, setDraft] = useState('')
   const [messages, setMessages] = useState([])
   const [history, setHistory] = useState([])
-  const [savedIds, setSavedIds] = useState(() => loadSavedIds())
+  const [savedItems, setSavedItems] = useState([])
+  const [savedLoading, setSavedLoading] = useState(false)
+  const [savedError, setSavedError] = useState('')
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [mobilePane, setMobilePane] = useState('list')
@@ -112,11 +133,11 @@ export default function App() {
   const maxBudgetCap = prices.length
     ? Math.max(...prices, Number(form.maxBudget) || 0)
     : Math.max(500, Number(form.maxBudget) || 0)
-  const savedDestinations = results.filter((item) => savedIds.includes(item.id))
-  const rankedSaved = results.filter((item) => savedIds.includes(item.id))
-  const mapResults = view === 'saved' ? rankedSaved : results
+  const savedIds = savedFlightIds(savedItems)
+  const visibleDestinations = destinationsForView(view, { results, savedItems })
+  const mapResults = visibleDestinations
   const drawerTrip = selectedTrip
-    ? (view === 'saved' ? rankedSaved : results).find((item) => item.id === selectedTrip.id) || selectedTrip
+    ? visibleDestinations.find((item) => item.id === selectedTrip.id) || selectedTrip
     : null
   const showMap = view === 'saved' || hasSearched
   const showInspiration = view === 'explore' && !hasSearched
@@ -132,14 +153,77 @@ export default function App() {
           : 'ready'
 
   useEffect(() => {
-    persistSavedIds(savedIds)
-  }, [savedIds])
+    setSavedItems([])
+    setSavedError('')
+    if (!userId) {
+      setSavedLoading(false)
+      return undefined
+    }
+
+    const controller = new AbortController()
+    setSavedLoading(true)
+    loadAdaptedSavedFlights(controller.signal)
+      .then((items) => {
+        setSavedItems(items)
+        setSavedError('')
+      })
+      .catch((error) => {
+        if (error?.name === 'AbortError') return
+        setSavedItems([])
+        setSavedError(error?.message || 'Could not load saved flights.')
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setSavedLoading(false)
+      })
+
+    return () => controller.abort()
+  }, [userId])
+
+  const previousWorkspaceUserRef = useRef(undefined)
+  useEffect(() => {
+    if (previousWorkspaceUserRef.current === userId) return
+    previousWorkspaceUserRef.current = userId
+
+    searchAbortRef.current?.abort()
+    searchSeqRef.current += 1
+    setForm(initialForm)
+    setSelectedOrigin(null)
+    setSearchSnapshot(initialForm)
+    setRejected([])
+    setDataSource(null)
+    setResults([])
+    setPreviousRanks({})
+    setAppliedFilters(null)
+    setSelectedTrip(null)
+    setSelectedDestinationId(null)
+    setViewportMode('bounds')
+    setLoading(false)
+    setError('')
+    setFlightWarning('')
+    setHasSearched(false)
+    setView('explore')
+    setDraft('')
+    setMessages([])
+    setHistory([])
+    setFiltersOpen(false)
+    setSidebarOpen(false)
+    setMobilePane('list')
+    setPendingSelectId(null)
+    setOriginError('')
+    setFocusOrigin(false)
+  }, [userId])
 
   useEffect(() => {
     if (path !== ROUTES.home && !isPlannerPath(path)) {
       navigate(ROUTES.home, { replace: true })
     }
   }, [navigate, path])
+
+  useEffect(() => {
+    if (!authLoading && isPlannerPath(path) && !user) {
+      navigate(ROUTES.home, { replace: true })
+    }
+  }, [authLoading, navigate, path, user])
 
   useEffect(() => {
     const media = window.matchMedia('(max-width: 780px)')
@@ -156,24 +240,24 @@ export default function App() {
   }, [focusOrigin, path])
 
   useEffect(() => {
-    const pool = view === 'saved' ? savedDestinations : results
+    const pool = visibleDestinations
     if (selectedDestinationId && !pool.some((item) => item.id === selectedDestinationId)) {
       setSelectedDestinationId(null)
     }
     if (selectedTrip && !pool.some((item) => item.id === selectedTrip.id)) {
       setSelectedTrip(null)
     }
-  }, [results, savedDestinations, selectedDestinationId, selectedTrip, view])
+  }, [results, visibleDestinations, selectedDestinationId, selectedTrip, view])
 
   useEffect(() => {
     if (!pendingSelectId) return
-    const pool = view === 'saved' ? savedDestinations : results
+    const pool = visibleDestinations
     if (pool.some((item) => item.id === pendingSelectId)) {
       setSelectedDestinationId(pendingSelectId)
       setViewportMode('selected')
       setPendingSelectId(null)
     }
-  }, [pendingSelectId, results, savedDestinations, view])
+  }, [pendingSelectId, results, visibleDestinations, view])
 
   function invalidateResults() {
     setHasSearched(false)
@@ -210,25 +294,16 @@ export default function App() {
     if (hasSearched && !same) invalidateResults()
   }
 
-  async function enrichMappedResults(mapped, originId, signal, seq) {
-    let next = mapped
-    if (originId) {
-      try {
-        const flights = await fetchFlights({ origin_id: originId }, { signal })
-        if (seq !== searchSeqRef.current) return mapped
-        next = enrichRecommendations(mapped, flights)
-      } catch (err) {
-        if (err?.name === 'AbortError') throw err
-        if (seq === searchSeqRef.current) {
-          setFlightWarning('Trips loaded from stored data, but map pins and some flight details are unavailable.')
-        }
-      }
-    }
+  async function enrichMappedResults(mapped, signal, seq) {
+    if (seq != null && seq !== searchSeqRef.current) return mapped
+    return attachCityPhotos(mapped, signal)
+  }
 
+  async function attachCityPhotos(results, signal) {
     const cities = [
-      ...new Set(next.map((item) => item?.destination?.city).filter(Boolean)),
+      ...new Set(results.map((item) => item?.destination?.city).filter(Boolean)),
     ]
-    if (!cities.length) return next
+    if (!cities.length) return results
     try {
       const batches = await Promise.all(
         cities.map(async (city) => {
@@ -240,12 +315,16 @@ export default function App() {
           }
         }),
       )
-      if (seq !== searchSeqRef.current) return next
-      return attachDestinationCityPhotos(next, batches.flat())
+      return attachDestinationCityPhotos(results, batches.flat())
     } catch (err) {
       if (err?.name === 'AbortError') throw err
-      return next
+      return results
     }
+  }
+
+  async function loadAdaptedSavedFlights(signal) {
+    const payload = await fetchSavedFlights({ signal })
+    return attachCityPhotos(adaptSavedFlights(payload), signal)
   }
 
   async function runRecommend(userText, options = {}) {
@@ -479,17 +558,12 @@ export default function App() {
     })
 
     try {
-      const enriched = await enrichMappedResults(
-        adapted.results,
-        adapted.originId || response.origin_id,
-        request.signal,
-        seq,
-      )
+      const enriched = await enrichMappedResults(adapted.results, request.signal, seq)
       if (seq !== searchSeqRef.current) return
       setResults(enriched)
     } catch (err) {
       if (err?.name === 'AbortError' || seq !== searchSeqRef.current) return
-      setFlightWarning('Trips loaded from stored data, but map pins and some flight details are unavailable.')
+      setFlightWarning('Destination photos are unavailable.')
     }
     } catch (err) {
       if (err?.name === 'AbortError' || seq !== searchSeqRef.current) return
@@ -607,17 +681,12 @@ export default function App() {
       ])
 
       try {
-        const enriched = await enrichMappedResults(
-          adapted.results,
-          adapted.originId || response.origin_id,
-          request.signal,
-          seq,
-        )
+        const enriched = await enrichMappedResults(adapted.results, request.signal, seq)
         if (seq !== searchSeqRef.current) return
         setResults(enriched)
       } catch (err) {
         if (err?.name === 'AbortError' || seq !== searchSeqRef.current) return
-        setFlightWarning('Trips loaded from stored data, but map pins and some flight details are unavailable.')
+        setFlightWarning('Destination photos are unavailable.')
       }
     } catch (err) {
       if (err?.name === 'AbortError' || seq !== searchSeqRef.current) return
@@ -739,7 +808,7 @@ export default function App() {
   }
 
   function handleMarkerSelect(resultId) {
-    const pool = view === 'saved' ? rankedSaved : results
+    const pool = visibleDestinations
     const match = pool.find((item) => item.id === resultId)
     if (match) {
       setSelectedDestinationId(match.id)
@@ -767,8 +836,81 @@ export default function App() {
     runRefine(refinementFeedbackText(preference), { label: preference })
   }
 
-  function handleToggleSaved(destination) {
-    setSavedIds((current) => toggleSavedId(current, destination.id))
+  async function refreshSavedFlights() {
+    if (!userId) return
+    setSavedLoading(true)
+    try {
+      setSavedItems(await loadAdaptedSavedFlights())
+      setSavedError('')
+    } catch (error) {
+      if (error?.name === 'AbortError') return
+      setSavedError(error?.message || 'Could not load saved flights.')
+    } finally {
+      setSavedLoading(false)
+    }
+  }
+
+  async function handleToggleSaved(destination) {
+    const reference = flightReferenceFromDestination(destination)
+    if (!reference.flight_id) return
+    const alreadySaved = savedIds.includes(reference.flight_id) || savedIds.includes(destination.id)
+    const previous = savedItems
+
+    if (alreadySaved) {
+      setSavedItems((current) =>
+        current.filter((item) => item.id !== reference.flight_id && item.id !== destination.id),
+      )
+      try {
+        await deleteSavedFlight(reference.flight_id)
+        setSavedError('')
+      } catch (error) {
+        setSavedItems(previous)
+        setSavedError(error?.message || 'Could not remove that saved flight.')
+      }
+      return
+    }
+
+    const optimistic = adaptSavedFlight({
+      flight_id: reference.flight_id,
+      origin_id: reference.origin_id,
+      saved_at: new Date().toISOString(),
+      last_checked_at: new Date().toISOString(),
+      saved_price: reference.price,
+      last_checked_price: reference.price,
+      price_changed: false,
+      availability: 'available',
+      flight: {
+        id: reference.flight_id,
+        origin_id: reference.origin_id,
+        origin_iata: destination.originIata,
+        destination_city: destination.destination?.city,
+        destination_country: destination.country?.common_name,
+        destination_country_code: destination.destination?.country_code,
+        price_eur: reference.price,
+        currency: destination.flight?.currency,
+        latitude: destination.destination?.latitude,
+        longitude: destination.destination?.longitude,
+        photo_url: destination.photoUrl,
+        photo_url_small: destination.photoUrlSmall,
+      },
+    })
+    setSavedItems((current) => [
+      optimistic,
+      ...current.filter((item) => item.id !== reference.flight_id),
+    ])
+    try {
+      const saved = await saveFlight(reference)
+      const adapted = keepSavedFlightPhotos(adaptSavedFlight(saved), destination)
+      const withPhotos = await attachCityPhotos([adapted])
+      setSavedItems((current) => [
+        withPhotos[0] || adapted,
+        ...current.filter((item) => item.id !== adapted.id && item.id !== reference.flight_id),
+      ])
+      setSavedError('')
+    } catch (error) {
+      setSavedItems(previous)
+      setSavedError(error?.message || 'Could not save that flight.')
+    }
   }
 
   function handlePreview(destination) {
@@ -802,6 +944,10 @@ export default function App() {
     return <LandingPage />
   }
 
+  if (authLoading || !user) {
+    return <div className={styles.workspace}>Loading your account…</div>
+  }
+
   const composerPlaceholder = clarifyKind
     ? clarificationQuestions[0] || 'Answer the planner’s question…'
     : 'Ask for a mood, dates, or budget…'
@@ -816,6 +962,8 @@ export default function App() {
         view={view}
         history={history}
         savedCount={savedIds.length}
+        user={user}
+        onLogout={logout}
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         onNewTrip={handleNewTrip}
@@ -825,8 +973,10 @@ export default function App() {
         }}
         onSaved={() => {
           setView('saved')
+          setFiltersOpen(false)
           setSidebarOpen(false)
           setMobilePane('list')
+          refreshSavedFlights()
         }}
         onHistory={handleHistory}
       />
@@ -861,7 +1011,7 @@ export default function App() {
               </button>
             </div>
           )}
-          {hasSearched && view === 'explore' && (
+          {hasSearched && showPlannerFilters(view) && (
             <button type="button" className={styles.iconBtn} aria-label="Open filters" onClick={() => setFiltersOpen(true)}>
               <SlidersHorizontal size={18} />
             </button>
@@ -869,12 +1019,15 @@ export default function App() {
         </div>
 
         <div className={styles.centerScroll}>
-          {error && hasSearched && view === 'explore' && <p className={styles.noticeError}>{error}</p>}
-          {flightWarning && hasSearched && view === 'explore' && <p className={styles.notice}>{flightWarning}</p>}
+          {error && showPlannerConversation(view, hasSearched) && <p className={styles.noticeError}>{error}</p>}
+          {flightWarning && showPlannerConversation(view, hasSearched) && <p className={styles.notice}>{flightWarning}</p>}
+          {savedError && view === 'explore' && <p className={styles.noticeError}>{savedError}</p>}
 
           {view === 'saved' ? (
             <SavedPane
-              destinations={rankedSaved}
+              destinations={savedItems}
+              loading={savedLoading}
+              error={savedError}
               selectedId={selectedDestinationId}
               savedIds={savedIds}
               onSelect={handleSelectDestination}
@@ -882,7 +1035,7 @@ export default function App() {
               onViewDetails={handleViewDetails}
               onExplore={() => setView('explore')}
             />
-          ) : hasSearched ? (
+          ) : showPlannerConversation(view, hasSearched) ? (
             <>
               <div className={styles.desktopTools}>
                 <button type="button" className={styles.ghostBtn} onClick={() => setFiltersOpen(true)}>
@@ -940,23 +1093,24 @@ export default function App() {
           )}
         </div>
 
-        <div className={styles.composerDock}>
-          <p className={styles.dockHint}>Stored travel data · Snapshot, not live fares</p>
-          <OriginSelect
-            value={selectedOrigin}
-            onChange={handleOriginChange}
-            error={originError}
-            inputRef={originInputRef}
-          />
-          <Composer
-            inputRef={composerRef}
-            draft={draft}
-            onDraftChange={setDraft}
-            onSubmit={handleComposerSubmit}
-            loading={busy}
-            placeholder={composerPlaceholder}
-          />
-        </div>
+        {showPlannerComposer(view) && (
+          <div className={styles.composerDock}>
+            <OriginSelect
+              value={selectedOrigin}
+              onChange={handleOriginChange}
+              error={originError}
+              inputRef={originInputRef}
+            />
+            <Composer
+              inputRef={composerRef}
+              draft={draft}
+              onDraftChange={setDraft}
+              onSubmit={handleComposerSubmit}
+              loading={busy}
+              placeholder={composerPlaceholder}
+            />
+          </div>
+        )}
       </div>
 
       <div className={styles.right}>
@@ -979,14 +1133,16 @@ export default function App() {
         )}
       </div>
 
-      <FiltersPopover
-        open={filtersOpen}
-        form={form}
-        maxBudgetCap={maxBudgetCap}
-        onChange={handleFilterChange}
-        onReset={handleResetFilters}
-        onClose={() => setFiltersOpen(false)}
-      />
+      {showPlannerFilters(view) && (
+        <FiltersPopover
+          open={filtersOpen}
+          form={form}
+          maxBudgetCap={maxBudgetCap}
+          onChange={handleFilterChange}
+          onReset={handleResetFilters}
+          onClose={() => setFiltersOpen(false)}
+        />
+      )}
 
       <TripDetailsDrawer
         destination={drawerTrip}

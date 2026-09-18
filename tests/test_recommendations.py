@@ -149,6 +149,11 @@ class RecommendServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data.last_query.origin_id if data.last_query else None, "zagreb-hr")
         self.assertEqual(data.last_query.max_price_eur if data.last_query else None, 400)
         self.assertIsNone(data.last_query.max_changeovers if data.last_query else "missing")
+        self.assertEqual(
+            {flight.id for flight in result.flights},
+            {item.destination_id for item in result.recommendations},
+        )
+        self.assertTrue(any(flight.destination_city == "Rome" for flight in result.flights))
 
     async def test_incomplete_request_does_not_query_cosmos(self) -> None:
         service, data = _service(

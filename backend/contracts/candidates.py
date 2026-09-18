@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any
-
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .flight_dates import DateFallbackSummary, FlightDateMetadata
@@ -16,13 +14,18 @@ class FlightQuery(BaseModel):
     origin_id: str = Field(min_length=3, max_length=150)
     departure_date: date | None = None
     return_date: date | None = None
-    max_price_eur: float | None = Field(default=None, gt=0)
-    min_temperature_c: float | None = None
+    max_price_eur: float | None = Field(default=None, gt=0, le=1_000_000)
+    min_temperature_c: float | None = Field(default=None, ge=-100, le=100)
     destination_country_code: str | None = Field(
         default=None, min_length=2, max_length=2
     )
-    max_changeovers: int | None = Field(default=None, ge=0)
-    max_flight_duration_minutes: int | None = Field(default=None, gt=0)
+    max_changeovers: int | None = Field(default=None, ge=0, le=20)
+    max_flight_duration_minutes: int | None = Field(
+        default=None,
+        gt=0,
+        le=10_080,
+    )
+    limit: int = Field(default=100, ge=1, le=200)
 
     @field_validator("origin_id")
     @classmethod
@@ -49,9 +52,9 @@ class FlightQuery(BaseModel):
 
 
 class OriginItem(BaseModel):
-    """Full origin city document from Cosmos, including photos and extra fields."""
+    """Public origin fields returned to the frontend."""
 
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="ignore")
 
     id: str
     city: str
@@ -64,8 +67,44 @@ class OriginItem(BaseModel):
     photo_url_small: str | None = None
 
 
+class FlightItem(BaseModel):
+    """Allowlisted flight fields safe for frontend display and map joins."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: str
+    origin_id: str | None = None
+    origin_iata: str | None = None
+    origin_airport: str | None = None
+    destination_iata: str | None = None
+    destination_airport: str | None = None
+    destination_city: str | None = None
+    destination_country: str | None = None
+    destination_country_code: str | None = None
+    airport_name: str | None = None
+    price_eur: float | None = None
+    currency: str | None = None
+    departure_at: datetime | None = None
+    return_at: datetime | None = None
+    outbound_stops: int | None = None
+    return_stops: int | None = None
+    duration_minutes: int | None = None
+    airline_code: str | None = None
+    airline_name: str | None = None
+    flight_number: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    photo_url: str | None = None
+    photo_url_small: str | None = None
+    temp_max_c: float | None = None
+    temp_min_c: float | None = None
+    rain_pct: float | None = None
+    sunshine_hours: float | None = None
+    max_wind_speed_kmh: float | None = None
+
+
 class CandidateItem(FlightDateMetadata):
-    """Validated data that the colleague's ranking algorithm can consume."""
+    """Validated data that the ranking algorithm can consume."""
 
     destination_id: str
     destination_iata: str
@@ -101,13 +140,14 @@ class CandidateResponse(DateFallbackSummary):
     origin_id: str
     candidates: list[CandidateItem]
     rejected: list[RejectedCandidateItem]
+    flights: list[FlightItem] = Field(default_factory=list)
     data_source: str
 
 
 class FlightListResponse(BaseModel):
-    """All Cosmos flight documents for one origin partition."""
+    """Bounded, allowlisted flight data for one origin partition."""
 
     origin_id: str
-    flights: list[dict[str, Any]]
+    flights: list[FlightItem]
     count: int
     data_source: str

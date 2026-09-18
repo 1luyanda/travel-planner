@@ -173,6 +173,7 @@ class RecommendationService:
             for item in recommendations
         ]
         issues.extend(explain_issues)
+        recommended_ids = {item.destination_id for item in recommendations}
         return RecommendationResponse(
             status="ready",
             request=trip,
@@ -180,6 +181,11 @@ class RecommendationService:
             origin=origin,
             origin_id=origin.id,
             recommendations=recommendations,
+            flights=[
+                flight
+                for flight in prepared.flights
+                if flight.id in recommended_ids
+            ],
             rejected=list(prepared.rejected),
             intents=list(intents or []),
             changes=list(changes or []),

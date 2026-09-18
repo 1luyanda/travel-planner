@@ -4,7 +4,6 @@ import {
   formatOriginLabel,
   parseOriginItems,
   shouldClearOriginSelection,
-  snapshotHint,
 } from '../utils/origins'
 import styles from '../workspace.module.css'
 
@@ -20,7 +19,6 @@ export default function OriginSelect({
   const listId = useId()
   const labelId = useId()
   const errorId = useId()
-  const hintId = useId()
   const rootRef = useRef(null)
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -110,16 +108,16 @@ export default function OriginSelect({
 
   const listMessage =
     status === 'loading'
-      ? 'Searching stored origins…'
+      ? 'Searching origins…'
       : status === 'error'
         ? searchError
         : status === 'empty'
           ? 'No matching origins'
           : status === 'idle'
-            ? 'Type a city to search stored origins'
+            ? 'Type a city to search origins'
             : null
 
-  const describedBy = [hintId, error ? errorId : null].filter(Boolean).join(' ') || undefined
+  const describedBy = error ? errorId : undefined
 
   return (
     <div className={styles.originField} ref={rootRef}>
@@ -192,9 +190,6 @@ export default function OriginSelect({
           </ul>
         )}
       </div>
-      <p id={hintId} className={styles.originHint}>
-        {snapshotHint()}
-      </p>
       {error && (
         <p id={errorId} className={styles.originError} role="alert">
           {error}

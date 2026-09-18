@@ -360,6 +360,103 @@
   background: var(--tp-selected);
 }
 
+.authPanel {
+  display: grid;
+  gap: 8px;
+  min-width: 260px;
+  padding: 10px;
+  border: 1px solid var(--tp-border);
+  border-radius: 14px;
+  background: var(--tp-surface);
+}
+
+.authTabs {
+  display: flex;
+  gap: 4px;
+}
+
+.authTab,
+.authTabActive {
+  border: 0;
+  border-radius: 8px;
+  padding: 5px 8px;
+  background: transparent;
+  color: var(--tp-text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.authTabActive {
+  background: var(--tp-selected);
+  color: var(--tp-accent);
+}
+
+.authForm {
+  display: grid;
+  gap: 6px;
+}
+
+.authForm input {
+  min-width: 0;
+  border: 1px solid var(--tp-border);
+  border-radius: 8px;
+  padding: 7px 9px;
+  background: var(--tp-bg);
+  color: var(--tp-text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.authSubmit {
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--tp-accent);
+  color: var(--tp-on-accent);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.authSubmit:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.authError {
+  margin: 0;
+  color: var(--tp-danger, #b42318);
+  font-size: 12px;
+}
+
+.authStatus,
+.authSignedIn {
+  color: var(--tp-text-muted);
+  font-size: 12px;
+}
+
+.authSignedIn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.authLink,
+.authTextButton {
+  color: var(--tp-accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.authTextButton {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
 @media (max-width: 900px) {
   .hero,
   .header {
@@ -393,6 +490,10 @@
 
   .nav a {
     display: none;
+  }
+
+  .authPanel {
+    min-width: 230px;
   }
 }
 

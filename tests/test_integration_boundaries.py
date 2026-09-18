@@ -230,12 +230,13 @@ class RankingBridgeTests(unittest.TestCase):
         self.assertEqual(origin.id, "zagreb-hr")
         self.assertTrue(origin.photo_url)
         dumped = origin.model_dump()
-        self.assertIn("_rid", dumped)
         self.assertEqual(len(result.candidates), 1)
         self.assertEqual(candidate.city, "Rome")
         self.assertEqual(candidate.destination_iata, "FCO")
         self.assertEqual(candidate.price_eur, 65)
         self.assertEqual(candidate.precipitation_probability_percent, 13)
+        self.assertNotIn("_rid", dumped)
+        self.assertNotIn("_etag", dumped)
 
 
 class CandidateServiceTests(unittest.IsolatedAsyncioTestCase):
@@ -251,16 +252,22 @@ class CandidateServiceTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertGreaterEqual(len(response.flights), 3)
         self.assertEqual(response.count, len(response.flights))
-        self.assertEqual(response.flights[0]["origin_id"], "zagreb-hr")
-        self.assertIn("price_eur", response.flights[0])
+        self.assertEqual(response.flights[0].origin_id, "zagreb-hr")
+        self.assertEqual(response.flights[0].price_eur, 65)
+        self.assertNotIn("_etag", response.flights[0].model_dump())
         self.assertEqual(
             response.data_source,
-            "test://normalized-destinations",
+            "stored",
         )
 
         ranked = await service.prepare(request)
         self.assertGreaterEqual(len(ranked.candidates), 3)
         self.assertTrue(ranked.candidates[0].destination_id)
+        self.assertEqual(
+            [flight.id for flight in ranked.flights],
+            [item.destination_id for item in ranked.candidates],
+        )
+        self.assertEqual(ranked.flights[0].destination_city, "Rome")
 
     async def test_cosmos_flight_query_uses_origin_partition(self) -> None:
         repository = CosmosDestinationRepository(
@@ -281,7 +288,14 @@ class CandidateServiceTests(unittest.IsolatedAsyncioTestCase):
         prepared = prepare_ranking_records(records)
         self.assertFalse(prepared.rejected)
         self.assertEqual(len(rank_candidates(prepared.candidates)), 3)
-        self.assertIn("c.origin_id = @origin_id", container.query_arguments["query"])
+        query = container.query_arguments["query"]
+        self.assertIn("c.origin_id = @origin_id", query)
+        self.assertNotIn("SELECT TOP 100 *", query)
+        self.assertNotIn("SELECT * FROM", query)
+        self.assertIn("c.id", query)
+        self.assertIn("c.price_eur", query)
+        self.assertIn("c.latitude", query)
+        self.assertIn("c.temp_max_c", query)
         self.assertIn(
             {"name": "@origin_id", "value": "zagreb-hr"},
             container.query_arguments["parameters"],

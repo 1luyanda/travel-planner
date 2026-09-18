@@ -271,17 +271,18 @@ describe('assistant copy', () => {
       [],
     )
     expect(text).toContain('departure date')
-    expect(text).not.toMatch(/No stored trips match/i)
+    expect(text).not.toMatch(/No trips match/i)
     expect(text).not.toMatch(/ranked in the browser/i)
   })
 
-  it('describes ready recommendations as planner-service results', () => {
+  it('describes ready recommendations without snapshot disclaimers', () => {
     const text = assistantTextForResponse(
       { status: 'ready', issues: [] },
       [{ destination: { city: 'Rome' } }, { destination: { city: 'Lisbon' } }],
     )
-    expect(text).toMatch(/planner service/i)
+    expect(text).toMatch(/I found 2 matching trips/)
     expect(text).toMatch(/Rome/)
+    expect(text).not.toMatch(/snapshot|not live or bookable/i)
     expect(text).not.toMatch(/ranked in the browser/i)
   })
 })

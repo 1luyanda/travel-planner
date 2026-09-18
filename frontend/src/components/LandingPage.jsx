@@ -1,4 +1,5 @@
 import BrandMark from './BrandMark'
+import AuthPanel from './AuthPanel'
 import { getDestinationImage } from '../data/destinationImages'
 import { AppLink, ROUTES } from '../utils/routes.jsx'
 import styles from '../landing.module.css'
@@ -26,18 +27,17 @@ export default function LandingPage() {
           <AppLink to={ROUTES.planner} className={styles.startBtn}>
             Start planning
           </AppLink>
+          <AuthPanel />
         </nav>
       </header>
 
       <section className={styles.hero} aria-labelledby="landing-title">
         <div className={styles.heroCopy}>
-          <p className={styles.badge}>Stored travel data · Snapshot</p>
           <h1 id="landing-title">
             Your mood. Your budget. <span className={styles.accent}>Your next trip.</span>
           </h1>
           <p className={styles.lede}>
-            Compare stored flight and weather snapshots for a departure city you choose. Fares are
-            not live or bookable.
+            Compare flights and weather for a departure city you choose.
           </p>
           <AppLink to={ROUTES.planner} className={styles.startBtnLarge}>
             Start planning
@@ -63,14 +63,14 @@ export default function LandingPage() {
             <span>1</span>
             <div>
               <h3>Choose where you fly from</h3>
-              <p>Search stored origin cities or include an IATA code in your request. Dates, budget, and origin can also be clarified in chat.</p>
+              <p>Search origin cities or include an IATA code in your request. Dates, budget, and origin can also be clarified in chat.</p>
             </div>
           </li>
           <li>
             <span>2</span>
             <div>
-              <h3>Compare stored matches</h3>
-              <p>Cards show snapshot prices, stops, duration, and weather. Missing fields stay blank.</p>
+              <h3>Compare matches</h3>
+              <p>Cards show prices, stops, duration, and weather. Missing fields stay blank.</p>
             </div>
           </li>
           <li>
@@ -86,8 +86,7 @@ export default function LandingPage() {
       <section className={styles.explore} id="explore-destinations" aria-labelledby="explore-title">
         <h2 id="explore-title">Explore destinations</h2>
         <p>
-          Snapshot trips load from the planner service. Origin autocomplete is optional. There is no
-          all-origins catalogue endpoint.
+          Search from a departure city to see matching trips. Origin autocomplete is optional.
         </p>
         <AppLink to={ROUTES.planner} className={styles.startBtn}>
           Open the planner

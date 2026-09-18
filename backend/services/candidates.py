@@ -5,10 +5,13 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 
+from pydantic import ValidationError
+
 from backend.config import FLEXIBLE_DATE_WINDOW_DAYS, MIN_RECOMMENDATION_RESULTS
 from backend.contracts import (
     CandidateItem,
     CandidateResponse,
+    FlightItem,
     FlightListResponse,
     FlightQuery,
     OriginItem,
@@ -44,9 +47,9 @@ class CandidateService:
         flights = await self._data_service.get_destination_records(request)
         return FlightListResponse(
             origin_id=request.origin_id,
-            flights=flights,
+            flights=[FlightItem.model_validate(flight) for flight in flights],
             count=len(flights),
-            data_source=self._data_service.source_name,
+            data_source="stored",
         )
 
     async def prepare(self, request: FlightQuery) -> CandidateResponse:
@@ -85,6 +88,13 @@ class CandidateService:
         exact.rejected.extend(
             item for item in nearby.rejected if item.destination_id not in rejected_ids
         )
+        nearby_flights = {flight.id: flight for flight in nearby.flights}
+        exact_flight_ids = {flight.id for flight in exact.flights}
+        for item in additions:
+            flight = nearby_flights.get(item.destination_id)
+            if flight is not None and flight.id not in exact_flight_ids:
+                exact.flights.append(flight)
+                exact_flight_ids.add(flight.id)
         return exact
 
     def _prepare_records(
@@ -98,6 +108,7 @@ class CandidateService:
         )
         candidates = []
         rejected = []
+        flights_by_id: dict[str, FlightItem] = {}
         for record in records:
             # Keep each validated candidate paired with its source dates even
             # when duplicate IDs have different dates or invalid versions.
@@ -125,6 +136,10 @@ class CandidateService:
             item.actual_departure_date = _local_date(record.get("departure_at"))
             item.actual_return_date = _local_date(record.get("return_at"))
             candidates.append(item)
+            try:
+                flights_by_id[item.destination_id] = FlightItem.model_validate(record)
+            except (TypeError, ValueError, ValidationError):
+                pass
 
         candidates.sort(key=(
             (lambda item: _date_distance_key(item, request)) if flexible
@@ -136,9 +151,15 @@ class CandidateService:
         rejected.sort(key=lambda item: (item.destination_iata or "", item.destination_id or ""))
 
         # /api/candidates stays unranked. /api/recommend ranks these models.
+        unique_candidates = list(unique.values())
         return CandidateResponse(
             origin_id=request.origin_id,
-            candidates=list(unique.values()),
+            candidates=unique_candidates,
+            flights=[
+                flights_by_id[item.destination_id]
+                for item in unique_candidates
+                if item.destination_id in flights_by_id
+            ],
             rejected=[
                 RejectedCandidateItem(
                     destination_id=item.destination_id,
@@ -153,7 +174,7 @@ class CandidateService:
                 )
                 for item in rejected
             ],
-            data_source=self._data_service.source_name,
+            data_source="stored",
         )
 
 

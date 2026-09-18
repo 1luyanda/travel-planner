@@ -72,4 +72,34 @@ describe('DestinationCard explanations', () => {
     expect(html).not.toMatch(/<img /)
     expect(html).toContain('Namangan')
   })
+
+  it('shows a price-change indicator and saved date', () => {
+    const html = renderToStaticMarkup(
+      <DestinationCard
+        destination={{
+          ...destination,
+          priceChanged: true,
+          savedAt: '2026-09-18T12:40:00Z',
+        }}
+        rank={1}
+        previousRank={null}
+        showRanking={false}
+      />,
+    )
+    expect(html).toContain('Price changed')
+    expect(html).toMatch(/Saved /)
+    expect(html).not.toContain('#1')
+  })
+
+  it('shows an unavailable flight state', () => {
+    const html = renderToStaticMarkup(
+      <DestinationCard
+        destination={{ ...destination, availability: 'unavailable' }}
+        rank={1}
+        previousRank={null}
+        showRanking={false}
+      />,
+    )
+    expect(html).toContain('Flight no longer available')
+  })
 })
