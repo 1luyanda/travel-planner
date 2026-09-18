@@ -102,6 +102,31 @@ def test_warmer_does_not_invent_a_temperature_threshold():
     )
 
 
+def test_cooler_and_more_rain_use_cooler_intent():
+    result, _ = _interpret(
+        "I prefer cooler weather with more rain",
+        [_payload(prefer_cooler=True, weather_preference="cooler")],
+    )
+
+    assert result.status == "ready"
+    assert result.updated_request is not None
+    assert result.updated_request.weather_preference == "cool"
+    assert [item.code for item in result.intents] == ["prefer_cooler"]
+    assert result.intents[0].target == "ranking_preferences"
+
+
+def test_shorter_feedback_uses_duration_preference():
+    result, _ = _interpret(
+        "Shorter travel",
+        [{"stronger_duration_preference": True}],
+    )
+
+    assert result.status == "ready"
+    assert [item.code for item in result.intents] == [
+        "stronger_duration_preference"
+    ]
+
+
 def test_explicit_budget_update_is_applied():
     result, original = _interpret(
         "My budget is now EUR 300",

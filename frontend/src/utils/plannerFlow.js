@@ -220,7 +220,7 @@ export function backendScoreItems(destination) {
   const scores = destination?.scores || {}
   return [
     { key: 'price', label: 'Price (cheaper is better)', score: scores.price },
-    { key: 'weather', label: 'Weather (warmer is better)', score: scores.weather },
+    { key: 'weather', label: 'Weather score', score: scores.weather },
     { key: 'stops', label: 'Stops (fewer is better)', score: scores.stops },
     { key: 'duration', label: 'Duration (shorter is better)', score: scores.duration },
   ].filter((item) => item.score != null && Number.isFinite(Number(item.score)))

@@ -291,3 +291,220 @@ def test_warm_and_warmer_form_and_text_do_not_conflict():
     assert not any("weather" in issue.lower() for issue in result.issues)
     assert not any("weather" in question.lower() for question in result.clarification_questions)
 
+
+def test_common_written_date_formats_are_normalized():
+    result = _parse(
+        "From ZAG, dates are 21/09/2026 to 25/09/2026, EUR 400.",
+        [
+            {
+                "origin_iata": "ZAG",
+                "departure_date": "21/09/2026",
+                "return_date": "September 25 2026",
+                "budget": 400,
+                "currency": "EUR",
+            }
+        ],
+    )
+
+    assert result.status == "ready"
+    assert result.request is not None
+    assert result.request.departure_date == date(2026, 9, 21)
+    assert result.request.return_date == date(2026, 9, 25)
+
+
+def test_yearless_dates_use_current_or_next_year():
+    result = _parse(
+        "From ZAG, 12.10 to 20.10, EUR 400.",
+        [
+            {
+                "origin_iata": "ZAG",
+                "departure_date": "12.10",
+                "return_date": "20.10",
+                "budget": 400,
+                "currency": "EUR",
+            }
+        ],
+    )
+    next_year = _parse(
+        "From ZAG, 01.02 to 05.02, EUR 400.",
+        [
+            {
+                "origin_iata": "ZAG",
+                "departure_date": "01.02",
+                "return_date": "05.02",
+                "budget": 400,
+                "currency": "EUR",
+            }
+        ],
+    )
+
+    assert result.request is not None
+    assert result.request.departure_date == date(2026, 10, 12)
+    assert result.request.return_date == date(2026, 10, 20)
+    assert next_year.request is not None
+    assert next_year.request.departure_date == date(2027, 2, 1)
+    assert next_year.request.return_date == date(2027, 2, 5)
+
+
+def test_ambiguous_numeric_date_needs_input():
+    result = _parse(
+        "From ZAG, dates are 03/04/2026 to 08/04/2026, EUR 400.",
+        [
+            {
+                "origin_iata": "ZAG",
+                "departure_date": "03/04/2026",
+                "return_date": "08/04/2026",
+                "budget": 400,
+                "currency": "EUR",
+            }
+        ],
+    )
+
+    assert result.status == "needs_input"
+    assert any("departure date" in question.lower() for question in result.clarification_questions)
+
+
+def test_weather_aliases_canonicalize_to_warm_or_cool():
+    warm = _parse(
+        "From ZAG, 21-25 September 2026, EUR 400, with less rain.",
+        [
+            {
+                "origin_iata": "ZAG",
+                "departure_date": "2026-09-21",
+                "return_date": "2026-09-25",
+                "budget": 400,
+                "currency": "EUR",
+                "weather_preference": "less rain",
+            }
+        ],
+    )
+    cool = _parse(
+        "From ZAG, 21-25 September 2026, EUR 400, with more rain.",
+        [
+            {
+                "origin_iata": "ZAG",
+                "departure_date": "2026-09-21",
+                "return_date": "2026-09-25",
+                "budget": 400,
+                "currency": "EUR",
+                "weather_preference": "more rain",
+            }
+        ],
+    )
+
+    assert warm.request is not None and warm.request.weather_preference == "warm"
+    assert cool.request is not None and cool.request.weather_preference == "cool"
+
+
+def test_yearless_date_in_text_is_used_when_model_omits_dates():
+    result = _parse(
+        "warm 12.10, 500eur",
+        [{"weather_preference": "warm", "budget": 500, "currency": "EUR"}],
+        form_fields={"origin": "LAX", "budget": 500, "currency": "EUR"},
+    )
+
+    assert result.preferences is not None
+    assert result.preferences.departure_date == date(2026, 10, 12)
+    assert result.preferences.return_date is None
+    assert result.status == "needs_input"
+    assert any("return date" in question.lower() for question in result.clarification_questions)
+    assert not any("departure date" in question.lower() for question in result.clarification_questions)
+
+
+def test_yearless_date_range_in_text_is_used_when_model_omits_dates():
+    result = _parse(
+        "From ZAG, 12.10 to 20.10, EUR 400.",
+        [{"origin_iata": "ZAG", "budget": 400, "currency": "EUR"}],
+    )
+
+    assert result.status == "ready"
+    assert result.request is not None
+    assert result.request.departure_date == date(2026, 10, 12)
+    assert result.request.return_date == date(2026, 10, 20)
+
+
+def test_single_yearless_date_plus_duration_infers_return():
+    result = _parse(
+        "From ZAG, 12.10, 4 days, EUR 400.",
+        [
+            {
+                "origin_iata": "ZAG",
+                "budget": 400,
+                "currency": "EUR",
+                "duration_days": 4,
+            }
+        ],
+    )
+
+    assert result.status == "ready"
+    assert result.request is not None
+    assert result.request.departure_date == date(2026, 10, 12)
+    assert result.request.return_date == date(2026, 10, 16)
+    assert result.request.duration_days == 4
+
+
+def test_clarification_answer_ignores_example_dates_in_planner_questions():
+    text = (
+        "Original request:\nwarm 05.11, 500eur\n\n"
+        "Initial form selections:\norigin: LAX\nbudget: 500\ncurrency: EUR\n\n"
+        "The planner asked:\n"
+        "What is your return date? For example: 16.10, 16/10/2026, or 2026-10-16.\n\n"
+        "Authoritative answer (this overrides any conflicting initial form values):\n10.11"
+    )
+    result = _parse(
+        text,
+        [{"weather_preference": "warm", "budget": 500, "currency": "EUR"}],
+        form_fields={"origin": "LAX", "budget": 500, "currency": "EUR"},
+    )
+
+    assert result.status == "ready"
+    assert result.request is not None
+    assert result.request.departure_date == date(2026, 11, 5)
+    assert result.request.return_date == date(2026, 11, 10)
+
+
+def test_from_until_yearless_dates_with_trailing_periods_are_ready():
+    text = "warm, from 10.10. until 16.10. budget is 500eur, from LAX"
+    omitted = _parse(
+        text,
+        [
+            {
+                "origin_iata": "LAX",
+                "budget": 500,
+                "currency": "EUR",
+                "weather_preference": "warm",
+            }
+        ],
+    )
+    departure_only = _parse(
+        text,
+        [
+            {
+                "origin_iata": "LAX",
+                "budget": 500,
+                "currency": "EUR",
+                "weather_preference": "warm",
+                "departure_date": "10.10.",
+            }
+        ],
+    )
+    range_in_departure = _parse(
+        text,
+        [
+            {
+                "origin_iata": "LAX",
+                "budget": 500,
+                "currency": "EUR",
+                "weather_preference": "warm",
+                "departure_date": "from 10.10. until 16.10.",
+            }
+        ],
+    )
+
+    for result in (omitted, departure_only, range_in_departure):
+        assert result.status == "ready"
+        assert result.request is not None
+        assert result.request.departure_date == date(2026, 10, 10)
+        assert result.request.return_date == date(2026, 10, 16)
+        assert not any("return date" in question.lower() for question in result.clarification_questions)
+

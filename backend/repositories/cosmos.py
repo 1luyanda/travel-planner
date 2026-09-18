@@ -60,10 +60,22 @@ class CosmosDestinationRepository:
 
         query = """
             SELECT TOP 10 * FROM c
-            WHERE CONTAINS(c.city, @city, true)
+            WHERE CONTAINS(c.city, @query, true)
+               OR CONTAINS(c.country, @query, true)
+               OR CONTAINS(c.country_code, @query, true)
+               OR EXISTS(
+                    SELECT VALUE code
+                    FROM code IN c.city_iata
+                    WHERE STRINGEQUALS(code, @query, true)
+               )
+               OR EXISTS(
+                    SELECT VALUE code
+                    FROM code IN c.airports
+                    WHERE STRINGEQUALS(code, @query, true)
+               )
         """
         parameters: list[dict[str, Any]] = [
-            {"name": "@city", "value": city_query.strip()}
+            {"name": "@query", "value": city_query.strip()}
         ]
         if country:
             query += """

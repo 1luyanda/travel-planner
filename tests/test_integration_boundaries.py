@@ -321,6 +321,30 @@ class CandidateServiceTests(unittest.IsolatedAsyncioTestCase):
             container.query_arguments,
         )
 
+    async def test_origin_search_queries_city_country_and_airports(self) -> None:
+        repository = CosmosDestinationRepository(
+            Settings(
+                cosmos_connection_string="placeholder",
+                cosmos_database_name="TravelPlaner",
+                frontend_origins=("http://localhost:5173",),
+            )
+        )
+        container = FakeOriginsContainer()
+        repository._origins = container  # type: ignore[assignment]
+
+        origins = await repository.search_origins("ZAG")
+
+        self.assertEqual(len(origins), 1)
+        query = container.query_arguments["query"]
+        self.assertIn("CONTAINS(c.country, @query, true)", query)
+        self.assertIn("CONTAINS(c.country_code, @query, true)", query)
+        self.assertIn("c.city_iata", query)
+        self.assertIn("c.airports", query)
+        self.assertIn(
+            {"name": "@query", "value": "ZAG"},
+            container.query_arguments["parameters"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
