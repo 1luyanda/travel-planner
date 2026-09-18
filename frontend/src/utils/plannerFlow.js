@@ -83,6 +83,124 @@ export function buildRecommendPayload(text, form, origin) {
   return payload
 }
 
+const MONTH =
+  'january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec'
+const DATE_TOKEN = new RegExp(
+  String.raw`\d{4}-\d{2}-\d{2}|\d{1,2}\s+(?:${MONTH})[a-z]*\.?,?\s+\d{4}|(?:${MONTH})[a-z]*\.?,?\s+\d{1,2},?\s+\d{4}|\d{1,2}[./-]\d{1,2}[./-]\d{4}|\d{1,2}[./-]\d{1,2}\.?(?![./-]?\d)`,
+  'gi',
+)
+const DATE_RANGE = new RegExp(
+  String.raw`\d{1,2}\s*(?:[–-]|to|until|till)\s*\d{1,2}\s+(?:${MONTH})[a-z]*\.?,?\s+\d{4}`,
+  'i',
+)
+const MAYBE_UNPARSED_DATES = new RegExp(
+  String.raw`(?:${MONTH})|\bweekend\b|\bnext week\b|\d+(?:st|nd|rd|th)\b`,
+  'i',
+)
+const CURRENCY_FROM_TEXT =
+  /(?:€|\beuros?\b|\beur\b)|(?:\bpounds?\b|\bgbp\b|£)|(?:\bdollars?\b|\busd\b|\$)/i
+const AMOUNT_WITH_CURRENCY =
+  /(?:€|£|\$)\s*\d+(?:[.,]\d+)?|\d+(?:[.,]\d+)?\s*(?:€|£|\$|eur|euros?|usd|gbp|dollars?|pounds?)/i
+const BUDGET_AMOUNT = /budget(?:\s+is|\s+of)?\s*[:\s]*(\d+(?:[.,]\d+)?)/i
+const FROM_IATA = /\b(?:from|origin)\s+([A-Za-z]{3})\b/i
+const ORIGIN_LINE = /^origin:\s*([A-Za-z]{3})\s*$/im
+const BUDGET_LINE = /^budget:\s*(\d+(?:[.,]\d+)?)\s*$/im
+const CURRENCY_LINE = /^currency:\s*([A-Za-z]{3})\s*$/im
+const CURRENCY_CODES = /\b(EUR|USD|GBP|CHF|HRK|CAD|AUD)\b/i
+const SKIP_ORIGIN_CODES = new Set(['EUR', 'USD', 'GBP', 'CHF', 'CAD', 'AUD', 'THE', 'AND', 'FOR', 'ARE'])
+
+export const LOCAL_PLANNER_QUESTIONS = {
+  origin: 'What is your origin airport or city IATA code (for example ZAG)?',
+  departure:
+    'What is your departure date? For example: 12.10, 12/10/2026, or 2026-10-12.',
+  return: 'What is your return date? For example: 16.10, 16/10/2026, or 2026-10-16.',
+  budget: 'What is your maximum budget?',
+  currency: 'What currency is the budget in (for example EUR)?',
+}
+
+function authoredPlannerText(text) {
+  const raw = trimText(text)
+  if (!raw) return ''
+  const lowered = raw.toLowerCase()
+  if (!lowered.includes('the planner asked:') && !lowered.includes('original request:')) {
+    return raw
+  }
+  return raw
+    .split(/\n\s*\n/)
+    .filter((part) => {
+      const first = part.trim().split('\n', 1)[0].trim().toLowerCase()
+      return !first.startsWith('the planner asked:') && !first.startsWith('initial form selections:')
+    })
+    .join('\n\n')
+}
+
+function currencyFromMatch(text) {
+  if (/€|\beuros?\b|\beur\b/i.test(text)) return 'EUR'
+  if (/£|\bpounds?\b|\bgbp\b/i.test(text)) return 'GBP'
+  if (/\$|\bdollars?\b|\busd\b/i.test(text)) return 'USD'
+  const code = text.match(CURRENCY_CODES)
+  return code ? code[1].toUpperCase() : null
+}
+
+export function hintsFromPlannerText(text) {
+  const raw = authoredPlannerText(text)
+  const hints = {}
+  if (!raw) return hints
+
+  const originMatch = raw.match(ORIGIN_LINE) || raw.match(FROM_IATA)
+  if (originMatch) {
+    const code = originMatch[1].toUpperCase()
+    if (IATA.test(code) && !SKIP_ORIGIN_CODES.has(code)) hints.origin = code
+  }
+
+  const dateRange = DATE_RANGE.test(raw)
+  const dateTokens = raw.match(DATE_TOKEN) || []
+  if (dateRange || dateTokens.length >= 2) {
+    hints.departure_date = true
+    hints.return_date = true
+  } else if (dateTokens.length === 1) {
+    hints.departure_date = true
+  }
+
+  const budgetLine = raw.match(BUDGET_LINE)
+  const budgetPhrase = raw.match(BUDGET_AMOUNT)
+  const priced = AMOUNT_WITH_CURRENCY.test(raw)
+  if (budgetLine || budgetPhrase || priced) hints.budget = true
+
+  const currencyLine = raw.match(CURRENCY_LINE)
+  if (currencyLine && IATA.test(currencyLine[1])) hints.currency = currencyLine[1].toUpperCase()
+  else if (priced || CURRENCY_FROM_TEXT.test(raw)) {
+    hints.currency = currencyFromMatch(raw) || true
+  }
+
+  return hints
+}
+
+/**
+ * Required-field questions we can ask without calling /api/recommend.
+ * Does not invent values. If the message still might contain dates or budget
+ * the local scanner missed, the caller should send the request to the API.
+ */
+export function localClarificationQuestions({ text = '', form = {}, origin = null } = {}) {
+  const formFields = formFieldsFromPlanner(form, origin) || {}
+  const hints = hintsFromPlannerText(text)
+  const questions = []
+
+  const originCode = formFields.origin || hints.origin
+  const departure = formFields.departure_date || hints.departure_date
+  const ret = formFields.return_date || hints.return_date
+  const budget = formFields.budget != null || hints.budget
+  const currency = formFields.currency || hints.currency
+  const deferDates = !departure && MAYBE_UNPARSED_DATES.test(trimText(text))
+
+  if (!originCode) questions.push(LOCAL_PLANNER_QUESTIONS.origin)
+  if (!departure && !deferDates) questions.push(LOCAL_PLANNER_QUESTIONS.departure)
+  if (!ret && !deferDates) questions.push(LOCAL_PLANNER_QUESTIONS.return)
+  if (!budget) questions.push(LOCAL_PLANNER_QUESTIONS.budget)
+  if (!currency) questions.push(LOCAL_PLANNER_QUESTIONS.currency)
+  return questions
+}
+
 export function buildRefinePayload(text, tripRequest) {
   return {
     text: typeof text === 'string' ? text : '',

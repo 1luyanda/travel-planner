@@ -25,6 +25,7 @@ import {
   createClarificationContext,
   formFieldsFromPlanner,
   formPatchFromTripRequest,
+  localClarificationQuestions,
   newTripPlannerState,
   recordClarificationAnswer,
   refinementFeedbackText,
@@ -262,10 +263,28 @@ export default function App() {
     const seq = ++searchSeqRef.current
     searchAbortRef.current?.abort()
     searchAbortRef.current?.dispose?.()
-    const request = createPlannerRequest()
-    searchAbortRef.current = request
+    searchAbortRef.current = null
 
-    setLoading(true)
+    const clarifySource =
+      mode === 'clarify'
+        ? clarification || createClarificationContext({ originalPrompt: pendingSearchText })
+        : null
+    const localText =
+      mode === 'clarify'
+        ? [
+            clarifySource?.originalPrompt,
+            ...(clarifySource?.previousAnswers || []),
+            typed,
+          ]
+            .filter(Boolean)
+            .join('\n')
+        : apiText
+    const localQuestions = localClarificationQuestions({
+      text: localText,
+      form: nextForm,
+      origin,
+    })
+
     setRefining(false)
     setError('')
     setFlightWarning('')
@@ -280,9 +299,13 @@ export default function App() {
     setForm(nextForm)
     if (mode === 'fresh') {
       setPendingSearchText(typed)
-      setClarifyKind(null)
-      setClarification(null)
-      setClarificationQuestions([])
+      setTripRequest(null)
+      setResults([])
+      setRejected([])
+      setPreviousRanks({})
+      setActiveRefinement(null)
+    } else if (mode === 'clarify') {
+      setResults([])
     }
     if (userMessage || typed) {
       setMessages((current) => [
@@ -291,14 +314,40 @@ export default function App() {
       ])
     }
 
+    if (localQuestions.length) {
+      setLoading(false)
+      const nextContext =
+        mode === 'clarify'
+          ? recordClarificationAnswer(clarifySource, typed, localQuestions)
+          : createClarificationContext({
+              originalPrompt: mode === 'filters' ? pendingSearchText || typed : typed,
+              formFields: formFieldsFromPlanner(nextForm, origin),
+              questions: localQuestions,
+            })
+      setClarifyKind('recommend')
+      setClarification(nextContext)
+      setClarificationQuestions(localQuestions)
+      setMessages((current) => [
+        ...current,
+        {
+          id: nextId(),
+          role: 'assistant',
+          text: assistantTextForResponse(
+            { status: 'needs_input', clarification_questions: localQuestions },
+            [],
+          ),
+        },
+      ])
+      return
+    }
+
+    const request = createPlannerRequest()
+    searchAbortRef.current = request
+    setLoading(true)
     if (mode === 'fresh') {
-      setTripRequest(null)
-      setResults([])
-      setRejected([])
-      setPreviousRanks({})
-      setActiveRefinement(null)
-    } else if (mode === 'clarify') {
-      setResults([])
+      setClarifyKind(null)
+      setClarification(null)
+      setClarificationQuestions([])
     }
 
     try {
