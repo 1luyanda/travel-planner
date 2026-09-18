@@ -21,6 +21,7 @@ unranked.
 
    - `COSMOS_CONNECTION_STRING` — the PRIMARY CONNECTION STRING.
    - `COSMOS_DATABASE=TravelPlaner` — spelling and case matter.
+   - `GOOGLE_PLACES_API_KEY` — backend-only key for `POST /api/activities`.
 
    The backend uses the fixed `origins` and `flights` container names.
 
@@ -51,6 +52,9 @@ API documentation is available at `http://localhost:8000/docs`.
   search and rank again. Explicit field changes (budget, direct flights) are
   applied. Intents such as cheaper/warmer are passed to Ivan's
   `preferences_from_intents` so ranking weights update.
+- `POST /api/activities` — verified Google Places activities for a selected
+  destination city. Requires `GOOGLE_PLACES_API_KEY` on the backend. The key
+  stays server-side and is never sent from React.
 
 Example requests:
 
@@ -59,6 +63,19 @@ GET /api/flights?origin_id=zagreb-hr
 GET /api/candidates?origin_id=zagreb-hr&max_price=300&max_changeovers=0
 POST /api/recommend
 POST /api/refine
+POST /api/activities
+```
+
+Example activities body:
+
+```json
+{
+  "city": "Rome",
+  "country_code": "IT",
+  "destination_id": "ZAG-ROM-2026-09-18",
+  "moods": ["cultural"],
+  "limit": 8
+}
 ```
 
 Example recommend body:

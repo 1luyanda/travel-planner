@@ -1,5 +1,6 @@
 azure-cosmos>=4.7,<5
 fastapi>=0.115,<1
+httpx>=0.27,<1
 openai>=1.40,<2
 pydantic>=2.9,<3
 pytest>=8.0

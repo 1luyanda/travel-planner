@@ -1,5 +1,6 @@
 """FastAPI request and response contracts."""
 
+from .activities import ActivitiesRequest, ActivitiesResponse, ActivityItem
 from .candidates import (
     CandidateItem,
     CandidateResponse,
@@ -17,6 +18,9 @@ from .recommendations import (
 )
 
 __all__ = [
+    "ActivitiesRequest",
+    "ActivitiesResponse",
+    "ActivityItem",
     "CandidateItem",
     "CandidateResponse",
     "FlightListResponse",

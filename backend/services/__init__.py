@@ -9,11 +9,13 @@ from .llm import (
     load_llm_environment,
     parse_request,
 )
+from .places import PlacesService
 from .recommendations import RecommendationService
 
 __all__ = [
     "CandidateService",
     "LLMClient",
+    "PlacesService",
     "RankedTripLike",
     "RecommendationService",
     "create_llm_client_from_env",
