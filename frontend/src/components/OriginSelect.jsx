@@ -2,9 +2,8 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { searchOrigins } from '../services/travelApi'
 import {
   formatOriginLabel,
-  parseOriginItem,
+  parseOriginItems,
   shouldClearOriginSelection,
-  snapshotHint,
 } from '../utils/origins'
 import styles from '../workspace.module.css'
 
@@ -20,7 +19,6 @@ export default function OriginSelect({
   const listId = useId()
   const labelId = useId()
   const errorId = useId()
-  const hintId = useId()
   const rootRef = useRef(null)
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -58,7 +56,7 @@ export default function OriginSelect({
     const timer = window.setTimeout(async () => {
       try {
         const items = await searchOrigins(needle, { signal: controller.signal })
-        const parsed = items.map(parseOriginItem).filter(Boolean)
+        const parsed = items.flatMap((item) => parseOriginItems(item, needle))
         setMatches(parsed)
         setSearchError('')
         setStatus(parsed.length ? 'ready' : 'empty')
@@ -110,16 +108,16 @@ export default function OriginSelect({
 
   const listMessage =
     status === 'loading'
-      ? 'Searching stored origins…'
+      ? 'Searching origins…'
       : status === 'error'
         ? searchError
         : status === 'empty'
           ? 'No matching origins'
           : status === 'idle'
-            ? 'Type a city to search stored origins'
+            ? 'Type a city to search origins'
             : null
 
-  const describedBy = [hintId, error ? errorId : null].filter(Boolean).join(' ') || undefined
+  const describedBy = error ? errorId : undefined
 
   return (
     <div className={styles.originField} ref={rootRef}>
@@ -145,7 +143,9 @@ export default function OriginSelect({
           aria-invalid={Boolean(error)}
           aria-busy={status === 'loading'}
           aria-activedescendant={
-            open && matches[activeIndex] ? `${listId}-${matches[activeIndex].originId}` : undefined
+            open && matches[activeIndex]
+              ? `${listId}-${matches[activeIndex].selectionId || matches[activeIndex].originId}`
+              : undefined
           }
           aria-describedby={describedBy}
           onChange={(event) => {
@@ -168,10 +168,10 @@ export default function OriginSelect({
               </li>
             ) : (
               matches.map((origin, index) => (
-                <li key={origin.originId} role="presentation">
+                <li key={origin.selectionId || origin.originId} role="presentation">
                   <button
                     type="button"
-                    id={`${listId}-${origin.originId}`}
+                    id={`${listId}-${origin.selectionId || origin.originId}`}
                     role="option"
                     className={index === activeIndex ? styles.originOptionActive : styles.originOption}
                     aria-selected={origin.originId === value?.originId}
@@ -190,9 +190,6 @@ export default function OriginSelect({
           </ul>
         )}
       </div>
-      <p id={hintId} className={styles.originHint}>
-        {snapshotHint()}
-      </p>
       {error && (
         <p id={errorId} className={styles.originError} role="alert">
           {error}

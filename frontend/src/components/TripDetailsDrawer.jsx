@@ -17,8 +17,6 @@ import {
 import { formatOriginLabel } from '../utils/origins'
 import { backendScoreItems, explanationView } from '../utils/plannerFlow'
 
-const SNAPSHOT_NOTICE = 'Stored snapshot data — not live or bookable'
-
 function Row({ label, value }) {
   return (
     <div className="drawer-row">
@@ -166,8 +164,6 @@ export default function TripDetailsDrawer({
           sizes="420px"
         />
 
-        <p className="drawer-notice">{SNAPSHOT_NOTICE}</p>
-
         {summary && <p className="drawer-summary">{summary}</p>}
         {evidence.length > 0 && (
           <ul className="drawer-evidence">
@@ -202,4 +198,3 @@ export default function TripDetailsDrawer({
   )
 }
 
-export { SNAPSHOT_NOTICE }

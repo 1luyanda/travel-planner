@@ -4,6 +4,7 @@ import {
   formatOriginLabel,
   isValidOriginSelection,
   parseOriginItem,
+  parseOriginItems,
   requireSelectedOrigin,
   shouldClearOriginSelection,
 } from './origins'
@@ -42,6 +43,28 @@ describe('requireSelectedOrigin', () => {
     })
     expect(requireSelectedOrigin({ originId: 'ZAG', iata: 'ZAG' }).ok).toBe(false)
     expect(requireSelectedOrigin(parseOriginItem(zagrebDoc))).toEqual({ ok: true })
+  })
+})
+
+describe('parseOriginItems', () => {
+  it('creates one selectable airport option per matching origin document', () => {
+    const options = parseOriginItems({
+      ...zagrebDoc,
+      airports: ['ZAG', 'LDZA'],
+      city_iata: ['ZAG'],
+    }, 'Croatia')
+
+    expect(options.map((item) => item.iata)).toEqual(['ZAG', 'LDZA'])
+    expect(new Set(options.map((item) => item.selectionId)).size).toBe(2)
+  })
+
+  it('limits an IATA search to the matching airport option', () => {
+    const options = parseOriginItems(
+      { ...zagrebDoc, airports: ['ZAG', 'LDZ'], city_iata: ['ZAG'] },
+      'LDZ',
+    )
+
+    expect(options.map((item) => item.iata)).toEqual(['LDZ'])
   })
 })
 

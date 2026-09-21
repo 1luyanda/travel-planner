@@ -8,6 +8,11 @@ from datetime import date
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from pydantic import ValidationError
+
+from backend.api.routes import router
 from backend.contracts import (
     OriginItem,
     RankingPreferencesBody,
@@ -17,6 +22,7 @@ from backend.contracts import (
 from backend.contracts.candidates import FlightQuery
 from backend.models.feedback import InterpretFeedbackResult, RankingIntent
 from backend.models.trip_request import TripRequest
+from backend.security import require_api_key
 from backend.services import CandidateService, RecommendationService
 from ranking import (
     RankingConstraints,
@@ -129,6 +135,68 @@ def _service(
     return service, data_service
 
 
+class RankingPreferencesApiTests(unittest.TestCase):
+    def test_all_six_weights_retain_main_validation(self) -> None:
+        for field in (
+            "price_weight", "weather_weight", "precipitation_weight",
+            "sunshine_weight", "changeovers_weight", "duration_weight",
+        ):
+            for value in (-0.1, 1.1, float("nan"), float("inf")):
+                with self.subTest(field=field, value=value):
+                    with self.assertRaises(ValidationError):
+                        RankingPreferencesBody(**{field: value})
+
+    def test_recommend_then_refine_round_trips_six_weights_and_direction(self) -> None:
+        service, _ = _service([
+            _explain_payload(),
+            _feedback_payload(prefer_cooler=True), _explain_payload(),
+            _feedback_payload(prefer_warmer=True), _explain_payload(),
+        ])
+        app = FastAPI()
+        app.include_router(router)
+        app.state.recommendation_service = service
+        app.dependency_overrides[require_api_key] = lambda: None
+        supplied = {
+            "price_weight": 0.2, "weather_weight": 0.3,
+            "precipitation_weight": 0.15, "sunshine_weight": 0.15,
+            "changeovers_weight": 0.1, "duration_weight": 0.1,
+            "temperature_direction": "lower_is_better",
+        }
+        with TestClient(app) as client:
+            response = client.post("/api/recommend", json={
+                "form_fields": _trip().model_dump(mode="json"),
+                "ranking_preferences": supplied,
+            })
+            self.assertEqual(response.status_code, 200)
+            result = response.json()
+            self.assertEqual(result["status"], "ready")
+            self.assertEqual(result["ranking_preferences"], supplied)
+            for text, expected_weight, direction in (
+                ("Cooler", 0.4, "lower_is_better"),
+                ("Warmer", 0.5, "higher_is_better"),
+            ):
+                response = client.post("/api/refine", json={
+                    "text": text,
+                    "request": result.get("updated_request") or result["request"],
+                    "ranking_preferences": result["ranking_preferences"],
+                })
+                self.assertEqual(response.status_code, 200)
+                result = response.json()
+                self.assertEqual(result["status"], "ready")
+                weights = result["ranking_preferences"]
+                self.assertEqual(set(weights), set(supplied))
+                self.assertAlmostEqual(weights["weather_weight"], expected_weight)
+                self.assertEqual(weights["temperature_direction"], direction)
+                self.assertAlmostEqual(sum(v for k, v in weights.items() if k.endswith("_weight")), 1)
+                scores = [item["final_score"] for item in result["recommendations"]]
+                self.assertTrue(scores)
+                self.assertEqual(scores, sorted(scores, reverse=True))
+                self.assertEqual(
+                    {item["id"] for item in result["flights"]},
+                    {item["destination_id"] for item in result["recommendations"]},
+                )
+
+
 class RecommendServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_complete_request_ranks_and_explains(self) -> None:
         service, data = _service([COMPLETE_EXTRACTION, _explain_payload()])
@@ -150,6 +218,11 @@ class RecommendServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data.last_query.origin_id if data.last_query else None, "zagreb-hr")
         self.assertEqual(data.last_query.max_price_eur if data.last_query else None, 400)
         self.assertIsNone(data.last_query.max_changeovers if data.last_query else "missing")
+        self.assertEqual(
+            {flight.id for flight in result.flights},
+            {item.destination_id for item in result.recommendations},
+        )
+        self.assertTrue(any(flight.destination_city == "Rome" for flight in result.flights))
 
     async def test_incomplete_request_does_not_query_cosmos(self) -> None:
         service, data = _service(

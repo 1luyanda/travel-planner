@@ -53,8 +53,43 @@ MAX_MODEL_ATTEMPTS = 2
 CURRENCY_PATTERN = re.compile(r"^[A-Za-z]{3}$")
 
 CHEAPER_TERMS = frozenset({"cheaper", "cheapest", "less expensive", "lower price"})
-WARMER_TERMS = frozenset({"warmer", "warm", "hotter", "hot", "sunnier", "sunny"})
-COOLER_TERMS = frozenset({"cooler", "cool", "colder", "cold", "chilly"})
+SHORTER_TERMS = frozenset(
+    {"shorter", "shorter travel", "shorter flights", "less flying", "faster"}
+)
+WARMER_TERMS = frozenset(
+    {
+        "warmer",
+        "warm",
+        "hotter",
+        "hot",
+        "sunnier",
+        "sunny",
+        "sunshine",
+        "more sunshine",
+        "more sunny",
+        "less rain",
+        "less rainy",
+        "drier",
+    }
+)
+COOLER_TERMS = frozenset(
+    {
+        "cooler",
+        "cool",
+        "colder",
+        "cold",
+        "chilly",
+        "rain",
+        "rainy",
+        "rainier",
+        "more rain",
+        "more rainy",
+        "wetter",
+        "less sunshine",
+        "cloudy",
+        "cloudier",
+    }
+)
 
 INTERPRET_TOOL: dict[str, Any] = {
     "type": "function",
@@ -76,6 +111,10 @@ INTERPRET_TOOL: dict[str, Any] = {
                         "True when the user wants cheaper options and did not "
                         "state a new numeric budget."
                     ),
+                },
+                "stronger_duration_preference": {
+                    "type": "boolean",
+                    "description": "True when the user wants shorter or faster travel.",
                 },
                 "prefer_warmer": {
                     "type": "boolean",
@@ -249,6 +288,9 @@ def _normalise_payload(payload: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("moods_add must be a list of strings.")
     return {
         "stronger_price_preference": bool(payload.get("stronger_price_preference")),
+        "stronger_duration_preference": bool(
+            payload.get("stronger_duration_preference")
+        ),
         "prefer_warmer": bool(payload.get("prefer_warmer")),
         "prefer_cooler": bool(payload.get("prefer_cooler")),
         "direct_flights_only": payload.get("direct_flights_only"),
@@ -273,6 +315,9 @@ def _apply_feedback(
     updates: dict[str, Any] = {}
 
     cheaper = payload["stronger_price_preference"] or _mentions_any(text, CHEAPER_TERMS)
+    shorter = payload.get("stronger_duration_preference", False) or _mentions_any(
+        text, SHORTER_TERMS
+    )
     warmer = payload["prefer_warmer"] or _mentions_any(text, WARMER_TERMS)
     cooler = payload["prefer_cooler"] or _mentions_any(text, COOLER_TERMS)
 
@@ -288,6 +333,19 @@ def _apply_feedback(
                     "already scores lower price_eur higher. Ivan's "
                     "RankingPreferences.price_weight is the related field; no "
                     "weight value is supplied because that mapping is not defined."
+                ),
+            )
+        )
+
+    if shorter:
+        intents.append(
+            RankingIntent(
+                code="stronger_duration_preference",
+                target="ranking_preferences",
+                ranking_field="duration_weight",
+                meaning=(
+                    "Prefer shorter recorded flight durations more strongly. "
+                    "This changes ranking preference, not calendar trip length."
                 ),
             )
         )
@@ -322,7 +380,7 @@ def _apply_feedback(
                 ),
             )
         )
-        _propose_weather(snapshot, updates, changes, "cooler")
+        _propose_weather(snapshot, updates, changes, "cool")
 
     direct = payload.get("direct_flights_only")
     if direct is True or _mentions_direct_only(text):
@@ -373,8 +431,8 @@ def _apply_feedback(
 
     if payload.get("unclear") and not intents and not changes:
         question = payload.get("clarification_needed") or (
-            "What would you like to change: cheaper options, warmer weather, "
-            "a new budget, or direct flights?"
+            "What would you like to change: cheaper, shorter, warmer, or cooler "
+            "options, a new budget, or direct flights?"
         )
         return InterpretFeedbackResult(
             status="needs_input",
@@ -389,8 +447,8 @@ def _apply_feedback(
             request=snapshot,
             issues=["No validated change or ranking intent could be taken from the feedback."],
             clarification_questions=[
-                "Please say whether you want cheaper options, warmer weather, "
-                "a new budget amount, or direct flights only."
+                "Please say whether you want cheaper, shorter, warmer, or cooler "
+                "options, a new budget amount, or direct flights only."
             ],
         )
 
@@ -530,8 +588,11 @@ def _system_prompt(request: TripRequest) -> str:
         "- Record only what the user stated in this feedback.\n"
         "- cheaper / less expensive: stronger_price_preference=true. "
         "Do not change budget.\n"
-        "- warmer / hotter: prefer_warmer=true. weather_preference may be "
-        "'warmer'. Never invent a temperature number.\n"
+        "- warmer / hotter / sunnier / less rain: prefer_warmer=true. "
+        "weather_preference may be 'warmer'. Never invent a temperature number.\n"
+        "- cooler / colder / rainier / more rain: prefer_cooler=true. "
+        "weather_preference may be 'cooler'.\n"
+        "- shorter / faster travel: stronger_duration_preference=true.\n"
         "- A new budget such as EUR 300: set budget and currency only if stated.\n"
         "- direct flights only: direct_flights_only=true.\n"
         "- Do not invent ranking weights, currency conversion, or origin codes.\n"
