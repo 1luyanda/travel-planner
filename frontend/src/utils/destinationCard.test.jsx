@@ -11,19 +11,28 @@ const destination = {
     summary: 'Rome stays within budget and is a short hop from Zagreb.',
     evidence: [{ id: 'e1', statement: 'Fare is EUR 65 against a EUR 400 budget.' }],
   },
-  flight: { price: 65, currency: 'EUR', outbound_stops: 0, duration_minutes: 170 },
+  flight: {
+    price: 65,
+    currency: 'EUR',
+    outbound_stops: 0,
+    duration_minutes: 170,
+    departure_at: '2026-09-18T15:55:00+02:00',
+    return_at: '2026-09-22T23:50:00+02:00',
+  },
   destination: { city: 'Rome', country_code: 'IT' },
   country: { common_name: 'Italy' },
   weather: { average_max_temperature_c: 27.8 },
 }
 
 describe('DestinationCard explanations', () => {
-  it('renders backend summary and evidence instead of browser ranking copy', () => {
+  it('renders the backend summary and flight dates without evidence bullets', () => {
     const html = renderToStaticMarkup(
       <DestinationCard destination={destination} rank={1} previousRank={null} />,
     )
     expect(html).toContain('Rome stays within budget and is a short hop from Zagreb.')
-    expect(html).toContain('Fare is EUR 65 against a EUR 400 budget.')
+    expect(html).toContain('Outbound:')
+    expect(html).toContain('Inbound:')
+    expect(html).not.toContain('<ul')
     expect(html).not.toMatch(/Weighted score favours/i)
     expect(html).not.toMatch(/ranked in the browser/i)
     expect(explanationView(destination).summary).toBe(destination.explanation.summary)

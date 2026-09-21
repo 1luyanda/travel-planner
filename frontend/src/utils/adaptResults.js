@@ -84,6 +84,8 @@ function mapCandidate(candidate, originId, dataSource, flightIndex, selectedOrig
       outbound_stops: numberOrNull(flight?.outbound_stops) ?? numberOrNull(candidate?.changeover_count),
       return_stops: numberOrNull(flight?.return_stops),
       duration_minutes: numberOrNull(candidate?.flight_duration_minutes) ?? numberOrNull(flight?.duration_minutes),
+      outbound_duration_minutes: numberOrNull(flight?.outbound_duration_minutes),
+      return_duration_minutes: numberOrNull(flight?.return_duration_minutes),
       airline_code: textOrNull(flight?.airline_code),
       airline_name: textOrNull(flight?.airline_name),
       flight_number: textOrNull(flight?.flight_number),

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import fields
 
+from backend.config import MAX_RECOMMENDATION_RESULTS
 from backend.contracts import (
     CandidateItem,
     RankingPreferencesBody,
@@ -147,6 +148,7 @@ class RecommendationService:
             [_to_ranking_candidate(item) for item in prepared.candidates],
             weights,
         )
+        ranked = ranked[:MAX_RECOMMENDATION_RESULTS]
         # Date distance selects fallback candidates, not recommendation order.
         # Preserve descending score order so explanations assign matching ranks.
         recommendations, explain_issues = _explanations_for(

@@ -16,12 +16,31 @@ export function formatDate(value) {
   return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
+export function tripDatesLine(flight = {}) {
+  const outbound = formatDate(flight.departure_at)
+  const returning = formatDate(flight.return_at)
+  return [
+    outbound ? `Outbound: ${outbound}` : null,
+    returning ? `Inbound: ${returning}` : null,
+  ].filter(Boolean).join(' · ')
+}
+
 export function formatDuration(minutes) {
   if (minutes == null || Number.isNaN(Number(minutes))) return null
   const total = Math.round(Number(minutes))
   const hours = Math.floor(total / 60)
   const remaining = total % 60
   return `${hours}h ${remaining}m`
+}
+
+export function formatFlightDurations(flight = {}) {
+  const outbound = formatDuration(flight.outbound_duration_minutes)
+  const returning = formatDuration(flight.return_duration_minutes)
+  if (!outbound && !returning) return null
+  return [
+    outbound ? `Outbound ${outbound}` : null,
+    returning ? `Return ${returning}` : null,
+  ].filter(Boolean).join(' · ')
 }
 
 export function formatTripDays(days) {
@@ -69,7 +88,7 @@ export function tripFactsLine(destination = {}) {
   const weather = destination.weather || {}
   return [
     formatStops(flight.outbound_stops),
-    formatDuration(flight.duration_minutes),
+    formatFlightDurations(flight) || formatDuration(flight.duration_minutes),
     formatTemperature(weather.average_max_temperature_c)
       ? `${formatTemperature(weather.average_max_temperature_c)} avg max`
       : null,

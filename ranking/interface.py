@@ -55,6 +55,8 @@ class RankingCandidate:
     # This is optional because the current normalized data may not contain the
     # distance between the destination airport and its associated city.
     airport_distance_km: float | None
+    outbound_duration_minutes: int | None = None
+    return_duration_minutes: int | None = None
 
     # Cosmos currently omits freshness; it does not affect MVP scores.
     flight_retrieved_at: datetime | None = None
@@ -82,6 +84,10 @@ class RankedDestination:
     precipitation_score: float = 0.0
     sunshine_score: float = 0.0
     temperature_direction: str = "higher_is_better"
+    precipitation_probability_percent: float = 0.0
+    sunshine_hours: float | None = None
+    outbound_duration_minutes: int | None = None
+    return_duration_minutes: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -368,6 +374,16 @@ def _to_candidate(record: dict[str, Any]) -> RankingCandidate:
             "destination.airport_distance_from_city_km",
             "airport_distance_km",
         ),
+        outbound_duration_minutes=_optional_int(
+            record,
+            "flight.outbound_duration_minutes",
+            "outbound_duration_minutes",
+        ),
+        return_duration_minutes=_optional_int(
+            record,
+            "flight.return_duration_minutes",
+            "return_duration_minutes",
+        ),
         flight_retrieved_at=_optional_datetime(
             record, "flight.retrieved_at", "flight_retrieved_at"
         ),
@@ -528,6 +544,13 @@ def _required_int(record: dict[str, Any], *paths: str) -> int:
     value = _first(record, *paths)
     if value is None:
         raise ValueError(f"Missing required field: {paths[0]}")
+    return _whole_number(value, paths[0])
+
+
+def _optional_int(record: dict[str, Any], *paths: str) -> int | None:
+    value = _first(record, *paths)
+    if value is None:
+        return None
     return _whole_number(value, paths[0])
 
 

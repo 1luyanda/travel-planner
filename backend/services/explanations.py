@@ -15,8 +15,9 @@ Signature:
 origin/feature/ranking. The ranking package is not imported here; a Protocol
 is used until that package is on this branch.
 
-The LLM only selects allowed evidence IDs. Factual numbers are rendered from
-the ranked records, not from model prose.
+The LLM writes a short summary from the supplied verified facts. Evidence
+references remain available for auditability, while factual values are still
+provided by the ranked records.
 """
 
 from __future__ import annotations
@@ -37,7 +38,7 @@ from backend.services.llm import (
     create_llm_client_from_env,
 )
 
-EXPLAIN_FUNCTION_NAME = "select_explanation_evidence"
+EXPLAIN_FUNCTION_NAME = "write_destination_summaries"
 MAX_MODEL_ATTEMPTS = 2
 MAX_EVIDENCE_PER_DESTINATION = 4
 RANKING_CURRENCY = "EUR"
@@ -77,8 +78,8 @@ EXPLAIN_TOOL: dict[str, Any] = {
     "function": {
         "name": EXPLAIN_FUNCTION_NAME,
         "description": (
-            "Select allowed evidence IDs for each ranked destination. "
-            "Do not invent IDs, prices, temperatures, dates or attractions."
+            "Write one natural-language summary for each ranked destination "
+            "using only the supplied verified facts."
         ),
         "parameters": {
             "type": "object",
@@ -91,13 +92,20 @@ EXPLAIN_TOOL: dict[str, Any] = {
                         "additionalProperties": False,
                         "properties": {
                             "destination_id": {"type": "string"},
+                            "summary": {
+                                "type": "string",
+                                "description": (
+                                    "A concise natural paragraph. Do not use "
+                                    "bullet points or repeat the same fact."
+                                ),
+                            },
                             "evidence_ids": {
                                 "type": "array",
                                 "items": {"type": "string"},
                                 "maxItems": MAX_EVIDENCE_PER_DESTINATION,
                             },
                         },
-                        "required": ["destination_id", "evidence_ids"],
+                        "required": ["destination_id", "summary"],
                     },
                 }
             },
@@ -124,6 +132,10 @@ class RankedTripLike(Protocol):
     stops_score: float
     duration_score: float
     final_score: float
+    precipitation_probability_percent: float
+    sunshine_hours: float | None
+    outbound_duration_minutes: int | None
+    return_duration_minutes: int | None
 
 
 def explain_ranked_trips(
@@ -257,6 +269,31 @@ def _catalog_for_trip(
         "recorded_changeovers",
         f"Recorded changeover count is {int(trip.changeover_count)}.",
     )
+    outbound_duration = getattr(trip, "outbound_duration_minutes", None)
+    return_duration = getattr(trip, "return_duration_minutes", None)
+    if outbound_duration is not None:
+        add(
+            "outbound_duration",
+            f"Outbound flight time is {_duration(outbound_duration)}.",
+        )
+    if return_duration is not None:
+        add(
+            "return_duration",
+            f"Inbound flight time is {_duration(return_duration)}.",
+        )
+    add(
+        "recorded_precipitation",
+        (
+            "Recorded precipitation probability is "
+            f"{_number(getattr(trip, 'precipitation_probability_percent', 0.0))}%."
+        ),
+    )
+    sunshine_hours = getattr(trip, "sunshine_hours", None)
+    if sunshine_hours is not None:
+        add(
+            "recorded_sunshine",
+            f"Recorded sunshine is {_number(sunshine_hours)} hours.",
+        )
 
     if request.currency == RANKING_CURRENCY:
         if trip.price_eur <= request.budget:
@@ -436,6 +473,8 @@ def _parse_selection(
         evidence_ids = item.get("evidence_ids")
         if not isinstance(destination_id, str) or not destination_id.strip():
             return None, "Each explanation needs a destination_id."
+        if evidence_ids is None:
+            evidence_ids = []
         if not isinstance(evidence_ids, list) or any(
             not isinstance(value, str) for value in evidence_ids
         ):
@@ -443,6 +482,11 @@ def _parse_selection(
         cleaned.append(
             {
                 "destination_id": destination_id.strip(),
+                "summary": (
+                    item.get("summary", "").strip()
+                    if isinstance(item.get("summary", ""), str)
+                    else ""
+                ),
                 "evidence_ids": evidence_ids[:MAX_EVIDENCE_PER_DESTINATION],
             }
         )
@@ -457,15 +501,31 @@ def _build_explanations(
 ) -> tuple[list[DestinationExplanation], list[str]]:
     issues: list[str] = []
     selected_by_destination: dict[str, list[str]] = {}
+    summaries_by_destination: dict[str, str] = {}
     known_ids = {str(trip.destination_id) for trip in trips}
+    aliases: dict[str, str] = {}
+    for trip in trips:
+        destination_id = str(trip.destination_id)
+        aliases[destination_id.lower()] = destination_id
+        aliases[str(trip.destination_iata).lower()] = destination_id
+        aliases[str(trip.city).strip().lower()] = destination_id
 
     for item in selection:
-        destination_id = item["destination_id"]
+        raw_destination_id = item["destination_id"]
+        destination_id = aliases.get(raw_destination_id.strip().lower())
         if destination_id not in known_ids:
-            issues.append(f"Ignored unknown destination_id {destination_id!r}.")
+            issues.append(f"Ignored unknown destination_id {raw_destination_id!r}.")
             continue
+        if item.get("summary"):
+            summaries_by_destination[destination_id] = item["summary"]
         selected_by_destination.setdefault(destination_id, [])
         for evidence_id in item["evidence_ids"]:
+            prefix, separator, code = evidence_id.partition("::")
+            evidence_id = (
+                f"{destination_id}::{code}"
+                if separator and aliases.get(prefix.strip().lower()) == destination_id
+                else evidence_id
+            )
             allowed = allowed_by_id.get(evidence_id)
             if allowed is None:
                 issues.append(
@@ -488,11 +548,14 @@ def _build_explanations(
         chosen_ids = selected_by_destination.get(destination_id, [])
         evidence = [allowed_by_id[item_id] for item_id in chosen_ids]
         row_issues: list[str] = []
-        if not evidence:
+        model_summary = summaries_by_destination.get(destination_id)
+        if not evidence and not model_summary:
             row_issues.append("No verified evidence was selected for this destination.")
-        summary = " ".join(item.statement for item in evidence) if evidence else (
+        summary = model_summary or (
+            " ".join(item.statement for item in evidence) if evidence else (
             f"{trip.city} is in the ranked list. No verified explanation reasons "
             "were selected."
+            )
         )
         explanations.append(
             DestinationExplanation(
@@ -522,19 +585,27 @@ def _build_explanations(
 
 def _system_prompt() -> str:
     return (
-        "You write grounded travel explanations by selecting evidence IDs.\n"
+        "You write grounded, natural travel summaries.\n"
         f"Call {EXPLAIN_FUNCTION_NAME}.\n"
         "Rules:\n"
-        "- Use only the allowed evidence IDs listed for each destination.\n"
-        "- Do not invent prices, temperatures, dates, attractions, availability "
-        "or total holiday costs.\n"
+        "- Write one concise paragraph in the summary field for every destination.\n"
+        "- Include the number of stops, total flight time, outbound and inbound "
+        "flight times, temperature, precipitation, sunshine and budget when "
+        "those facts are supplied.\n"
+        "- Use each fact once and combine related facts naturally; do not repeat "
+        "the same information in different wording.\n"
+        "- Do not use bullet points, labels, headings or a list-like style.\n"
+        "- Use only the supplied facts. Do not invent prices, temperatures, "
+        "dates, attractions, availability or total holiday costs.\n"
         "- A requested mood does not prove a destination has that quality.\n"
         "- For cooler requests, use the supplied cooler-weather ranking evidence "
         "without claiming conditions beyond the recorded temperature.\n"
         "- Scores are relative ranking values, not confidence or match percentages.\n"
         "- Compare price with budget only through the provided budget evidence.\n"
-        "- Duration evidence is round-trip air minutes, not calendar stay length.\n"
-        "- Preserve ranking order by covering each listed destination_id.\n"
+        "- Flight time is air time, not calendar stay length.\n"
+        "- Copy each destination_id exactly as provided; do not replace it "
+        "with an IATA code or city name.\n"
+        "- Return one object for every listed destination_id and preserve ranking order.\n"
     )
 
 
@@ -559,6 +630,9 @@ def _user_prompt(
             f"\n{trip.destination_id} | {trip.city} | {trip.destination_iata} | "
             f"final_score={_score(trip.final_score)}"
         )
+        lines.append(
+            "Write a natural summary using these verified facts; do not repeat facts:"
+        )
         for item in catalog:
             lines.append(f"- {item.id}: {item.statement}")
     return "\n".join(lines)
@@ -580,3 +654,13 @@ def _number(value: float) -> str:
     if number.is_integer():
         return str(int(number))
     return f"{number:.2f}"
+
+
+def _duration(minutes: int) -> str:
+    total = int(minutes)
+    hours, remaining = divmod(total, 60)
+    if hours and remaining:
+        return f"{hours} hours {remaining} minutes"
+    if hours:
+        return f"{hours} hours"
+    return f"{remaining} minutes"

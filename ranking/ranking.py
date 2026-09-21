@@ -154,6 +154,10 @@ def rank_candidates(
             **{criterion.score_field: scores[criterion.name] for criterion in criteria},
             temperature_direction=preferences.temperature_direction,
             final_score=calculate_final_score(scores, weights),
+            precipitation_probability_percent=candidate.precipitation_probability_percent,
+            sunshine_hours=candidate.sunshine_hours,
+            outbound_duration_minutes=candidate.outbound_duration_minutes,
+            return_duration_minutes=candidate.return_duration_minutes,
         ))
     return sorted(destinations, key=lambda item: item.final_score, reverse=True)
 

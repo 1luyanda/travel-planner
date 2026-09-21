@@ -3,10 +3,9 @@ import ScoreBreakdown from './ScoreBreakdown'
 import DestinationPhoto from './DestinationPhoto'
 import {
   displayValue,
-  formatAirline,
   formatDate,
   formatPrice,
-  tripFactsLine,
+  tripDatesLine,
 } from '../utils/format'
 import { backendScoreItems, explanationView } from '../utils/plannerFlow'
 import styles from '../workspace.module.css'
@@ -27,11 +26,10 @@ export default function DestinationCard({
   const flight = destination.flight || {}
   const place = destination.destination || {}
   const country = destination.country || {}
-  const airline = formatAirline(flight)
   const moved = previousRank && previousRank !== rank
   const breakdown = backendScoreItems(destination)
-  const { summary, evidence } = explanationView(destination)
-  const facts = tripFactsLine(destination)
+  const { summary } = explanationView(destination)
+  const tripDates = tripDatesLine(flight)
   const displayRank = destination.rank || rank
 
   return (
@@ -87,16 +85,8 @@ export default function DestinationCard({
           <p className={styles.savedAt}>Saved {formatDate(destination.savedAt)}</p>
         )}
         {moved && <p className={styles.movement}>Moved from #{previousRank}</p>}
-        {facts && <p className={styles.facts}>{facts}{airline ? ` · ${airline}` : ''}</p>}
-        {!facts && <p className={styles.facts}>{displayValue(null)}</p>}
+        {tripDates && <p className={styles.facts}>{tripDates}</p>}
         {summary && <p className={styles.reason}>{summary}</p>}
-        {evidence.length > 0 && (
-          <ul className={styles.evidence}>
-            {evidence.map((item) => (
-              <li key={item.id || item.statement}>{item.statement}</li>
-            ))}
-          </ul>
-        )}
 
         {breakdown.length > 0 && (
           <details className={styles.why}>

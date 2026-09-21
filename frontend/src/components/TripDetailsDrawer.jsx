@@ -7,6 +7,7 @@ import {
   displayValue,
   formatAirline,
   formatDate,
+  formatFlightDurations,
   formatDuration,
   formatPrecipitation,
   formatPrice,
@@ -182,6 +183,7 @@ export default function TripDetailsDrawer({
           <Row label="Departs" value={formatDate(flight.departure_at)} />
           <Row label="Returns" value={formatDate(flight.return_at)} />
           <Row label="Duration" value={formatTripDays(destination.tripDurationDays) || formatDuration(flight.duration_minutes)} />
+          <Row label="Flight durations" value={formatFlightDurations(flight)} />
           <Row label="Stops" value={formatStops(flight.outbound_stops)} />
           <Row label="Airline" value={airline} />
           <Row label="Weather" value={weatherLine(weather)} />

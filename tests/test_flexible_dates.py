@@ -85,11 +85,14 @@ def test_fill_only_the_shortfall_and_keep_exact_matches_first(exact_count):
     request = query()
     request_snapshot = request.model_dump()
     result, repository = prepare(records, request)
-    needed = max(0, 3 - exact_count)
+    needed = max(0, MIN_RECOMMENDATION_RESULTS - exact_count)
     assert [item.destination_id for item in result.candidates] == (
-        [f"exact-{i}" for i in range(exact_count)] + ["near", "middle", "far"][:needed]
+        [f"exact-{i}" for i in range(exact_count)]
+        + ["near", "middle", "far"][:needed]
     )
-    assert len(repository.requests) == (1 if exact_count >= 3 else 2)
+    assert len(repository.requests) == (
+        1 if exact_count >= MIN_RECOMMENDATION_RESULTS else 2
+    )
     assert result.exact_match_count == exact_count
     assert result.fallback_count == needed
     assert result.flexible_date_fallback_used == bool(needed)
@@ -304,4 +307,4 @@ def test_repository_exact_sql_and_non_date_filters_are_reused_for_fallback():
         assert "c.temp_max_c >= @min_temp" in call["query"]
         assert "c.destination_country_code, @country_code" in call["query"]
     assert FLEXIBLE_DATE_WINDOW_DAYS == 7
-    assert MIN_RECOMMENDATION_RESULTS == 3
+    assert MIN_RECOMMENDATION_RESULTS == 5

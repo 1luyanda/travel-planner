@@ -10,7 +10,8 @@ from dotenv import load_dotenv
 
 
 FLEXIBLE_DATE_WINDOW_DAYS = 7
-MIN_RECOMMENDATION_RESULTS = 3
+MIN_RECOMMENDATION_RESULTS = 5
+MAX_RECOMMENDATION_RESULTS = 5
 
 
 class ConfigurationError(RuntimeError):

@@ -89,6 +89,8 @@ class FlightItem(BaseModel):
     outbound_stops: int | None = None
     return_stops: int | None = None
     duration_minutes: int | None = None
+    outbound_duration_minutes: int | None = None
+    return_duration_minutes: int | None = None
     airline_code: str | None = None
     airline_name: str | None = None
     flight_number: str | None = None
@@ -118,6 +120,8 @@ class CandidateItem(FlightDateMetadata):
     precipitation_probability_percent: float
     sunshine_hours: float | None
     max_wind_speed_kmh: float | None
+    outbound_duration_minutes: int | None = None
+    return_duration_minutes: int | None = None
     airport_distance_km: float | None
     # These are optional because the current flattened Cosmos schema does not
     # preserve source retrieval timestamps yet.

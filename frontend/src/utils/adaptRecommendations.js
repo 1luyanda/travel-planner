@@ -93,6 +93,8 @@ function mapRecommendation(item, { originId, originIata, originCity, originCount
       return_stops: numberOrNull(flight?.return_stops),
       duration_minutes:
         numberOrNull(item?.flight_duration_minutes) ?? numberOrNull(flight?.duration_minutes),
+      outbound_duration_minutes: numberOrNull(flight?.outbound_duration_minutes),
+      return_duration_minutes: numberOrNull(flight?.return_duration_minutes),
       airline_code: textOrNull(flight?.airline_code),
       airline_name: textOrNull(flight?.airline_name),
       flight_number: textOrNull(flight?.flight_number),
@@ -128,6 +130,13 @@ function fillMissingDisplayFields(result, flight) {
   if (!nextFlight.departure_at) nextFlight.departure_at = textOrNull(flight.departure_at)
   if (!nextFlight.return_at) nextFlight.return_at = textOrNull(flight.return_at)
   if (nextFlight.return_stops == null) nextFlight.return_stops = numberOrNull(flight.return_stops)
+  if (nextFlight.duration_minutes == null) nextFlight.duration_minutes = numberOrNull(flight.duration_minutes)
+  if (nextFlight.outbound_duration_minutes == null) {
+    nextFlight.outbound_duration_minutes = numberOrNull(flight.outbound_duration_minutes)
+  }
+  if (nextFlight.return_duration_minutes == null) {
+    nextFlight.return_duration_minutes = numberOrNull(flight.return_duration_minutes)
+  }
 
   if (!nextDestination.airport) nextDestination.airport = textOrNull(flight.airport_name)
   if (!nextDestination.country_code) {
