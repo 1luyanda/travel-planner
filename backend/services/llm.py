@@ -48,6 +48,7 @@ from backend.models.trip_request import (
     ExtractedPreferences,
     ParseRequestResult,
     _coerce_date,
+    apply_explicit_text_facts,
     fill_missing_dates,
     merge_preferences,
     parse_form_fields,
@@ -127,7 +128,10 @@ EXTRACTION_TOOL: dict[str, Any] = {
                 },
                 "currency": {
                     "type": ["string", "null"],
-                    "description": "3-letter currency code only if the user stated one.",
+                    "description": (
+                        "3-letter currency code if the user stated one. "
+                        "€ means EUR. £ means GBP. Null if no currency was stated."
+                    ),
                 },
                 "moods": {
                     "type": "array",
@@ -142,8 +146,9 @@ EXTRACTION_TOOL: dict[str, Any] = {
                     "type": ["string", "null"],
                     "description": (
                         "Weather meaning only: use warm for positive temperature, "
-                        "sunshine, or less-rain requests; use cool for negative "
-                        "temperature or more-rain requests; otherwise null."
+                        "sunshine, or less-rain requests, including 'warm escape'; "
+                        "use cool for negative temperature or more-rain requests; "
+                        "otherwise null."
                     ),
                 },
             },
@@ -416,6 +421,7 @@ def parse_request(
                 issues=[model_error],
                 clarification_questions=[],
             )
+        extracted = apply_explicit_text_facts(extracted, text)
     else:
         extracted = ExtractedPreferences()
 
@@ -592,10 +598,11 @@ def _system_prompt(reference_date: date) -> str:
         "- origin_iata: only when the user wrote an explicit 3-letter IATA code.\n"
         "- Never invent an airport or city code for a place name. Put the name in origin_text.\n"
         "- Do not use fixture data, default destinations, or assumed budgets.\n"
+        "- currency: € means EUR. '400 EUR' and 'EUR 400' are EUR. Do not invent EUR without a cue.\n"
         "- moods: mood words such as relaxing. Do not put weather words in moods.\n"
         "- weather_preference: canonicalize positive temperature, sunshine, "
         "and less-rain requests to warm; canonicalize negative temperature "
-        "and more-rain requests to cool.\n"
+        "and more-rain requests to cool. 'warm escape' is warm.\n"
         "- Do not treat rain or sunshine as a mood.\n"
         "- Accept explicit calendar dates in common formats, including "
         "yearless dates such as 12.10, 12.10., or 12/10. Copy those as written, "

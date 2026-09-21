@@ -1,4 +1,5 @@
 # Authoritative runtime and test dependencies for the repository.
+aiohttp>=3.11,<4
 azure-cosmos>=4.7,<5
 fastapi>=0.115,<1
 httpx>=0.27,<1

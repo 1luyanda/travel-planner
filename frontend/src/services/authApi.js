@@ -10,16 +10,30 @@ async function parseBody(response) {
 
 function messageFor(body, fallback) {
   const detail = body?.detail
-  return typeof detail === 'string' && detail.trim() ? detail : fallback
+  if (typeof detail === 'string' && detail.trim()) return detail
+  if (Array.isArray(detail) && detail.length) {
+    return detail
+      .map((item) => (typeof item === 'string' ? item : item?.msg))
+      .filter(Boolean)
+      .join(' ')
+  }
+  return fallback
 }
 
 async function requestAuth(path, { method = 'GET', body } = {}) {
-  const response = await fetch(path, {
-    method,
-    credentials: 'include',
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  })
+  let response
+  try {
+    response = await fetch(path, {
+      method,
+      credentials: 'include',
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    })
+  } catch {
+    throw new ApiError('Could not reach the authentication service. Check that the API is running.', {
+      status: 0,
+    })
+  }
 
   if (response.status === 204) return null
 

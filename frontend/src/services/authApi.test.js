@@ -58,4 +58,40 @@ describe('local auth API', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3)
     expect(fetchMock.mock.calls[1][1].credentials).toBe('include')
   })
+
+  it('surfaces FastAPI validation details instead of a generic failure', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: false,
+        status: 422,
+        json: async () => ({
+          detail: [{ msg: 'String should have at least 12 characters' }],
+        }),
+      })),
+    )
+
+    await expect(
+      loginUser({ email: 'person@example.com', password: 'short' }),
+    ).rejects.toMatchObject({
+      status: 422,
+      message: 'String should have at least 12 characters',
+    })
+  })
+
+  it('explains when the authentication service cannot be reached', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new TypeError('Failed to fetch')
+      }),
+    )
+
+    await expect(
+      loginUser({ email: 'person@example.com', password: 'a-long-demo-password' }),
+    ).rejects.toMatchObject({
+      status: 0,
+      message: 'Could not reach the authentication service. Check that the API is running.',
+    })
+  })
 })

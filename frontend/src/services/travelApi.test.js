@@ -3,6 +3,7 @@ import {
   ApiError,
   appendQuery,
   deleteSavedFlight,
+  fetchActivities,
   fetchCandidates,
   fetchFlights,
   fetchOrigin,
@@ -369,6 +370,137 @@ describe('saved flights API', () => {
       }),
     )
     await expect(deleteSavedFlight('ZAG-ROM-2026-09-18')).resolves.toBeUndefined()
+  })
+})
+
+describe('activities API', () => {
+  it('posts mapped fields to /api/activities with credentials and limit 8', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url, options) => {
+        expect(url).toBe('/api/activities')
+        expect(options.method).toBe('POST')
+        expect(options.credentials).toBe('include')
+        expect(JSON.parse(options.body)).toEqual({
+          city: 'Rome',
+          country_code: 'IT',
+          destination_id: 'ZAG-ROM-2026-09-18',
+          moods: ['cultural'],
+          limit: 8,
+        })
+        return {
+          ok: true,
+          json: async () => ({
+            status: 'ready',
+            city: 'Rome',
+            destination_id: 'ZAG-ROM-2026-09-18',
+            issues: [],
+            activities: [
+              {
+                place_id: 'ChIJA',
+                name: 'Colosseum',
+                address: 'Rome, Italy',
+                rating: 4.6,
+                user_ratings_total: 1200,
+                business_status: 'OPERATIONAL',
+                price_level: 'PRICE_LEVEL_MODERATE',
+                types: ['tourist_attraction'],
+              },
+            ],
+          }),
+        }
+      }),
+    )
+
+    const payload = await fetchActivities({
+      city: 'Rome',
+      country_code: 'IT',
+      destination_id: 'ZAG-ROM-2026-09-18',
+      moods: ['cultural'],
+      limit: 8,
+    })
+    expect(payload.status).toBe('ready')
+    expect(payload.activities[0].name).toBe('Colosseum')
+    expect(JSON.stringify(payload)).not.toMatch(/GOOGLE_PLACES_API_KEY/)
+  })
+
+  it('omits blank optional fields and keeps a ready empty list', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url, options) => {
+        expect(JSON.parse(options.body)).toEqual({
+          city: 'Lisbon',
+          moods: [],
+          limit: 8,
+        })
+        return {
+          ok: true,
+          json: async () => ({
+            status: 'ready',
+            city: 'Lisbon',
+            destination_id: null,
+            activities: [],
+            issues: [],
+          }),
+        }
+      }),
+    )
+    await expect(fetchActivities({ city: 'Lisbon', moods: [] })).resolves.toMatchObject({
+      status: 'ready',
+      activities: [],
+    })
+  })
+
+  it('surfaces HTTP failures instead of an empty success', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: false,
+        status: 503,
+        json: async () => ({ detail: 'Activity data is temporarily unavailable.' }),
+      })),
+    )
+    await expect(fetchActivities({ city: 'Rome' })).rejects.toMatchObject({
+      status: 503,
+      message: 'Activity data is temporarily unavailable.',
+    })
+  })
+
+  it('rejects a 200 error status instead of rendering leftover cards', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          status: 'error',
+          city: 'Rome',
+          activities: [{ place_id: 'ChIJA', name: 'Colosseum' }],
+          issues: ['Activity data is temporarily unavailable.'],
+        }),
+      })),
+    )
+    const payload = await fetchActivities({ city: 'Rome' })
+    expect(payload.status).toBe('error')
+    expect(payload.activities).toEqual([])
+  })
+
+  it('propagates abort without returning mock activities', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url, { signal }) => {
+        if (signal?.aborted) {
+          const error = new Error('Aborted')
+          error.name = 'AbortError'
+          throw error
+        }
+        return { ok: true, json: async () => ({ status: 'ready', activities: [{ name: 'mock' }] }) }
+      }),
+    )
+    await expect(fetchActivities({ city: 'Rome' }, { signal: controller.signal })).rejects.toMatchObject({
+      name: 'AbortError',
+    })
   })
 })
 

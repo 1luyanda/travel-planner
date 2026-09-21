@@ -104,6 +104,59 @@ COOL_WEATHER_EQUIVALENTS = frozenset(
         "cloudier",
     }
 )
+CURRENCY_ALIASES = {
+    "€": "EUR",
+    "EURO": "EUR",
+    "EUROS": "EUR",
+    "£": "GBP",
+    "POUND": "GBP",
+    "POUNDS": "GBP",
+    "$": "USD",
+    "DOLLAR": "USD",
+    "DOLLARS": "USD",
+}
+_AUTHORITATIVE_ANSWER = re.compile(
+    r"Authoritative answer(?:[^\n]*):\s*([^\n]+)",
+    re.IGNORECASE,
+)
+_AMOUNT_CURRENCY = re.compile(
+    r"\b(EUR|USD|GBP)\s*(\d+(?:[.,]\d+)?)|(\d+(?:[.,]\d+)?)\s*(EUR|USD|GBP)\b",
+    re.IGNORECASE,
+)
+_EURO_AMOUNT = re.compile(r"€\s*(\d+(?:[.,]\d+)?)|(\d+(?:[.,]\d+)?)\s*€")
+_DOLLAR_AMOUNT = re.compile(r"\$\s*(\d+(?:[.,]\d+)?)|(\d+(?:[.,]\d+)?)\s*\$")
+_POUND_AMOUNT = re.compile(r"£\s*(\d+(?:[.,]\d+)?)|(\d+(?:[.,]\d+)?)\s*£")
+_STANDALONE_CURRENCY = re.compile(r"\b(EUR|USD|GBP)\b", re.IGNORECASE)
+_ISO_DATE = re.compile(r"\b(\d{4}-\d{2}-\d{2})\b")
+_YEAR_LIKE = re.compile(r"^20[2-9]\d$")
+_LEFT_NEGATION = re.compile(
+    r"(?i)(?:\b(?:not|no|never|without|avoid|except)\b|n't)\s+(?:\w+\s+){0,3}$"
+)
+_WARM_WORD = re.compile(
+    r"\b(warm|warmer|hot|hotter|sunny|sunnier)\b",
+    re.IGNORECASE,
+)
+_COOL_WORD = re.compile(
+    r"\b(cool|cooler|cold|colder|chilly)\b",
+    re.IGNORECASE,
+)
+
+
+def canonical_currency(value: str | None) -> str | None:
+    """Map explicit currency symbols and names onto a 3-letter code."""
+    if value is None:
+        return None
+    cleaned = str(value).strip()
+    if not cleaned:
+        return None
+    if cleaned in CURRENCY_ALIASES:
+        return CURRENCY_ALIASES[cleaned]
+    upper = cleaned.upper()
+    if upper in CURRENCY_ALIASES:
+        return CURRENCY_ALIASES[upper]
+    if re.fullmatch(CURRENCY_PATTERN, cleaned):
+        return upper
+    return None
 
 
 def canonical_weather_preference(value: str | None) -> str | None:
@@ -169,10 +222,17 @@ class ExtractedPreferences(BaseModel):
     direct_flights_only: bool | None = None
     weather_preference: str | None = Field(default=None, max_length=100)
 
-    @field_validator("origin", "currency")
+    @field_validator("origin")
     @classmethod
-    def _uppercase_code(cls, value: str | None) -> str | None:
+    def _uppercase_origin(cls, value: str | None) -> str | None:
         return value.upper() if value else value
+
+    @field_validator("currency")
+    @classmethod
+    def _canonical_currency(cls, value: str | None) -> str | None:
+        if value is None or str(value).strip() == "":
+            return None
+        return canonical_currency(value) or str(value).strip().upper()
 
     @field_validator("moods")
     @classmethod
@@ -216,10 +276,15 @@ class TripRequest(BaseModel):
     direct_flights_only: bool | None = None
     weather_preference: str | None = Field(default=None, max_length=100)
 
-    @field_validator("origin", "currency")
+    @field_validator("origin")
     @classmethod
-    def _uppercase_code(cls, value: str) -> str:
+    def _uppercase_origin(cls, value: str) -> str:
         return value.upper()
+
+    @field_validator("currency")
+    @classmethod
+    def _canonical_currency(cls, value: str) -> str:
+        return canonical_currency(value) or value.upper()
 
     @field_validator("moods")
     @classmethod
@@ -282,6 +347,223 @@ def parse_form_fields(
         raw["currency"] = raw["currency"].strip()
 
     return ExtractedPreferences.model_validate(raw)
+
+
+def apply_explicit_text_facts(
+    preferences: ExtractedPreferences,
+    user_text: str,
+) -> ExtractedPreferences:
+    """Fill missing currency, budget, and weather from explicit wording.
+
+    Does not invent EUR, a budget, or weather when the text has no cue.
+    An authoritative clarification answer overrides earlier values for fields
+    it actually states. Conflicting currencies or amounts are left unset.
+    """
+    text = user_text or ""
+    answer = _latest_authoritative_answer(text)
+    updates: dict[str, Any] = {}
+
+    if answer:
+        if not _conflicting_currencies(answer):
+            currency = _currency_from_answer(answer)
+            if currency:
+                updates["currency"] = currency
+        if not _conflicting_budgets(answer):
+            budget = _budget_from_answer(answer)
+            if budget is not None:
+                updates["budget"] = budget
+        updates.update(_dates_from_text(answer))
+        if _weather_mentioned(answer):
+            updates["weather_preference"] = weather_from_text(answer)
+
+    if "currency" not in updates and preferences.currency is None:
+        currency = currency_from_text(text)
+        if currency:
+            updates["currency"] = currency
+    if "budget" not in updates and preferences.budget is None:
+        budget = budget_from_text(text)
+        if budget is not None:
+            updates["budget"] = budget
+    if "weather_preference" not in updates and preferences.weather_preference is None:
+        weather = weather_from_text(text)
+        if weather:
+            updates["weather_preference"] = weather
+
+    if not updates:
+        return preferences
+    return preferences.model_copy(update=updates)
+
+
+def currency_from_text(text: str) -> str | None:
+    answer = _latest_authoritative_answer(text)
+    if answer:
+        if _conflicting_currencies(answer):
+            return None
+        from_answer = _currency_from_answer(answer)
+        if from_answer:
+            return from_answer
+        if _conflicting_currencies(text):
+            return None
+    if _conflicting_currencies(text):
+        return None
+    return _currency_tokens(text)
+
+
+def budget_from_text(text: str) -> float | None:
+    answer = _latest_authoritative_answer(text)
+    if answer:
+        if _conflicting_budgets(answer):
+            return None
+        amount = _budget_from_answer(answer)
+        if amount is not None:
+            return amount
+    if _conflicting_budgets(text):
+        return None
+    return _single_budget_amount(text)
+
+
+def weather_from_text(text: str) -> str | None:
+    warm = bool(_unnegated_matches(_WARM_WORD, text))
+    cool = bool(_unnegated_matches(_COOL_WORD, text))
+    if warm and not cool:
+        return "warm"
+    if cool and not warm:
+        return "cool"
+    return None
+
+
+def _weather_mentioned(text: str) -> bool:
+    return bool(_WARM_WORD.search(text or "") or _COOL_WORD.search(text or ""))
+
+
+def _unnegated_matches(pattern: re.Pattern[str], text: str) -> list[str]:
+    hits: list[str] = []
+    source = text or ""
+    for match in pattern.finditer(source):
+        before = source[max(0, match.start() - 40) : match.start()]
+        if _LEFT_NEGATION.search(before):
+            continue
+        hits.append(match.group(0).lower())
+    return hits
+
+
+def _latest_authoritative_answer(text: str) -> str | None:
+    matches = list(_AUTHORITATIVE_ANSWER.finditer(text or ""))
+    if matches:
+        return matches[-1].group(1).strip()
+    return None
+
+
+def _currency_from_answer(answer: str) -> str | None:
+    return canonical_currency(answer) or _currency_tokens(answer) or _standalone_currency(answer)
+
+
+def _standalone_currency(text: str) -> str | None:
+    codes = _currency_codes_in(text)
+    if len(codes) == 1:
+        return next(iter(codes))
+    return None
+
+
+def _currency_codes_in(text: str) -> set[str]:
+    return {match.group(1).upper() for match in _STANDALONE_CURRENCY.finditer(text or "")}
+
+
+def _currency_tokens(text: str) -> str | None:
+    codes = _currencies_stated(text)
+    if len(codes) == 1:
+        return next(iter(codes))
+    return None
+
+
+def _currencies_stated(text: str) -> set[str]:
+    found: set[str] = set()
+    source = text or ""
+    if "€" in source:
+        found.add("EUR")
+    if "£" in source:
+        found.add("GBP")
+    if _DOLLAR_AMOUNT.search(source):
+        found.add("USD")
+    for match in _AMOUNT_CURRENCY.finditer(source):
+        found.add((match.group(1) or match.group(4)).upper())
+    word = re.search(r"\b(euros?|pounds?|dollars?)\b", source, re.IGNORECASE)
+    if word:
+        aliased = canonical_currency(word.group(1))
+        if aliased:
+            found.add(aliased)
+    return found
+
+
+def _conflicting_currencies(text: str) -> bool:
+    return len(_currencies_stated(text)) > 1
+
+
+def _budget_from_answer(answer: str) -> float | None:
+    stripped = _ISO_DATE.sub(" ", answer or "")
+    amounts = _amounts_in_text(stripped)
+    if len(amounts) == 1:
+        return amounts[0]
+    if len(amounts) > 1:
+        return None
+    match = re.search(r"\b(\d{2,5}(?:[.,]\d+)?)\b", stripped)
+    if not match:
+        return None
+    raw = match.group(1)
+    if _YEAR_LIKE.fullmatch(raw):
+        return None
+    try:
+        return float(raw.replace(",", "."))
+    except ValueError:
+        return None
+
+
+def _single_budget_amount(text: str) -> float | None:
+    amounts = _amounts_in_text(text)
+    if len(amounts) == 1:
+        return amounts[0]
+    return None
+
+
+def _conflicting_budgets(text: str) -> bool:
+    return len(_amounts_in_text(text)) > 1
+
+
+def _amounts_in_text(text: str) -> list[float]:
+    values: list[float] = []
+    source = text or ""
+    for pattern in (_EURO_AMOUNT, _AMOUNT_CURRENCY, _DOLLAR_AMOUNT, _POUND_AMOUNT):
+        for match in pattern.finditer(source):
+            raw = next((group for group in match.groups() if group and re.search(r"\d", group)), None)
+            if raw is None:
+                continue
+            try:
+                number = float(raw.replace(",", "."))
+            except ValueError:
+                continue
+            if number not in values:
+                values.append(number)
+    return values
+
+
+def _dates_from_text(text: str) -> dict[str, date]:
+    found: list[date] = []
+    for raw in _ISO_DATE.findall(text or ""):
+        try:
+            parsed = date.fromisoformat(raw)
+        except ValueError:
+            continue
+        if parsed not in found:
+            found.append(parsed)
+    if not found:
+        return {}
+    if len(found) >= 2:
+        return {"departure_date": found[0], "return_date": found[1]}
+    if re.search(r"\breturn\b", text or "", re.IGNORECASE) and not re.search(
+        r"\bdepart", text or "", re.IGNORECASE
+    ):
+        return {"return_date": found[0]}
+    return {"departure_date": found[0]}
 
 
 def merge_preferences(

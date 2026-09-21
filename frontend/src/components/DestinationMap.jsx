@@ -31,6 +31,7 @@ function MapResize() {
       if (container.offsetWidth > 0 && container.offsetHeight > 0) invalidate()
     })
     observer.observe(container)
+    if (container.parentElement) observer.observe(container.parentElement)
     invalidate()
     return () => observer.disconnect()
   }, [map])

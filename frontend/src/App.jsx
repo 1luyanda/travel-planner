@@ -4,6 +4,7 @@ import { useAuth } from './auth/AuthProvider'
 import Sidebar from './components/Sidebar'
 import Composer from './components/Composer'
 import OriginSelect from './components/OriginSelect'
+import TripDateFields from './components/TripDateFields'
 import WelcomePane from './components/WelcomePane'
 import InspirationPanel from './components/InspirationPanel'
 import ConversationPane from './components/ConversationPane'
@@ -11,7 +12,10 @@ import SavedPane from './components/SavedPane'
 import DestinationMap from './components/DestinationMap'
 import FiltersPopover from './components/FiltersPopover'
 import TripDetailsDrawer from './components/TripDetailsDrawer'
+import TripDetailsPanel from './components/TripDetailsPanel'
 import LandingPage from './components/LandingPage'
+import LoginPage from './components/LoginPage'
+import SignupPage from './components/SignupPage'
 import {
   deleteSavedFlight,
   fetchSavedFlights,
@@ -30,14 +34,21 @@ import {
   buildClarificationRecommendPayload,
   buildFilterRecommendPayload,
   buildRecommendPayload,
+  composerPlaceholderFor,
   createClarificationContext,
+  dateRangeError,
+  describePlannerDates,
+  formFieldsForClarification,
   formFieldsFromPlanner,
   formForSelectedOrigin,
   formPatchFromTripRequest,
+  isClarificationQuestionText,
   localClarificationQuestions,
   newTripPlannerState,
+  plannerDatesChangedSinceClarification,
   recordClarificationAnswer,
   refinementFeedbackText,
+  shouldRecommendInsteadOfRefine,
   tripRequestAfterRecommend,
   tripRequestAfterRefine,
 } from './utils/plannerFlow'
@@ -47,6 +58,13 @@ import {
   createPlannerRequest,
   runPlannerRequest,
 } from './utils/plannerRequest'
+import {
+  clearTripSelection,
+  resolveSelectedTrip,
+  selectTripFromResult,
+  selectionAfterPoolChange,
+  tripFromMarkerId,
+} from './utils/tripDetailsSelection'
 import {
   adaptSavedFlight,
   adaptSavedFlights,
@@ -58,7 +76,7 @@ import {
   showPlannerConversation,
   showPlannerFilters,
 } from './utils/savedFlights'
-import { AppLink, ROUTES, isPlannerPath, useRoute } from './utils/routes.jsx'
+import { AppLink, ROUTES, isAppPath, isAuthPath, isPlannerPath, useRoute } from './utils/routes.jsx'
 import styles from './workspace.module.css'
 
 const initialForm = INITIAL_PLANNER_FORM
@@ -85,6 +103,7 @@ export default function App() {
   const [clarifyKind, setClarifyKind] = useState(null)
   const [clarification, setClarification] = useState(null)
   const [clarificationQuestions, setClarificationQuestions] = useState([])
+  const [parsedPreferences, setParsedPreferences] = useState(null)
   const [rejected, setRejected] = useState([])
   const [dataSource, setDataSource] = useState(null)
   const [results, setResults] = useState([])
@@ -138,11 +157,11 @@ export default function App() {
   const savedIds = savedFlightIds(savedItems)
   const visibleDestinations = destinationsForView(view, { results, savedItems })
   const mapResults = visibleDestinations
-  const drawerTrip = selectedTrip
-    ? visibleDestinations.find((item) => item.id === selectedTrip.id) || selectedTrip
-    : null
+  const detailsTrip = resolveSelectedTrip(mapResults, selectedTrip)
   const showMap = view === 'saved' || hasSearched
   const showInspiration = view === 'explore' && !hasSearched
+  const splitRight = showMap && !isNarrow
+  const dateError = dateRangeError(form)
   const busy = loading || refining
   const conversationPhase = loading
     ? 'loading'
@@ -216,14 +235,18 @@ export default function App() {
   }, [userId])
 
   useEffect(() => {
-    if (path !== ROUTES.home && !isPlannerPath(path)) {
+    if (!isAppPath(path)) {
       navigate(ROUTES.home, { replace: true })
     }
   }, [navigate, path])
 
   useEffect(() => {
-    if (!authLoading && isPlannerPath(path) && !user) {
+    if (authLoading) return
+    if (isPlannerPath(path) && !user) {
       navigate(ROUTES.home, { replace: true })
+    }
+    if (isAuthPath(path) && user) {
+      navigate(ROUTES.planner, { replace: true })
     }
   }, [authLoading, navigate, path, user])
 
@@ -243,11 +266,12 @@ export default function App() {
 
   useEffect(() => {
     const pool = visibleDestinations
-    if (selectedDestinationId && !pool.some((item) => item.id === selectedDestinationId)) {
-      setSelectedDestinationId(null)
+    const next = selectionAfterPoolChange(pool, selectedTrip, selectedDestinationId)
+    if (next.selectedDestinationId !== selectedDestinationId) {
+      setSelectedDestinationId(next.selectedDestinationId)
     }
-    if (selectedTrip && !pool.some((item) => item.id === selectedTrip.id)) {
-      setSelectedTrip(null)
+    if ((next.selectedTrip?.id || null) !== (selectedTrip?.id || null)) {
+      setSelectedTrip(next.selectedTrip)
     }
   }, [results, visibleDestinations, selectedDestinationId, selectedTrip, view])
 
@@ -280,6 +304,7 @@ export default function App() {
     setClarifyKind(null)
     setClarification(null)
     setClarificationQuestions([])
+    setParsedPreferences(null)
     setActiveRefinement(null)
     setMessages([])
     setError('')
@@ -392,6 +417,10 @@ export default function App() {
     setForm(nextForm)
     if (mode === 'fresh') {
       setPendingSearchText(typed)
+      setClarifyKind(null)
+      setClarification(null)
+      setClarificationQuestions([])
+      setParsedPreferences(null)
       setTripRequest(null)
       setResults([])
       setRejected([])
@@ -449,6 +478,19 @@ export default function App() {
           ? buildClarificationRecommendPayload({
               ...(clarification || createClarificationContext({ originalPrompt: pendingSearchText })),
               answer: typed,
+              updatedFormDatesText: plannerDatesChangedSinceClarification(
+                nextForm,
+                (clarification || {}).formSelectionsText,
+              )
+                ? describePlannerDates(nextForm)
+                : '',
+              formFields: formFieldsForClarification({
+                form: nextForm,
+                origin,
+                preferences: (clarification || {}).preferences,
+                questions: (clarification || {}).questions,
+                answer: typed,
+              }),
             })
           : mode === 'filters'
             ? buildFilterRecommendPayload(nextForm, origin)
@@ -497,11 +539,13 @@ export default function App() {
           : createClarificationContext({
               originalPrompt: mode === 'filters' ? pendingSearchText || typed : typed,
               formFields: formFieldsFromPlanner(nextForm, origin),
+              preferences: response.preferences,
               questions: response.clarification_questions,
             })
       setClarifyKind('recommend')
       setClarification(nextContext)
       setClarificationQuestions(response.clarification_questions)
+      setParsedPreferences(response.preferences || null)
       setResults([])
       setRejected(response.rejected)
       setDataSource(response.data_source)
@@ -525,6 +569,7 @@ export default function App() {
     setClarifyKind(null)
     setClarification(null)
     setClarificationQuestions([])
+    setParsedPreferences(response.preferences || null)
     if (nextTrip) {
       setForm((current) => ({
         ...current,
@@ -722,10 +767,16 @@ export default function App() {
     event.preventDefault()
     const text = draft.trim()
     if (!text || busy) return
+    if (dateRangeError(form)) return
+    if (isClarificationQuestionText(text, clarificationQuestions)) return
     setDraft('')
 
     if (clarifyKind === 'recommend') {
       runRecommend(text, { mode: 'clarify' })
+      return
+    }
+    if (shouldRecommendInsteadOfRefine(form, tripRequest, { clarifying: false })) {
+      runRecommend(text, { mode: 'fresh' })
       return
     }
     if (clarifyKind === 'refine' && tripRequest) {
@@ -747,9 +798,18 @@ export default function App() {
         ...initialForm,
         originId: selectedOrigin?.originId || '',
         originIata: selectedOrigin?.iata || '',
+        departureDate: form.departureDate,
+        returnDate: form.returnDate,
       },
       origin: selectedOrigin,
     })
+  }
+
+  function handleDateChange(field, value) {
+    setForm((current) => ({
+      ...current,
+      [field]: value,
+    }))
   }
 
   function handleFilterChange(field, value) {
@@ -801,6 +861,7 @@ export default function App() {
     setClarifyKind(cleared.clarifyKind)
     setClarification(cleared.clarification)
     setClarificationQuestions(cleared.clarificationQuestions)
+    setParsedPreferences(null)
     setActiveRefinement(null)
     setMessages([])
     setDraft('')
@@ -816,21 +877,24 @@ export default function App() {
   }
 
   function handleSelectDestination(destination) {
-    if (!destination?.id) return
-    setSelectedDestinationId(destination.id)
-    setViewportMode('selected')
-    if (typeof window !== 'undefined' && window.matchMedia('(max-width: 780px)').matches) {
+    const next = selectTripFromResult(destination)
+    if (!next) return
+    setSelectedDestinationId(next.selectedDestinationId)
+    setViewportMode(next.viewportMode)
+    if (isNarrow) {
       setMobilePane('map')
+      return
     }
+    setSelectedTrip(next.selectedTrip)
   }
 
   function handleMarkerSelect(resultId) {
     const pool = visibleDestinations
-    const match = pool.find((item) => item.id === resultId)
-    if (match) {
-      setSelectedDestinationId(match.id)
-      setViewportMode('selected')
-    }
+    const match = tripFromMarkerId(pool, resultId)
+    if (!match) return
+    setSelectedDestinationId(match.id)
+    setViewportMode('selected')
+    if (!isNarrow) setSelectedTrip(match)
   }
 
   function handleShowAll() {
@@ -839,18 +903,32 @@ export default function App() {
 
   function handleViewDetails(destination, event) {
     lastFocusRef.current = event?.currentTarget ?? document.activeElement
-    setSelectedDestinationId(destination.id)
-    setSelectedTrip(destination)
+    const next = selectTripFromResult(destination)
+    if (!next) return
+    setSelectedDestinationId(next.selectedDestinationId)
+    setSelectedTrip(next.selectedTrip)
+    setViewportMode(next.viewportMode)
   }
 
-  function handleCloseDrawer() {
-    setSelectedTrip(null)
-    requestAnimationFrame(() => lastFocusRef.current?.focus?.())
+  function handleCloseDetails() {
+    const cleared = clearTripSelection()
+    setSelectedTrip(cleared.selectedTrip)
+    setSelectedDestinationId(cleared.selectedDestinationId)
+    setViewportMode(cleared.viewportMode)
+    if (isNarrow) {
+      requestAnimationFrame(() => lastFocusRef.current?.focus?.())
+    }
   }
 
   function handleRefine(preference) {
     if (!tripRequest || busy) return
-    runRefine(refinementFeedbackText(preference), { label: preference })
+    if (dateRangeError(form)) return
+    const feedback = refinementFeedbackText(preference)
+    if (shouldRecommendInsteadOfRefine(form, tripRequest)) {
+      runRecommend(feedback, { mode: 'fresh', userMessage: preference })
+      return
+    }
+    runRefine(feedback, { label: preference })
   }
 
   async function refreshSavedFlights() {
@@ -957,6 +1035,14 @@ export default function App() {
     })
   }
 
+  if (path === ROUTES.login) {
+    return <LoginPage />
+  }
+
+  if (path === ROUTES.signup) {
+    return <SignupPage />
+  }
+
   if (!isPlannerPath(path)) {
     return <LandingPage />
   }
@@ -965,9 +1051,7 @@ export default function App() {
     return <div className={styles.workspace}>Loading your account…</div>
   }
 
-  const composerPlaceholder = clarifyKind
-    ? clarificationQuestions[0] || 'Answer the planner’s question…'
-    : 'Ask for a mood, dates, or budget…'
+  const composerPlaceholder = composerPlaceholderFor(clarifyKind)
 
   return (
     <div
@@ -1065,6 +1149,7 @@ export default function App() {
                 filters={appliedFilters}
                 originLabel={formatOriginLabel(selectedOrigin)}
                 tripRequest={tripRequest}
+                preferences={parsedPreferences}
                 dataSource={dataSource}
                 rejectedCount={rejected.length}
                 results={results}
@@ -1112,31 +1197,59 @@ export default function App() {
 
         {showPlannerComposer(view) && (
           <div className={styles.composerDock}>
+            <div className={styles.tripFields}>
             <OriginSelect
               value={selectedOrigin}
               onChange={handleOriginChange}
               error={originError}
               inputRef={originInputRef}
             />
-            <Composer
-              inputRef={composerRef}
-              draft={draft}
-              onDraftChange={setDraft}
-              onSubmit={handleComposerSubmit}
-              loading={busy}
-              placeholder={composerPlaceholder}
+            <TripDateFields
+              departureDate={form.departureDate || ''}
+              returnDate={form.returnDate || ''}
+              onChange={handleDateChange}
+              error={dateError}
+              disabled={busy}
             />
+          </div>
+          <p id="trip-date-hint" className={styles.dateHint}>
+            Form dates are used when filled. Leave them blank to use dates from your message. Dates
+            you type in the message take precedence over the date fields.
+          </p>
+          {dateError ? (
+            <p id="trip-date-error" className={styles.originError} role="alert">
+              {dateError}
+            </p>
+          ) : null}
+          <Composer
+            inputRef={composerRef}
+            draft={draft}
+            onDraftChange={setDraft}
+            onSubmit={handleComposerSubmit}
+            loading={busy}
+            placeholder={composerPlaceholder}
+          />
           </div>
         )}
       </div>
 
-      <div className={styles.right}>
+      <div className={splitRight ? `${styles.right} ${styles.rightSplit}` : styles.right}>
         {showInspiration && !isNarrow && (
           <InspirationPanel
             destinations={[]}
             onPlan={() => originInputRef.current?.focus()}
             onExplore={handleExploreDestinations}
             onSelectDestination={handlePreview}
+          />
+        )}
+        {splitRight && (
+          <TripDetailsPanel
+            destination={detailsTrip}
+            isSaved={Boolean(detailsTrip && savedIds.includes(detailsTrip.id))}
+            onToggleSaved={handleToggleSaved}
+            onClose={handleCloseDetails}
+            moods={parsedPreferences?.moods}
+            activitiesEnabled={splitRight}
           />
         )}
         {showMap && (
@@ -1161,12 +1274,16 @@ export default function App() {
         />
       )}
 
-      <TripDetailsDrawer
-        destination={drawerTrip}
-        onClose={handleCloseDrawer}
-        isSaved={Boolean(drawerTrip && savedIds.includes(drawerTrip.id))}
-        onToggleSaved={handleToggleSaved}
-      />
+      {isNarrow && (
+        <TripDetailsDrawer
+          destination={detailsTrip}
+          onClose={handleCloseDetails}
+          isSaved={Boolean(detailsTrip && savedIds.includes(detailsTrip.id))}
+          onToggleSaved={handleToggleSaved}
+          moods={parsedPreferences?.moods}
+          activitiesEnabled={isNarrow}
+        />
+      )}
     </div>
   )
 }
