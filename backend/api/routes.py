@@ -12,6 +12,7 @@ from backend.contracts import (
     CandidateResponse,
     FlightListResponse,
     FlightQuery,
+    HotelsResponse,
     OriginItem,
     RecommendRequest,
     RecommendationResponse,
@@ -25,6 +26,7 @@ from backend.repositories import RepositoryError, RepositoryNotFoundError
 from backend.security import require_api_key, require_user
 from backend.services import (
     CandidateService,
+    HotelService,
     RecommendationService,
     SavedFlightNotFoundError,
     SavedFlightsService,
@@ -49,6 +51,10 @@ def _recommendation_service(request: Request) -> RecommendationService:
 
 def _saved_flights_service(request: Request) -> SavedFlightsService:
     return request.app.state.saved_flights_service
+
+
+def _hotel_service(request: Request) -> HotelService:
+    return request.app.state.hotel_service
 
 
 def _flight_query(
@@ -254,6 +260,32 @@ async def list_activities(body: ActivitiesRequest) -> ActivitiesResponse:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Activity data is temporarily unavailable.",
+        ) from error
+
+
+@router.get(
+    "/hotels",
+    response_model=HotelsResponse,
+    dependencies=[Depends(require_api_key)],
+)
+async def get_hotels(
+    destination_id: str = Query(min_length=1, max_length=150, pattern=r"^\S+$"),
+    limit: int = Query(default=5, ge=1, le=20),
+    hotels: HotelService = Depends(_hotel_service),
+) -> HotelsResponse:
+    """Return stored hotels nearest to the destination centre/reference point."""
+
+    try:
+        return await hotels.recommend(destination_id, limit)
+    except RepositoryNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(error),
+        ) from error
+    except RepositoryError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Hotel data is temporarily unavailable.",
         ) from error
 
 

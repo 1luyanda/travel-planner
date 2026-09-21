@@ -16,6 +16,7 @@ from backend.data import DestinationDataService
 from backend.repositories import CosmosDestinationRepository
 from backend.services import (
     CandidateService,
+    HotelService,
     RecommendationService,
     SavedFlightsService,
     UserService,
@@ -32,8 +33,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.candidate_service = CandidateService(
         data_service=DestinationDataService(repository)
     )
+    app.state.hotel_service = HotelService(repository)
     app.state.recommendation_service = RecommendationService(
-        candidate_service=app.state.candidate_service
+        candidate_service=app.state.candidate_service,
+        hotel_service=app.state.hotel_service,
     )
     app.state.user_service = UserService(repository)
     app.state.saved_flights_service = SavedFlightsService(repository)

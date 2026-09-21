@@ -51,6 +51,11 @@ class RefineRequest(BaseModel):
 class RecommendationItem(DestinationExplanation, FlightDateMetadata):
     """Ranked explanation with retrieval-owned dates; the AI model is unchanged."""
 
+    hotel_destination_id: str | None = Field(
+        default=None,
+        description="Stored hotel document ID for GET /api/hotels; null if unresolved",
+    )
+
 
 class RecommendationResponse(DateFallbackSummary):
     """Shared recommend/refine result for the React client."""
