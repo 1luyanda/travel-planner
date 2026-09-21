@@ -1,17 +1,7 @@
-const STORAGE_KEY = 'travel-planner:saved-ids'
-
-export function loadSavedIds() {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
-    return Array.isArray(parsed) ? parsed.filter((id) => typeof id === 'string') : []
-  } catch {
-    return []
-  }
-}
-
-export function persistSavedIds(ids) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(ids))
-}
+/**
+ * Saved-flight IDs are stored on the backend. This helper only toggles
+ * local render state after an API success or while rolling back a failure.
+ */
 
 export function toggleSavedId(ids, id) {
   if (!id) return ids

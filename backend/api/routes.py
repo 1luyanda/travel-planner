@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from backend.contracts import (
     ActivitiesRequest,
@@ -16,9 +16,19 @@ from backend.contracts import (
     RecommendRequest,
     RecommendationResponse,
     RefineRequest,
+    SaveFlightRequest,
+    SavedFlightItem,
+    SavedFlightsResponse,
 )
+from backend.models.user import UserDocument
 from backend.repositories import RepositoryError, RepositoryNotFoundError
-from backend.services import CandidateService, RecommendationService
+from backend.security import require_api_key, require_user
+from backend.services import (
+    CandidateService,
+    RecommendationService,
+    SavedFlightNotFoundError,
+    SavedFlightsService,
+)
 from backend.services.places import (
     PlacesConfigurationError,
     PlacesService,
@@ -37,6 +47,10 @@ def _recommendation_service(request: Request) -> RecommendationService:
     return request.app.state.recommendation_service
 
 
+def _saved_flights_service(request: Request) -> SavedFlightsService:
+    return request.app.state.saved_flights_service
+
+
 def _flight_query(
     origin_id: str,
     departure_date: date | None = None,
@@ -46,6 +60,7 @@ def _flight_query(
     country: str | None = None,
     max_changeovers: int | None = None,
     max_duration_minutes: int | None = None,
+    limit: int = 100,
 ) -> FlightQuery:
     return FlightQuery(
         origin_id=origin_id,
@@ -56,6 +71,7 @@ def _flight_query(
         destination_country_code=country,
         max_changeovers=max_changeovers,
         max_flight_duration_minutes=max_duration_minutes,
+        limit=limit,
     )
 
 
@@ -64,7 +80,11 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@router.get("/origins", response_model=list[OriginItem])
+@router.get(
+    "/origins",
+    response_model=list[OriginItem],
+    dependencies=[Depends(require_api_key)],
+)
 async def search_origins(
     request: Request,
     q: str = Query(min_length=1, max_length=100),
@@ -81,7 +101,11 @@ async def search_origins(
         ) from error
 
 
-@router.get("/origins/{origin_id}", response_model=OriginItem)
+@router.get(
+    "/origins/{origin_id}",
+    response_model=OriginItem,
+    dependencies=[Depends(require_api_key)],
+)
 async def get_origin(origin_id: str, request: Request) -> OriginItem:
     """Point-read one origin by its city/country identifier."""
 
@@ -99,15 +123,20 @@ async def get_origin(origin_id: str, request: Request) -> OriginItem:
         ) from error
 
 
-@router.get("/flights", response_model=FlightListResponse)
+@router.get(
+    "/flights",
+    response_model=FlightListResponse,
+    dependencies=[Depends(require_api_key)],
+)
 async def get_flights(
     request: Request,
     origin_id: str = Query(min_length=3, max_length=150),
     departure_date: date | None = None,
     return_date: date | None = None,
-    max_price: float | None = Query(default=None, gt=0),
-    min_temp: float | None = None,
+    max_price: float | None = Query(default=None, gt=0, le=1_000_000),
+    min_temp: float | None = Query(default=None, ge=-100, le=100),
     country: str | None = Query(default=None, min_length=2, max_length=2),
+    limit: int = Query(default=100, ge=1, le=200),
 ) -> FlightListResponse:
     """Load every Cosmos flight document for one origin partition."""
 
@@ -118,6 +147,7 @@ async def get_flights(
         max_price,
         min_temp,
         country,
+        limit=limit,
     )
 
     try:
@@ -130,17 +160,22 @@ async def get_flights(
         ) from error
 
 
-@router.get("/candidates", response_model=CandidateResponse)
+@router.get(
+    "/candidates",
+    response_model=CandidateResponse,
+    dependencies=[Depends(require_api_key)],
+)
 async def get_candidates(
     request: Request,
     origin_id: str = Query(min_length=3, max_length=150),
     departure_date: date | None = None,
     return_date: date | None = None,
-    max_price: float | None = Query(default=None, gt=0),
-    min_temp: float | None = None,
+    max_price: float | None = Query(default=None, gt=0, le=1_000_000),
+    min_temp: float | None = Query(default=None, ge=-100, le=100),
     country: str | None = Query(default=None, min_length=2, max_length=2),
-    max_changeovers: int | None = Query(default=None, ge=0),
-    max_duration_minutes: int | None = Query(default=None, gt=0),
+    max_changeovers: int | None = Query(default=None, ge=0, le=20),
+    max_duration_minutes: int | None = Query(default=None, gt=0, le=10_080),
+    limit: int = Query(default=100, ge=1, le=200),
 ) -> CandidateResponse:
     """Validate Cosmos flights and return ranking-ready candidates."""
 
@@ -153,6 +188,7 @@ async def get_candidates(
         country,
         max_changeovers,
         max_duration_minutes,
+        limit,
     )
 
     try:
@@ -164,7 +200,11 @@ async def get_candidates(
         ) from error
 
 
-@router.post("/recommend", response_model=RecommendationResponse)
+@router.post(
+    "/recommend",
+    response_model=RecommendationResponse,
+    dependencies=[Depends(require_api_key)],
+)
 async def recommend(
     request: Request,
     body: RecommendRequest,
@@ -180,7 +220,11 @@ async def recommend(
         ) from error
 
 
-@router.post("/refine", response_model=RecommendationResponse)
+@router.post(
+    "/refine",
+    response_model=RecommendationResponse,
+    dependencies=[Depends(require_api_key)],
+)
 async def refine(
     request: Request,
     body: RefineRequest,
@@ -196,7 +240,11 @@ async def refine(
         ) from error
 
 
-@router.post("/activities", response_model=ActivitiesResponse)
+@router.post(
+    "/activities",
+    response_model=ActivitiesResponse,
+    dependencies=[Depends(require_api_key)],
+)
 async def list_activities(body: ActivitiesRequest) -> ActivitiesResponse:
     """Return verified Google Places activities for a selected destination."""
 
@@ -206,4 +254,72 @@ async def list_activities(body: ActivitiesRequest) -> ActivitiesResponse:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Activity data is temporarily unavailable.",
+        ) from error
+
+
+@router.get(
+    "/saved-flights",
+    response_model=SavedFlightsResponse,
+    dependencies=[Depends(require_api_key)],
+)
+async def list_saved_flights(
+    user: UserDocument = Depends(require_user),
+    saved_flights: SavedFlightsService = Depends(_saved_flights_service),
+) -> SavedFlightsResponse:
+    """Return the authenticated user's saved flights, independent of search filters."""
+
+    try:
+        items = await saved_flights.list_for_user(user.id)
+    except RepositoryError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Saved flights are temporarily unavailable.",
+        ) from error
+    return SavedFlightsResponse(items=items)
+
+
+@router.post(
+    "/saved-flights",
+    response_model=SavedFlightItem,
+    dependencies=[Depends(require_api_key)],
+)
+async def save_flight(
+    body: SaveFlightRequest,
+    user: UserDocument = Depends(require_user),
+    saved_flights: SavedFlightsService = Depends(_saved_flights_service),
+) -> SavedFlightItem:
+    """Add a flight ID to the authenticated user's saved list."""
+
+    try:
+        return await saved_flights.save(user.id, body)
+    except SavedFlightNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(error),
+        ) from error
+    except RepositoryError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Saved flights are temporarily unavailable.",
+        ) from error
+
+
+@router.delete(
+    "/saved-flights/{flight_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_api_key)],
+)
+async def delete_saved_flight(
+    flight_id: str,
+    user: UserDocument = Depends(require_user),
+    saved_flights: SavedFlightsService = Depends(_saved_flights_service),
+) -> None:
+    """Remove a flight ID from the authenticated user's saved list."""
+
+    try:
+        await saved_flights.delete(user.id, flight_id)
+    except RepositoryError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Saved flights are temporarily unavailable.",
         ) from error

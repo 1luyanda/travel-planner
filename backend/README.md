@@ -21,9 +21,28 @@ unranked.
 
    - `COSMOS_CONNECTION_STRING` — the PRIMARY CONNECTION STRING.
    - `COSMOS_DATABASE=TravelPlaner` — spelling and case matter.
+   - `API_AUTH_KEY` — a server-side key used by the Vite development proxy
+     or production gateway. Generate it with
+     `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
+   - `AUTH_SESSION_SECRET` — a separate secret used to sign short-lived
+     HttpOnly authentication cookies.
+   - `AUTH_COOKIE_SECURE=false` for local HTTP demos; production must use
+     `true`.
+   - `COSMOS_USERS_CONTAINER=users` — the users container name.
+   - `COSMOS_USER_FLIGHTS_CONTAINER=user-flights` — one document per user
+     containing only saved flight IDs. Flight facts stay in `flights`.
+   - `TRUSTED_HOSTS` — comma-separated host names accepted by the API.
    - `GOOGLE_PLACES_API_KEY` — backend-only key for `POST /api/activities`.
+     Google Places is the source of real activity data. Do not send this key
+     from React.
 
-   The backend uses the fixed `origins` and `flights` container names.
+   The backend uses the fixed `origins` and `flights` container names plus the
+   configured users and user-flights containers. Create the users container
+   with partition key `/email_normalized` and a unique key on
+   `/email_normalized` before registering accounts. Create the user-flights
+   container with partition key `/id`. Each item's `id` is the user id and
+   the only other field is `flight_ids`. Do not store airline, destination,
+   weather, or route fields there.
 
 3. Start FastAPI:
 
@@ -36,10 +55,14 @@ API documentation is available at `http://localhost:8000/docs`.
 ## Endpoints
 
 - `GET /api/health`
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `POST /api/auth/logout`
+- `GET /api/auth/me`
 - `GET /api/origins?q=zag&country=HR`
 - `GET /api/origins/{origin_id}`
-- `GET /api/flights` — raw Cosmos flight documents for one origin partition
-  (airline, coordinates, weather, and other stored fields).
+- `GET /api/flights` — allowlisted flight fields for one origin partition
+  (airline, coordinates, and display fields).
   Required: `origin_id`. Optional: `departure_date`, `return_date`, `max_price`,
   `min_temp`, `country`. Does not accept `max_changeovers` or
   `max_duration_minutes`.
@@ -54,7 +77,14 @@ API documentation is available at `http://localhost:8000/docs`.
   `preferences_from_intents` so ranking weights update.
 - `POST /api/activities` — verified Google Places activities for a selected
   destination city. Requires `GOOGLE_PLACES_API_KEY` on the backend. The key
-  stays server-side and is never sent from React.
+  stays server-side and is never sent from React. No itinerary, maps, or
+  booking.
+- `GET /api/saved-flights` — the authenticated user's saved flight IDs,
+  hydrated from the `flights` container. Independent of recommendation filters.
+- `POST /api/saved-flights` — save `{ flight_id }` for the session user.
+  Idempotent.
+- `DELETE /api/saved-flights/{flight_id}` — remove that id from the user's
+  list only.
 
 Example requests:
 
@@ -104,7 +134,7 @@ Example refine body:
 ```
 
 `ranking_preferences` is optional on both bodies. On refine, recognized
-cheaper/warmer intents replace those weights using Ivan's presets. If the
+cheaper/warmer/cooler intents adjust the current weights incrementally. If the
 feedback has no ranking intent, the supplied weights (or defaults) stay.
 
 ## Integration placeholders
@@ -115,7 +145,129 @@ feedback has no ranking intent, the supplied weights (or defaults) stay.
   `airports`. Unmatched or ambiguous codes return `needs_input`.
 - Refine calls Ivan's `preferences_from_intents` for cheaper/warmer. Luyanda
   can still send `ranking_preferences` as the starting weights.
-- Authentication and authorization are not implemented yet.
+- Data, recommendation, and activities routes require the server-side `X-API-Key`
+  configured through `API_AUTH_KEY`. The health endpoint remains public.
+  The browser must not receive this key; local Vite and production gateways
+  inject it server-side. Local accounts use Argon2id password hashes and
+  signed HttpOnly cookies. Passwords and session cookies are never logged.
+  Production rate limits should be enforced by the gateway and returned as
+  `429 Too Many Requests`. Saved-flight routes also require the signed
+  session cookie. The user id is taken from that session, never from the
+  request body.
+
+## Saved flights
+
+The `user-flights` container stores one document per user. The item id and
+partition key are the user id. The only extra field is the list of flight
+IDs, newest first:
+
+```json
+{
+  "id": "<authenticated-user-id>",
+  "flight_ids": ["ZAG-ROM-2026-09-18"]
+}
+```
+
+`GET /api/saved-flights` looks up those IDs in the `flights` container and
+returns the current allowlisted flight data. Missing flights stay in the
+user's list and are returned as `availability: "unavailable"`.
+
+## Six-criterion scoring and preference state
+
+The scoring engine min-max normalizes each criterion, multiplies its component
+score by its normalized weight, and sums all six contributions. Equal known
+values still score 1; ranking ties retain input order.
+
+| Criterion | Preference field | Default weight | Direction |
+|---|---|---:|---|
+| Price | `price_weight` | 0.25 | Lower is better |
+| Temperature | `weather_weight` | 0.20 | Higher is better by default |
+| Precipitation probability | `precipitation_weight` | 0.10 | Lower is better |
+| Sunshine hours | `sunshine_weight` | 0.10 | Higher is better |
+| Changeovers | `changeovers_weight` | 0.20 | Lower is better |
+| Round-trip flight duration | `duration_weight` | 0.15 | Lower is better |
+
+These are intentional starting weights, not learned values. The criterion
+configuration separates source fields, directions, and weight fields. The
+`temperature_direction` preference accepts `higher_is_better` or
+`lower_is_better`; direction never requires a negative weight. Price direction
+is fixed. `weather_weight`/`weather_score` and dictionary keys `weather`/`stops`
+retain their existing names for compatibility.
+
+`stronger_price_preference`, `prefer_warmer`, and the existing AI code
+`prefer_cooler` increase their target's current normalized weight by 0.10.
+`prefer_colder` is also accepted by the policy as an alias for `prefer_cooler`;
+the AI extraction schema and prompts are unchanged. Cooler feedback now emits
+a `ranking_preferences` intent instead of `unsupported`. Warmer sets temperature
+direction to higher-is-better; cooler/colder sets it to lower-is-better.
+
+Targets are deduplicated by criterion and adjusted simultaneously. Non-targets
+decrease proportionally, with weights pinned to the 0.05 floor or 0.70 cap and
+remaining weight redistributed. When donors have insufficient capacity, all
+requested increases scale down together. Opposing temperature intents in one
+policy event retain the current direction and increase temperature importance
+once. Other feedback preserves that direction. Unknown intents preserve current
+state unchanged. No additional rain, sunshine, stop, or duration AI codes have
+been invented; those weights can be supplied explicitly through the API.
+
+Precipitation is required candidate data. Sunshine is optional: known values
+normalize against other known values, and missing sunshine scores 0 without
+inventing a raw value or redistributing its weight. An entirely missing sunshine
+column therefore contributes 0 for every candidate.
+
+**API migration:** old four-weight requests remain valid. Omitted precipitation
+and sunshine weights each default to 0.10, then all six weights normalize to
+one. This intentionally changes scores; for example, an old four-weight vector
+summing to 1 now normalizes with a total of 1.20. Explicitly setting both new
+weights to zero retains four-criterion scoring until recognized feedback applies
+the six-criterion policy floors. The original four positional Python preference
+arguments also retain their order.
+
+Recommendation items add `precipitation_score`, `sunshine_score`, and
+`temperature_direction`. Successful recommendation/refinement responses add
+`ranking_preferences`, containing the effective six normalized weights and
+temperature direction. Pass this object into the next refinement request to
+carry state forward; the backend remains stateless. Existing response fields
+remain available. Explanations use the actual temperature direction.
+
+React is unchanged and still uses its separate browser-ranking path. It must
+call the recommendation/refinement endpoints to consume these backend scores.
+Hard constraints and flexible-date retrieval run before scoring as before.
+
+## Flexible-date shortlist fallback
+
+`CandidateService.prepare()` (used by `/api/candidates`, `/api/recommend`, and
+`/api/refine`) first runs the existing exact-date query and validates the results.
+When there are at least `MIN_RECOMMENDATION_RESULTS = 3` distinct valid flights,
+it returns all exact matches without a second query. Otherwise it keeps every
+exact match and fills only the missing slots with nearby stored flights.
+
+`FLEXIBLE_DATE_WINDOW_DAYS = 7` in `backend/config.py` applies independently to
+departure and return dates, inclusive. ISO datetimes are parsed and compared by
+the local calendar date represented in each record, without converting to UTC.
+Both requested dates must be present to enable fallback.
+
+The second lookup reuses the existing origin-partition query with only its date
+restrictions removed, preserving all other repository filters. The service
+checks the date window before candidate preparation and applies the same budget,
+changeover, duration, and data-validation rules. Origin, country, and minimum
+temperature are also checked for alternatives. This approach may read more
+stored records from that origin partition, but requires no new Cosmos indexes.
+
+Alternatives are deduplicated by flight/destination ID and selected by total
+absolute departure/return date difference, then absolute trip-length difference,
+then ID. Exact matches stay first in the unranked candidate response. Final
+recommendations sort all selected flights by descending `final_score`, with
+`rank` matching their list position; alternative-date metadata stays attached
+to each flight by its identifier. Fewer than three valid flights remain fewer
+than three; hard filters are never relaxed. `/api/flights` is unchanged.
+
+Candidate and recommendation items add `is_flexible_date_option` (false for
+exact matches), `requested_departure_date`, `requested_return_date`,
+`actual_departure_date`, and `actual_return_date`. Dates are ISO calendar dates
+or null when unavailable. Responses also add `exact_match_count`, `fallback_count`,
+and `flexible_date_fallback_used`; the latter is true only if alternatives were
+actually added. Existing response fields and request models are unchanged.
 
 # AI request parser and explanations
 
@@ -157,10 +309,12 @@ result.clarification_questions
 |---|---|
 | Cheaper | Intent `stronger_price_preference`. Budget unchanged. |
 | Warmer | Intent `prefer_warmer`. `weather_preference="warmer"`. No temperature number. |
+| Colder / cooler | Intent `prefer_cooler`. `weather_preference="cooler"`. Positive temperature weight, lower-is-better direction. |
 | My budget is now EUR 300 | `budget=300`, `currency=EUR`. Other fields copied. |
 | Direct flights only | `direct_flights_only=True`. Intent maps to ranking hard filter `max_changeovers`, not a weight. |
 
-Ivan's `RankingPreferences` (`price_weight`, `weather_weight`, `changeovers_weight`, `duration_weight`) has no named mapping from these phrases to numeric weights. Intents record the related field name and leave the value unset.
+The AI returns semantic intents without numeric weights. `preferences_from_intents`
+applies the six-criterion policy described above.
 
 ## parse_request
 

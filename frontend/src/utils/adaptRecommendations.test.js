@@ -94,6 +94,17 @@ describe('adaptRecommendations', () => {
     expect(adapted.results[0].photoUrl).toBeNull()
     expect(adapted.results[0].flight.airline_code).toBeNull()
   })
+
+  it('joins flights bundled on the recommend payload', () => {
+    const adapted = adaptRecommendations({
+      recommendations: [rome],
+      flights: [flight],
+    })
+    expect(adapted.results[0].joinedFlight).toBe(true)
+    expect(adapted.results[0].destination.latitude).toBe(41.794594)
+    expect(adapted.results[0].photoUrl).toBe('https://img/rome.jpg')
+    expect(adapted.results[0].flight.airline_code).toBe('FR')
+  })
 })
 
 describe('enrichRecommendations', () => {

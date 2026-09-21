@@ -12,6 +12,8 @@ from backend.contracts import (
     RefineRequest,
 )
 from backend.contracts.candidates import FlightQuery, OriginItem
+from backend.contracts.flight_dates import FlightDateMetadata
+from backend.contracts.recommendations import RecommendationItem
 from backend.models.explanation import DestinationExplanation
 from backend.models.trip_request import TripRequest
 from backend.services.candidates import CandidateService
@@ -30,6 +32,7 @@ from ranking import (
     preferences_from_intents,
     rank_candidates,
 )
+from ranking.ranking import CRITERIA
 
 
 class RecommendationService:
@@ -144,13 +147,24 @@ class RecommendationService:
             [_to_ranking_candidate(item) for item in prepared.candidates],
             weights,
         )
+        # Date distance selects fallback candidates, not recommendation order.
+        # Preserve descending score order so explanations assign matching ranks.
         recommendations, explain_issues = _explanations_for(
             trip,
             ranked,
             llm_client=self._client(),
             ranking_weights=weights.normalized_weights(),
         )
+        dates_by_id = {
+            item.destination_id: item.model_dump(include=set(FlightDateMetadata.model_fields))
+            for item in prepared.candidates
+        }
+        recommendations = [
+            RecommendationItem(**item.model_dump(), **dates_by_id[item.destination_id])
+            for item in recommendations
+        ]
         issues.extend(explain_issues)
+        recommended_ids = {item.destination_id for item in recommendations}
         return RecommendationResponse(
             status="ready",
             request=trip,
@@ -158,11 +172,24 @@ class RecommendationService:
             origin=origin,
             origin_id=origin.id,
             recommendations=recommendations,
+            flights=[
+                flight
+                for flight in prepared.flights
+                if flight.id in recommended_ids
+            ],
             rejected=list(prepared.rejected),
             intents=list(intents or []),
             changes=list(changes or []),
             issues=issues,
             data_source=prepared.data_source,
+            flexible_date_fallback_used=prepared.flexible_date_fallback_used,
+            exact_match_count=prepared.exact_match_count,
+            fallback_count=prepared.fallback_count,
+            ranking_preferences=RankingPreferencesBody(
+                **{criterion.weight_field: weights.normalized_weights()[criterion.name]
+                   for criterion in CRITERIA},
+                temperature_direction=weights.temperature_direction,
+            ),
         )
 
     async def _resolve_origin(
@@ -195,26 +222,11 @@ def _ranking_preferences(
     defaults = RankingPreferences()
     if body is None:
         return defaults
-    return RankingPreferences(
-        price_weight=(
-            defaults.price_weight if body.price_weight is None else body.price_weight
-        ),
-        weather_weight=(
-            defaults.weather_weight
-            if body.weather_weight is None
-            else body.weather_weight
-        ),
-        changeovers_weight=(
-            defaults.changeovers_weight
-            if body.changeovers_weight is None
-            else body.changeovers_weight
-        ),
-        duration_weight=(
-            defaults.duration_weight
-            if body.duration_weight is None
-            else body.duration_weight
-        ),
-    )
+    return RankingPreferences(**{
+        field.name: (getattr(defaults, field.name) if getattr(body, field.name) is None
+                     else getattr(body, field.name))
+        for field in fields(RankingPreferences)
+    })
 
 
 def _flight_query_from_trip(origin_id: str, trip: TripRequest) -> FlightQuery:
@@ -280,6 +292,9 @@ def _ranked_without_explanations(
             stops_score=item.stops_score,
             duration_score=item.duration_score,
             final_score=item.final_score,
+            precipitation_score=item.precipitation_score,
+            sunshine_score=item.sunshine_score,
+            temperature_direction=item.temperature_direction,
             summary="",
             evidence=[],
             issues=["Explanation was unavailable."],

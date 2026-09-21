@@ -15,6 +15,7 @@ from pydantic import ValidationError
 
 from backend.api.routes import router
 from backend.contracts.activities import ActivitiesRequest, ActivityItem
+from backend.security import require_api_key
 from backend.services.places import (
     PlacesConfigurationError,
     PlacesService,
@@ -90,6 +91,7 @@ def _search(
 def _api_client() -> TestClient:
     app = FastAPI()
     app.include_router(router)
+    app.dependency_overrides[require_api_key] = lambda: None
     return TestClient(app)
 
 

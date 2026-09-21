@@ -2,11 +2,14 @@ import { describe, expect, it, vi, afterEach } from 'vitest'
 import {
   ApiError,
   appendQuery,
+  deleteSavedFlight,
   fetchCandidates,
   fetchFlights,
   fetchOrigin,
+  fetchSavedFlights,
   recommendTrip,
   refineTrip,
+  saveFlight,
   searchOrigins,
 } from './travelApi'
 
@@ -191,6 +194,14 @@ const readyRecommendation = {
     },
   ],
   rejected: [],
+  flights: [
+    {
+      id: 'ZAG-ROM-2026-09-18',
+      destination_city: 'Rome',
+      latitude: 41.79,
+      longitude: 12.25,
+    },
+  ],
   issues: [],
   clarification_questions: [],
   data_source: 'cosmos://TravelPlaner/flights',
@@ -219,6 +230,7 @@ describe('recommendTrip', () => {
     expect(payload.status).toBe('ready')
     expect(payload.request).toEqual(tripRequest)
     expect(payload.recommendations[0].city).toBe('Rome')
+    expect(payload.flights[0].id).toBe('ZAG-ROM-2026-09-18')
   })
 
   it('keeps GET origin autocomplete working alongside POST', async () => {
@@ -298,6 +310,65 @@ describe('refineTrip', () => {
     vi.stubGlobal('fetch', fetchMock)
     await expect(refineTrip({ text: 'Cheaper' })).rejects.toBeInstanceOf(ApiError)
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+const savedFlightItem = {
+  flight_id: 'ZAG-ROM-2026-09-18',
+  origin_id: 'zagreb-hr',
+  saved_at: '2026-09-18T12:40:00Z',
+  last_checked_at: '2026-09-18T12:40:00Z',
+  saved_price: 65,
+  last_checked_price: 65,
+  price_changed: false,
+  availability: 'available',
+  flight: { id: 'ZAG-ROM-2026-09-18', destination_city: 'Rome', price_eur: 65 },
+}
+
+describe('saved flights API', () => {
+  it('loads saved flights from GET /api/saved-flights', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url, options) => {
+        expect(url).toBe('/api/saved-flights')
+        expect(options.credentials).toBe('include')
+        return { ok: true, json: async () => ({ items: [savedFlightItem] }) }
+      }),
+    )
+    const payload = await fetchSavedFlights()
+    expect(payload.items[0].flight_id).toBe('ZAG-ROM-2026-09-18')
+  })
+
+  it('saves a flight with only the flight id', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url, options) => {
+        expect(url).toBe('/api/saved-flights')
+        expect(options.method).toBe('POST')
+        expect(JSON.parse(options.body)).toEqual({
+          flight_id: 'ZAG-ROM-2026-09-18',
+        })
+        return { ok: true, json: async () => savedFlightItem }
+      }),
+    )
+    const payload = await saveFlight({
+      flight_id: 'ZAG-ROM-2026-09-18',
+      origin_id: 'zagreb-hr',
+      price: 65,
+    })
+    expect(payload.flight_id).toBe('ZAG-ROM-2026-09-18')
+  })
+
+  it('unsaves through DELETE and accepts an empty success body', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url, options) => {
+        expect(url).toBe('/api/saved-flights/ZAG-ROM-2026-09-18')
+        expect(options.method).toBe('DELETE')
+        return { ok: true, status: 204, json: async () => { throw new Error('no body') } }
+      }),
+    )
+    await expect(deleteSavedFlight('ZAG-ROM-2026-09-18')).resolves.toBeUndefined()
   })
 })
 
