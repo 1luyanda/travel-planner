@@ -17,6 +17,7 @@ import {
   formFieldsFromPlanner,
   formPatchFromTripRequest,
   isClarificationQuestionText,
+  localClarificationQuestions,
   newTripPlannerState,
   plannerDatesChangedSinceClarification,
   plannerRequestSummary,
@@ -75,6 +76,41 @@ describe('formFieldsFromPlanner', () => {
   it('does not send the default budget before the user or backend sets one', () => {
     expect(formFieldsFromPlanner({ maxBudget: 400, currency: 'EUR' }, null)).toBeNull()
     expect(formFieldsFromPlanner({ maxBudget: 400 }, { iata: 'ZAG' })).toEqual({ origin: 'ZAG' })
+  })
+})
+
+describe('localClarificationQuestions', () => {
+  it('asks for currency without fetching when a budget has no currency', () => {
+    const questions = localClarificationQuestions({
+      text: 'warm, from 10.10. until 16.10. budget is 500, from LAX',
+      form: {},
+      origin: { iata: 'LAX' },
+    })
+    expect(questions).toEqual(['What currency is the budget in (for example EUR)?'])
+  })
+
+  it('does not ask when budget already includes a currency', () => {
+    expect(
+      localClarificationQuestions({
+        text: 'warm, from 10.10. until 16.10. budget is 500eur, from LAX',
+        origin: { iata: 'LAX' },
+      }),
+    ).toEqual([])
+  })
+
+  it('asks for missing required fields before a recommend fetch', () => {
+    const questions = localClarificationQuestions({
+      text: 'somewhere warm',
+      form: { originIata: 'LAX' },
+      origin: { iata: 'LAX' },
+    })
+    expect(questions).toContain('What is your departure date? For example: 12.10, 12/10/2026, or 2026-10-12.')
+    expect(questions).toContain('What is your return date? For example: 16.10, 16/10/2026, or 2026-10-16.')
+    expect(questions).toContain('What is your maximum budget?')
+    expect(questions).toContain('What currency is the budget in (for example EUR)?')
+    expect(questions).not.toContain(
+      'What is your origin airport or city IATA code (for example ZAG)?',
+    )
   })
 })
 
@@ -261,17 +297,18 @@ describe('assistant copy', () => {
       [],
     )
     expect(text).toContain('departure date')
-    expect(text).not.toMatch(/No stored trips match/i)
+    expect(text).not.toMatch(/No trips match/i)
     expect(text).not.toMatch(/ranked in the browser/i)
   })
 
-  it('describes ready recommendations as planner-service results', () => {
+  it('describes ready recommendations without snapshot disclaimers', () => {
     const text = assistantTextForResponse(
       { status: 'ready', issues: [] },
       [{ destination: { city: 'Rome' } }, { destination: { city: 'Lisbon' } }],
     )
-    expect(text).toMatch(/planner service/i)
+    expect(text).toMatch(/I found 2 matching trips/)
     expect(text).toMatch(/Rome/)
+    expect(text).not.toMatch(/snapshot|not live or bookable/i)
     expect(text).not.toMatch(/ranked in the browser/i)
   })
 })

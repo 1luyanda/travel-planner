@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef } from 'react'
-import TripDetailsContent, { SNAPSHOT_NOTICE, TripDetailsHeader } from './TripDetailsContent'
+import TripDetailsContent, { TripDetailsHeader } from './TripDetailsContent'
 
 /**
  * Mobile full-screen trip-details dialog. Desktop uses TripDetailsPanel.
@@ -91,4 +91,3 @@ export default function TripDetailsDrawer({
   )
 }
 
-export { SNAPSHOT_NOTICE }

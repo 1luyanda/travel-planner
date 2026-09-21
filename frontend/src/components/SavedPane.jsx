@@ -3,6 +3,8 @@ import styles from '../workspace.module.css'
 
 export default function SavedPane({
   destinations,
+  loading,
+  error,
   selectedId,
   savedIds,
   onSelect,
@@ -10,20 +12,30 @@ export default function SavedPane({
   onViewDetails,
   onExplore,
 }) {
+  const count = destinations.length
+  const heading = count === 1 ? '1 saved flight' : `${count} saved flights`
+
   return (
     <div className={styles.conversation}>
       <h1 className={styles.savedTitle}>Saved</h1>
-      <p className={styles.panelHint}>Kept on this device. Hearts save trips from the current stored shortlist.</p>
-      {destinations.length === 0 ? (
+      <p className={styles.panelHint}>
+        Saved to your account.
+      </p>
+      {error ? <p className={styles.noticeError}>{error}</p> : null}
+      {loading ? (
+        <p className={styles.notice}>Loading saved flights…</p>
+      ) : destinations.length === 0 && !error ? (
         <div className={styles.emptySaved}>
-          <p>No saved destinations yet.</p>
+          <p>No saved flights yet.</p>
           <button type="button" className={styles.secondaryBtn} onClick={onExplore}>
             Back to explore
           </button>
         </div>
-      ) : (
+      ) : destinations.length > 0 ? (
         <ResultsList
           results={destinations}
+          heading={heading}
+          showRanking={false}
           previousRanks={{}}
           selectedId={selectedId}
           savedIds={savedIds}
@@ -31,7 +43,7 @@ export default function SavedPane({
           onToggleSaved={onToggleSaved}
           onViewDetails={onViewDetails}
         />
-      )}
+      ) : null}
     </div>
   )
 }

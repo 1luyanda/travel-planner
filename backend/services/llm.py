@@ -48,9 +48,12 @@ from pydantic import ValidationError
 from backend.models.trip_request import (
     ExtractedPreferences,
     ParseRequestResult,
+    _coerce_date,
     apply_explicit_text_facts,
+    fill_missing_dates,
     merge_preferences,
     parse_form_fields,
+    split_stated_date_range,
     validate_preferences,
 )
 
@@ -93,11 +96,28 @@ EXTRACTION_TOOL: dict[str, Any] = {
                 },
                 "departure_date": {
                     "type": ["string", "null"],
-                    "description": "ISO date YYYY-MM-DD, or null if not stated.",
+                    "description": (
+                        "An explicit calendar date in any common written format, "
+                        "including yearless dates such as 12.10 or 12/10. Copy "
+                        "those as written; do not return null because the year "
+                        "is missing. Examples: 2026-09-18, 18/09/2026, 12.10, "
+                        "or September 18 2026. Do not resolve relative dates "
+                        "such as next weekend; return null for those. A phrase "
+                        "like 'from 10.10. until 16.10.' is two explicit dates, "
+                        "not a relative date."
+                    ),
                 },
                 "return_date": {
                     "type": ["string", "null"],
-                    "description": "ISO date YYYY-MM-DD, or null if not stated.",
+                    "description": (
+                        "An explicit calendar date in any common written format, "
+                        "including yearless dates such as 16.10 or 16/10. Copy "
+                        "those as written; do not return null because the year "
+                        "is missing. Do not resolve relative dates such as next "
+                        "weekend; return null for those. 'until 16.10.' and "
+                        "'to 16.10' are explicit return dates; copy them even "
+                        "when they end with a period."
+                    ),
                 },
                 "duration_days": {
                     "type": ["integer", "null"],
@@ -126,8 +146,10 @@ EXTRACTION_TOOL: dict[str, Any] = {
                 "weather_preference": {
                     "type": ["string", "null"],
                     "description": (
-                        "Weather preference such as warm. "
-                        "'warm escape' or 'somewhere warm' is warm. Null if not stated."
+                        "Weather meaning only: use warm for positive temperature, "
+                        "sunshine, or less-rain requests, including 'warm escape'; "
+                        "use cool for negative temperature or more-rain requests; "
+                        "otherwise null."
                     ),
                 },
             },
@@ -364,7 +386,10 @@ def parse_request(
     today = reference_date or date.today()
 
     try:
-        form_preferences = parse_form_fields(form_fields)
+        form_preferences = parse_form_fields(
+            form_fields,
+            reference_date=today,
+        )
     except (ValueError, ValidationError) as exc:
         return ParseRequestResult(
             status="needs_input",
@@ -404,6 +429,7 @@ def parse_request(
     merged, conflict_issues, conflict_questions = merge_preferences(
         extracted, form_preferences
     )
+    merged = fill_missing_dates(merged, text, reference_date=today)
     request, validation_issues, validation_questions = validate_preferences(merged)
     issues = conflict_issues + validation_issues
     questions = conflict_questions + validation_questions
@@ -463,7 +489,10 @@ def _extract_with_retry(
                 continue
             break
 
-        preferences, parse_error = _preferences_from_tool_arguments(raw_arguments)
+        preferences, parse_error = _preferences_from_tool_arguments(
+            raw_arguments,
+            reference_date=reference_date,
+        )
         if preferences is not None:
             return preferences, None
 
@@ -487,6 +516,8 @@ def _extract_with_retry(
 
 def _preferences_from_tool_arguments(
     raw_arguments: str,
+    *,
+    reference_date: date | None = None,
 ) -> tuple[ExtractedPreferences | None, str | None]:
     if raw_arguments is None or not str(raw_arguments).strip():
         return None, "The model did not return a function call."
@@ -499,14 +530,32 @@ def _preferences_from_tool_arguments(
     if not isinstance(payload, dict):
         return None, "The model output was not a JSON object."
 
-    mapped = _map_extraction_payload(payload)
     try:
+        mapped = _map_extraction_payload(payload, reference_date=reference_date)
         return ExtractedPreferences.model_validate(mapped), None
     except ValidationError as exc:
+        # An ambiguous or unsupported date is missing information, not a
+        # reason to fail the whole request. Let validation ask for that date.
+        recoverable = dict(mapped)
+        recovered_date = False
+        for error in exc.errors():
+            location = error.get("loc") or ()
+            field_name = location[0] if location else None
+            if field_name in {"departure_date", "return_date"}:
+                recoverable[field_name] = None
+                recovered_date = True
+        if recovered_date:
+            return ExtractedPreferences.model_validate(recoverable), None
         return None, f"The model output did not match the extraction schema: {exc.error_count()} error(s)."
+    except ValueError as exc:
+        return None, str(exc)
 
 
-def _map_extraction_payload(payload: dict[str, Any]) -> dict[str, Any]:
+def _map_extraction_payload(
+    payload: dict[str, Any],
+    *,
+    reference_date: date | None = None,
+) -> dict[str, Any]:
     mapped = {
         "origin": payload.get("origin_iata") or payload.get("origin"),
         "origin_text": payload.get("origin_text"),
@@ -519,13 +568,31 @@ def _map_extraction_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "direct_flights_only": payload.get("direct_flights_only"),
         "weather_preference": payload.get("weather_preference"),
     }
+    if mapped.get("return_date") in (None, ""):
+        start, end = split_stated_date_range(mapped.get("departure_date"))
+        if end:
+            mapped["departure_date"] = start
+            mapped["return_date"] = end
+    for field_name in ("departure_date", "return_date"):
+        if mapped.get(field_name) is not None:
+            try:
+                mapped[field_name] = _coerce_date(
+                    mapped[field_name],
+                    field_name,
+                    reference_date,
+                )
+            except ValueError:
+                # Keep the rest of the extracted request and let normal
+                # validation ask the user to clarify this date.
+                mapped[field_name] = None
     return {key: value for key, value in mapped.items() if value is not None or key == "moods"}
 
 
 def _system_prompt(reference_date: date) -> str:
     return (
         "You extract travel preferences from the user's message only.\n"
-        f"Today's date is {reference_date.isoformat()}. Use it for relative dates.\n"
+        f"Today's date is {reference_date.isoformat()}. Use it only to "
+        "validate explicit dates; do not resolve relative dates.\n"
         f"Call the {EXTRACT_FUNCTION_NAME} function.\n"
         "Rules:\n"
         "- Extract only facts the user stated. Leave other fields null.\n"
@@ -534,7 +601,19 @@ def _system_prompt(reference_date: date) -> str:
         "- Do not use fixture data, default destinations, or assumed budgets.\n"
         "- currency: € means EUR. '400 EUR' and 'EUR 400' are EUR. Do not invent EUR without a cue.\n"
         "- moods: mood words such as relaxing. Do not put weather words in moods.\n"
-        "- weather_preference: weather words such as warm. 'warm escape' is warm.\n"
+        "- weather_preference: canonicalize positive temperature, sunshine, "
+        "and less-rain requests to warm; canonicalize negative temperature "
+        "and more-rain requests to cool. 'warm escape' is warm.\n"
+        "- Do not treat rain or sunshine as a mood.\n"
+        "- Accept explicit calendar dates in common formats, including "
+        "yearless dates such as 12.10, 12.10., or 12/10. Copy those as written, "
+        "including a trailing period after the month. The backend adds the year. "
+        "Leave relative dates such as 'next weekend' null.\n"
+        "- from/until, from/to, and '10.10. until 16.10.' are two explicit dates: "
+        "put the first in departure_date and the second in return_date. Do not "
+        "leave return_date null in that case.\n"
+        "- If the user gave only one explicit date, put it in departure_date "
+        "and leave return_date null unless a second date or duration was stated.\n"
         "- duration_days: only if the user stated a duration.\n"
         "- direct_flights_only: only if the user stated a direct-flight requirement.\n"
     )

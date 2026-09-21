@@ -1,8 +1,10 @@
 """FastAPI request and response contracts."""
 
+from .auth import AuthResponse, LoginRequest, RegisterRequest
 from .candidates import (
     CandidateItem,
     CandidateResponse,
+    FlightItem,
     FlightListResponse,
     FlightQuery,
     OriginItem,
@@ -15,10 +17,13 @@ from .recommendations import (
     RecommendationResponse,
     RefineRequest,
 )
+from .saved_flights import SaveFlightRequest, SavedFlightItem, SavedFlightsResponse
 
 __all__ = [
+    "AuthResponse",
     "CandidateItem",
     "CandidateResponse",
+    "FlightItem",
     "FlightListResponse",
     "FlightQuery",
     "OriginItem",
@@ -26,6 +31,11 @@ __all__ = [
     "RecommendRequest",
     "RecommendationResponse",
     "RefineRequest",
+    "LoginRequest",
+    "RegisterRequest",
     "RejectedCandidateItem",
     "RejectionItem",
+    "SaveFlightRequest",
+    "SavedFlightItem",
+    "SavedFlightsResponse",
 ]

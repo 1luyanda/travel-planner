@@ -14,8 +14,7 @@ export default function WelcomePane({ onPrompt, composerRef }) {
       />
       <h1>Where to today?</h1>
       <p>
-        Tell me a mood, dates, a budget, and where you are leaving from. Recommendations come from
-        the planner service and stored snapshot data — not live fares or bookings.
+        Tell me a mood, dates, a budget, and where you are leaving from.
       </p>
       <div className={styles.starters} role="group" aria-label="Starter prompts">
         {starterPrompts.map((prompt) => (

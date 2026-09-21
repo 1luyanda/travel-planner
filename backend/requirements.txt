@@ -1,2 +1,3 @@
-fastapi
-uvicorn[standard]
+# The repository root is the authoritative runtime dependency manifest.
+# It includes pwdlib[argon2] for local authentication.
+-r ../requirements.txt

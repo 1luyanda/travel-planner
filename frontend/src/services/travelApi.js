@@ -51,7 +51,7 @@ function detailMessage(body, fallback) {
 const RECOMMEND_STATUSES = new Set(['ready', 'needs_input', 'error'])
 
 async function requestJson(path, { signal, method = 'GET', body } = {}) {
-  const options = { method, signal }
+  const options = { method, signal, credentials: 'include' }
   if (body !== undefined) {
     options.headers = { 'Content-Type': 'application/json', Accept: 'application/json' }
     options.body = JSON.stringify(body)
@@ -67,24 +67,28 @@ async function requestJson(path, { signal, method = 'GET', body } = {}) {
     })
   }
 
-  const payload = await parseJsonBody(response)
+  const payload = response.status === 204 ? null : await parseJsonBody(response)
 
   if (!response.ok) {
     const fallback =
-      response.status === 503
-        ? 'Stored travel data is temporarily unavailable.'
-        : response.status === 404
-          ? 'That stored origin was not found.'
-          : response.status === 422
-            ? 'The planner could not read that request. Please check the details and try again.'
-            : 'Could not load stored travel data. Please try again.'
+      response.status === 401
+        ? 'The travel API authentication configuration is invalid.'
+        : response.status === 503
+          ? 'Stored travel data is temporarily unavailable.'
+          : response.status === 404
+            ? 'That stored origin was not found.'
+            : response.status === 422
+              ? 'The planner could not read that request. Please check the details and try again.'
+              : response.status === 429
+                ? 'Too many requests. Please wait and try again.'
+                : 'Could not load stored travel data. Please try again.'
     throw new ApiError(detailMessage(payload, fallback), {
       status: response.status,
       body: payload,
     })
   }
 
-  if (payload == null) {
+  if (payload == null && response.status !== 204) {
     throw new ApiError('Stored travel data could not be read. Please try again.', {
       status: response.status,
     })
@@ -116,6 +120,7 @@ function normalizeRecommendationResponse(data) {
     origin: asObject(data.origin),
     origin_id: typeof data.origin_id === 'string' ? data.origin_id : null,
     recommendations: asList(data.recommendations),
+    flights: asList(data.flights),
     rejected: asList(data.rejected),
     intents: asList(data.intents),
     changes: asList(data.changes),
@@ -211,6 +216,40 @@ export async function fetchCandidates(params, { signal } = {}) {
     rejected: Array.isArray(data.rejected) ? data.rejected : [],
     data_source: typeof data.data_source === 'string' ? data.data_source : null,
   }
+}
+
+export async function fetchSavedFlights({ signal } = {}) {
+  const data = await requestJson('/api/saved-flights', { signal })
+  if (!data || typeof data !== 'object' || !Array.isArray(data.items)) {
+    throw new ApiError('Saved flights returned an unexpected response.')
+  }
+  return {
+    items: data.items.filter((item) => item && typeof item === 'object'),
+  }
+}
+
+export async function saveFlight(flight, { signal } = {}) {
+  const flightId = typeof flight?.flight_id === 'string' ? flight.flight_id.trim() : ''
+  if (!flightId) {
+    throw new ApiError('A flight id is required to save this trip.')
+  }
+  const body = { flight_id: flightId }
+  const data = await requestJson('/api/saved-flights', { method: 'POST', body, signal })
+  if (!data || typeof data !== 'object' || typeof data.flight_id !== 'string') {
+    throw new ApiError('Saving that flight returned an unexpected response.')
+  }
+  return data
+}
+
+export async function deleteSavedFlight(flightId, { signal } = {}) {
+  const id = typeof flightId === 'string' ? flightId.trim() : ''
+  if (!id) {
+    throw new ApiError('flight_id is required.')
+  }
+  await requestJson(`/api/saved-flights/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    signal,
+  })
 }
 
 export async function fetchFlights(params, { signal } = {}) {

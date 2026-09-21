@@ -1,4 +1,3 @@
-import { snapshotLabel } from '../utils/adaptResults'
 import { REFINEMENT_ACTIONS, plannerRequestSummary } from '../utils/plannerFlow'
 import ResultsList from './ResultsList'
 import styles from '../workspace.module.css'
@@ -37,12 +36,9 @@ export default function ConversationPane({
           {summary}
         </p>
       )}
-      {snapshotLabel(dataSource) && (
-        <p className={styles.panelHint}>{snapshotLabel(dataSource)}. Not live or bookable.</p>
-      )}
       {rejectedCount > 0 && (
         <p className={styles.panelHint}>
-          {rejectedCount} stored {rejectedCount === 1 ? 'offer was' : 'offers were'} excluded as incomplete.
+          {rejectedCount} {rejectedCount === 1 ? 'offer was' : 'offers were'} excluded as incomplete.
         </p>
       )}
 

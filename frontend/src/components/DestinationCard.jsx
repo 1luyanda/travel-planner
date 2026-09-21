@@ -4,6 +4,7 @@ import DestinationPhoto from './DestinationPhoto'
 import {
   displayValue,
   formatAirline,
+  formatDate,
   formatPrice,
   tripFactsLine,
 } from '../utils/format'
@@ -20,6 +21,7 @@ export default function DestinationCard({
   onSelect,
   onToggleSaved,
   onViewDetails,
+  showRanking = true,
   cardRef,
 }) {
   const flight = destination.flight || {}
@@ -51,8 +53,12 @@ export default function DestinationCard({
         <div className={styles.cardTop}>
           <div>
             <div className={styles.cardLabels}>
-              {isBestMatch && <span className={styles.bestMatch}>Best match</span>}
-              <span className={styles.rank}>#{displayRank}</span>
+              {showRanking && isBestMatch && <span className={styles.bestMatch}>Best match</span>}
+              {showRanking && <span className={styles.rank}>#{displayRank}</span>}
+              {destination.priceChanged && <span className={styles.priceChanged}>Price changed</span>}
+              {destination.availability === 'unavailable' && (
+                <span className={styles.unavailable}>Unavailable</span>
+              )}
             </div>
             <h3>{place.city || 'Unknown city'}</h3>
             <p>{country.common_name || place.country_code || displayValue(null)}</p>
@@ -74,6 +80,12 @@ export default function DestinationCard({
           </div>
         </div>
 
+        {destination.availability === 'unavailable' && (
+          <p className={styles.unavailableNote}>Flight no longer available</p>
+        )}
+        {destination.savedAt && (
+          <p className={styles.savedAt}>Saved {formatDate(destination.savedAt)}</p>
+        )}
         {moved && <p className={styles.movement}>Moved from #{previousRank}</p>}
         {facts && <p className={styles.facts}>{facts}{airline ? ` · ${airline}` : ''}</p>}
         {!facts && <p className={styles.facts}>{displayValue(null)}</p>}

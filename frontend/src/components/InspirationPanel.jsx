@@ -23,7 +23,7 @@ export default function InspirationPanel({ destinations, onPlan, onExplore, onSe
       <div className={styles.previewBlock} id="destination-previews">
         <h3>Explore destinations</h3>
         <p className={styles.panelHint}>
-          Choose a departure city first, then search. Previews come from stored snapshot trips, not live fares.
+          Choose a departure city first, then search.
         </p>
         <div className={styles.previews}>
           {previews.map((destination) => {

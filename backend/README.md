@@ -21,8 +21,25 @@ unranked.
 
    - `COSMOS_CONNECTION_STRING` — the PRIMARY CONNECTION STRING.
    - `COSMOS_DATABASE=TravelPlaner` — spelling and case matter.
+   - `API_AUTH_KEY` — a server-side key used by the Vite development proxy
+     or production gateway. Generate it with
+     `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
+   - `AUTH_SESSION_SECRET` — a separate secret used to sign short-lived
+     HttpOnly authentication cookies.
+   - `AUTH_COOKIE_SECURE=false` for local HTTP demos; production must use
+     `true`.
+   - `COSMOS_USERS_CONTAINER=users` — the users container name.
+   - `COSMOS_USER_FLIGHTS_CONTAINER=user-flights` — one document per user
+     containing only saved flight IDs. Flight facts stay in `flights`.
+   - `TRUSTED_HOSTS` — comma-separated host names accepted by the API.
 
-   The backend uses the fixed `origins` and `flights` container names.
+   The backend uses the fixed `origins` and `flights` container names plus the
+   configured users and user-flights containers. Create the users container
+   with partition key `/email_normalized` and a unique key on
+   `/email_normalized` before registering accounts. Create the user-flights
+   container with partition key `/id`. Each item's `id` is the user id and
+   the only other field is `flight_ids`. Do not store airline, destination,
+   weather, or route fields there.
 
 3. Start FastAPI:
 
@@ -35,10 +52,14 @@ API documentation is available at `http://localhost:8000/docs`.
 ## Endpoints
 
 - `GET /api/health`
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `POST /api/auth/logout`
+- `GET /api/auth/me`
 - `GET /api/origins?q=zag&country=HR`
 - `GET /api/origins/{origin_id}`
-- `GET /api/flights` — raw Cosmos flight documents for one origin partition
-  (airline, coordinates, weather, and other stored fields).
+- `GET /api/flights` — allowlisted flight fields for one origin partition
+  (airline, coordinates, and display fields).
   Required: `origin_id`. Optional: `departure_date`, `return_date`, `max_price`,
   `min_temp`, `country`. Does not accept `max_changeovers` or
   `max_duration_minutes`.
@@ -51,6 +72,12 @@ API documentation is available at `http://localhost:8000/docs`.
   search and rank again. Explicit field changes (budget, direct flights) are
   applied. Intents such as cheaper/warmer are passed to Ivan's
   `preferences_from_intents` so ranking weights update.
+- `GET /api/saved-flights` — the authenticated user's saved flight IDs,
+  hydrated from the `flights` container. Independent of recommendation filters.
+- `POST /api/saved-flights` — save `{ flight_id }` for the session user.
+  Idempotent.
+- `DELETE /api/saved-flights/{flight_id}` — remove that id from the user's
+  list only.
 
 Example requests:
 
@@ -98,7 +125,66 @@ feedback has no ranking intent, the supplied weights (or defaults) stay.
   `airports`. Unmatched or ambiguous codes return `needs_input`.
 - Refine calls Ivan's `preferences_from_intents` for cheaper/warmer. Luyanda
   can still send `ranking_preferences` as the starting weights.
-- Authentication and authorization are not implemented yet.
+- Data and recommendation routes require the server-side `X-API-Key`
+  configured through `API_AUTH_KEY`. The health endpoint remains public.
+  The browser must not receive this key; local Vite and production gateways
+  inject it server-side. Local accounts use Argon2id password hashes and
+  signed HttpOnly cookies. Passwords and session cookies are never logged.
+  Production rate limits should be enforced by the gateway and returned as
+  `429 Too Many Requests`. Saved-flight routes also require the signed
+  session cookie. The user id is taken from that session, never from the
+  request body.
+
+## Saved flights
+
+The `user-flights` container stores one document per user. The item id and
+partition key are the user id. The only extra field is the list of flight
+IDs, newest first:
+
+```json
+{
+  "id": "<authenticated-user-id>",
+  "flight_ids": ["ZAG-ROM-2026-09-18"]
+}
+```
+
+`GET /api/saved-flights` looks up those IDs in the `flights` container and
+returns the current allowlisted flight data. Missing flights stay in the
+user's list and are returned as `availability: "unavailable"`.
+
+## Flexible-date shortlist fallback
+
+`CandidateService.prepare()` (used by `/api/candidates`, `/api/recommend`, and
+`/api/refine`) first runs the existing exact-date query and validates the results.
+When there are at least `MIN_RECOMMENDATION_RESULTS = 3` distinct valid flights,
+it returns all exact matches without a second query. Otherwise it keeps every
+exact match and fills only the missing slots with nearby stored flights.
+
+`FLEXIBLE_DATE_WINDOW_DAYS = 7` in `backend/config.py` applies independently to
+departure and return dates, inclusive. ISO datetimes are parsed and compared by
+the local calendar date represented in each record, without converting to UTC.
+Both requested dates must be present to enable fallback.
+
+The second lookup reuses the existing origin-partition query with only its date
+restrictions removed, preserving all other repository filters. The service
+checks the date window before candidate preparation and applies the same budget,
+changeover, duration, and data-validation rules. Origin, country, and minimum
+temperature are also checked for alternatives. This approach may read more
+stored records from that origin partition, but requires no new Cosmos indexes.
+
+Alternatives are deduplicated by flight/destination ID and selected by total
+absolute departure/return date difference, then absolute trip-length difference,
+then ID. Exact matches stay first. Recommendation scores use the unchanged
+ranking algorithm; exact matches retain their score order, followed by
+alternatives in date-distance order. Fewer than three valid flights remain fewer
+than three; hard filters are never relaxed. `/api/flights` is unchanged.
+
+Candidate and recommendation items add `is_flexible_date_option` (false for
+exact matches), `requested_departure_date`, `requested_return_date`,
+`actual_departure_date`, and `actual_return_date`. Dates are ISO calendar dates
+or null when unavailable. Responses also add `exact_match_count`, `fallback_count`,
+and `flexible_date_fallback_used`; the latter is true only if alternatives were
+actually added. Existing response fields and request models are unchanged.
 
 # AI request parser and explanations
 
