@@ -24,6 +24,14 @@ export const INITIAL_PLANNER_FORM = {
   currency: 'EUR',
 }
 
+export function formForSelectedOrigin(origin, base = INITIAL_PLANNER_FORM) {
+  return {
+    ...base,
+    originId: origin?.originId || '',
+    originIata: origin?.iata || '',
+  }
+}
+
 const FORM_FIELD_LABELS = [
   ['origin', 'origin'],
   ['departure_date', 'departure date'],
@@ -76,9 +84,31 @@ export function formFieldsFromPlanner(form = {}, origin = null) {
   return Object.keys(fields).length ? fields : null
 }
 
+const FORM_FIELDS_STATED_IN_TEXT = [
+  'origin',
+  'departure_date',
+  'return_date',
+  'budget',
+  'currency',
+]
+
+/** Keep form_fields the message did not already state, so leftover dates/budget cannot fight the prompt. */
+export function formFieldsForRecommendText(text, form, origin) {
+  const fields = formFieldsFromPlanner(form, origin)
+  if (!fields) return null
+  const trimmed = typeof text === 'string' ? text.trim() : ''
+  if (!trimmed) return fields
+  const hints = hintsFromPlannerText(trimmed)
+  const next = { ...fields }
+  for (const key of FORM_FIELDS_STATED_IN_TEXT) {
+    if (hints[key]) delete next[key]
+  }
+  return Object.keys(next).length ? next : null
+}
+
 export function buildRecommendPayload(text, form, origin) {
   const payload = { text: typeof text === 'string' ? text : '' }
-  const formFields = formFieldsFromPlanner(form, origin)
+  const formFields = formFieldsForRecommendText(payload.text, form, origin)
   if (formFields) payload.form_fields = formFields
   return payload
 }

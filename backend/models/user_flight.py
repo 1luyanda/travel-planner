@@ -39,6 +39,10 @@ class SavedFlightSnapshot(FlightItem):
             self.model_dump(exclude={"flight_id", "saved_at"})
         )
 
+    def differs_from_flight(self, raw: dict) -> bool:
+        current = FlightItem.model_validate(raw)
+        return self.to_flight_item().model_dump() != current.model_dump()
+
 
 class UserSavedFlightsDocument(BaseModel):
     """One user-flights item. Snapshots keep a copy of the flight at save time."""

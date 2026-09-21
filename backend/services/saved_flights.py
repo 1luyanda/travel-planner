@@ -51,33 +51,75 @@ class SavedFlightsService:
             if item.get("id")
         }
         snapshots = {item.flight_id: item for item in document.flights}
-        items: list[SavedFlightItem] = []
-        for flight_id in flight_ids:
-            current = current_flights.get(flight_id)
-            snapshot = snapshots.get(flight_id)
-            if current is not None:
-                items.append(
-                    SavedFlightItem(
-                        flight_id=flight_id,
-                        availability="available",
-                        flight=FlightItem.model_validate(current),
-                    )
+        refreshed, items = _hydrate_saved_flights(flight_ids, current_flights, snapshots)
+        if refreshed != document.flights:
+            leftover = [
+                flight_id
+                for flight_id in flight_ids
+                if flight_id not in {item.flight_id for item in refreshed}
+            ]
+            await self._repository.replace_user_saved_flights(
+                document.model_copy(
+                    update={
+                        "flights": refreshed,
+                        "flight_ids": [item.flight_id for item in refreshed] + leftover,
+                    }
                 )
-                continue
-            if snapshot is not None:
-                items.append(
-                    SavedFlightItem(
-                        flight_id=flight_id,
-                        availability="unavailable",
-                        flight=snapshot.to_flight_item(),
-                    )
+            )
+        return items
+
+
+def _hydrate_saved_flights(
+    flight_ids: list[str],
+    current_flights: dict[str, dict],
+    snapshots: dict[str, SavedFlightSnapshot],
+) -> tuple[list[SavedFlightSnapshot], list[SavedFlightItem]]:
+    refreshed: list[SavedFlightSnapshot] = []
+    items: list[SavedFlightItem] = []
+    for flight_id in flight_ids:
+        current = current_flights.get(flight_id)
+        snapshot = snapshots.get(flight_id)
+        if current is not None:
+            if _should_refresh_snapshot(snapshot, current):
+                snapshot = SavedFlightSnapshot.from_flight(
+                    current,
+                    saved_at=snapshot.saved_at if snapshot else None,
                 )
-                continue
+            refreshed.append(snapshot)
+            items.append(
+                SavedFlightItem(
+                    flight_id=flight_id,
+                    availability="available",
+                    flight=FlightItem.model_validate(current),
+                )
+            )
+            continue
+        if snapshot is not None:
+            refreshed.append(snapshot)
             items.append(
                 SavedFlightItem(
                     flight_id=flight_id,
                     availability="unavailable",
-                    flight=None,
+                    flight=snapshot.to_flight_item(),
                 )
             )
-        return items
+            continue
+        items.append(
+            SavedFlightItem(
+                flight_id=flight_id,
+                availability="unavailable",
+                flight=None,
+            )
+        )
+    return refreshed, items
+
+
+def _should_refresh_snapshot(
+    snapshot: SavedFlightSnapshot | None,
+    current: dict,
+) -> bool:
+    """Persist a new snapshot when live flights (refreshed about every 24h) changed."""
+
+    if snapshot is None:
+        return True
+    return snapshot.differs_from_flight(current)

@@ -469,6 +469,24 @@ class CosmosDestinationRepository:
             raise RepositoryError("Saved flight update failed.") from error
         return UserSavedFlightsDocument.model_validate(item)
 
+    async def replace_user_saved_flights(
+        self,
+        document: UserSavedFlightsDocument,
+    ) -> UserSavedFlightsDocument:
+        """Replace the user's saved-flight document after a snapshot refresh."""
+
+        container = self._require_user_flights()
+        try:
+            item = await container.replace_item(
+                item=document.id,
+                body=document.model_dump(mode="json"),
+            )
+        except CosmosHttpResponseError as error:
+            if error.status_code == 404:
+                return document
+            raise RepositoryError("Saved flight update failed.") from error
+        return UserSavedFlightsDocument.model_validate(item)
+
     async def remove_user_saved_flight(self, user_id: str, flight_id: str) -> None:
         """Remove a saved snapshot from the authenticated user's list only."""
 

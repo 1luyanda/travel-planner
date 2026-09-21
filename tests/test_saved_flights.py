@@ -324,6 +324,47 @@ async def test_saved_price_remains_after_source_flight_is_removed() -> None:
 
 
 @pytest.mark.anyio
+async def test_list_updates_snapshot_when_current_flight_changed() -> None:
+    flights = FakeFlightsStore([ROME_FLIGHT])
+    repository = connected_repository(flights=flights)
+    service = SavedFlightsService(repository)
+    await service.save("user-1", SaveFlightRequest(flight_id="ZAG-ROM-2026-09-18"))
+    flights.flights["ZAG-ROM-2026-09-18"] = {
+        **ROME_FLIGHT,
+        "price_eur": 81,
+        "temp_max_c": 30.1,
+        "airline_name": "Updated Air",
+    }
+
+    items = await service.list_for_user("user-1")
+    stored = (await repository.list_user_saved_flights("user-1")).flights[0]
+
+    assert items[0].availability == "available"
+    assert items[0].flight is not None
+    assert items[0].flight.price_eur == 81
+    assert stored.price_eur == 81
+    assert stored.temp_max_c == 30.1
+    assert stored.airline_name == "Updated Air"
+    assert stored.flight_id == "ZAG-ROM-2026-09-18"
+    assert stored.id == "ZAG-ROM-2026-09-18"
+
+
+@pytest.mark.anyio
+async def test_list_does_not_rewrite_snapshot_when_current_matches() -> None:
+    flights = FakeFlightsStore([ROME_FLIGHT])
+    user_flights = FakeUserFlightsStore()
+    repository = connected_repository(flights=flights, user_flights=user_flights)
+    service = SavedFlightsService(repository)
+    await service.save("user-1", SaveFlightRequest(flight_id="ZAG-ROM-2026-09-18"))
+    saved_at = user_flights.items["user-1"]["flights"][0]["saved_at"]
+
+    await service.list_for_user("user-1")
+
+    assert user_flights.items["user-1"]["flights"][0]["saved_at"] == saved_at
+    assert user_flights.items["user-1"]["flights"][0]["price_eur"] == 65
+
+
+@pytest.mark.anyio
 async def test_list_hydrates_legacy_ids_and_keeps_unavailable_ids() -> None:
     flights = FakeFlightsStore([ROME_FLIGHT])
     user_flights = FakeUserFlightsStore()
@@ -344,6 +385,10 @@ async def test_list_hydrates_legacy_ids_and_keeps_unavailable_ids() -> None:
     assert items[0].flight.destination_city == "Rome"
     assert items[1].availability == "unavailable"
     assert items[1].flight is None
+    stored = user_flights.items["user-1"]
+    assert stored["flights"][0]["flight_id"] == "ZAG-ROM-2026-09-18"
+    assert stored["flights"][0]["price_eur"] == 65
+    assert stored["flight_ids"] == ["ZAG-ROM-2026-09-18", "ZAG-LIS-2026-09-18"]
     assert "ARRAY_CONTAINS(@ids, c.id)" in flights.query_arguments["query"]
     assert "SELECT * FROM" not in flights.query_arguments["query"]
     assert "c.price_eur" in flights.query_arguments["query"]

@@ -31,7 +31,8 @@ unranked.
    - `COSMOS_USERS_CONTAINER=users` — the users container name.
    - `COSMOS_USER_FLIGHTS_CONTAINER=user-flights` — one document per user
      containing saved-flight snapshots. The current `flights` container is
-     still used to check availability.
+     still used to check availability and refresh snapshots when live data
+     changes.
    - `TRUSTED_HOSTS` — comma-separated host names accepted by the API.
 
    The backend uses the fixed `origins` and `flights` container names plus the
@@ -72,8 +73,10 @@ API documentation is available at `http://localhost:8000/docs`.
   search and rank again. Explicit field changes (budget, direct flights) are
   applied. Intents such as cheaper/warmer are passed to Ivan's
   `preferences_from_intents` so ranking weights update.
-- `GET /api/saved-flights` — the authenticated user's saved flights,
-  including stored snapshots when the current flight ID is gone.
+- `GET /api/saved-flights` — the authenticated user's saved flights.
+  If the current `flights` document still exists, the snapshot is updated
+  when any allowlisted field changed (live data refreshes about every 24h).
+  If the id is gone, the stored snapshot is returned as unavailable.
 - `POST /api/saved-flights` — save `{ flight_id }` for the session user.
   Looks up the current flight, stores a snapshot, and is idempotent.
 - `DELETE /api/saved-flights/{flight_id}` — remove that snapshot from the
@@ -167,7 +170,9 @@ copies that value and does not generate, normalize, or reconstruct it.
 
 `GET /api/saved-flights` checks those IDs in the `flights` container. If the
 current document exists, the item is `availability: "available"` with current
-data. If it is gone, the item is `availability: "unavailable"` and `flight`
+data. Live flights refresh about every 24 hours; when any allowlisted field
+differs from the snapshot, the stored copy is updated. If the current
+document is gone, the item is `availability: "unavailable"` and `flight`
 is filled from the stored snapshot. Legacy documents with only `flight_ids`
 still hydrate from `flights`; missing current documents then have `flight: null`.
 
@@ -284,7 +289,9 @@ result.clarification_questions   # list[str]
 
 Optional keys: `origin`, `departure_date`, `return_date`, `duration_days`, `budget`, `currency`, `moods`, `direct_flights_only`, `weather_preference`.
 
-Explicit form values are preserved. If they conflict with the message, `status` is `needs_input`.
+Explicit form values fill fields the message did not set. If both set a
+field, the message wins. Filter-only requests send empty text so the form
+is used as-is.
 
 ## explain_ranked_trips
 

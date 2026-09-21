@@ -32,6 +32,7 @@ import {
   buildRecommendPayload,
   createClarificationContext,
   formFieldsFromPlanner,
+  formForSelectedOrigin,
   formPatchFromTripRequest,
   localClarificationQuestions,
   newTripPlannerState,
@@ -260,7 +261,12 @@ export default function App() {
     }
   }, [pendingSelectId, results, visibleDestinations, view])
 
-  function invalidateResults() {
+  function invalidateResults(nextOrigin = selectedOrigin) {
+    searchAbortRef.current?.abort()
+    searchAbortRef.current?.dispose?.()
+    searchAbortRef.current = null
+    searchSeqRef.current += 1
+    const nextForm = formForSelectedOrigin(nextOrigin)
     setHasSearched(false)
     setResults([])
     setRejected([])
@@ -281,18 +287,21 @@ export default function App() {
     setFiltersOpen(false)
     setViewportMode('bounds')
     setView('explore')
+    setLoading(false)
+    setRefining(false)
+    setForm(nextForm)
+    setSearchSnapshot(nextForm)
   }
 
   function handleOriginChange(origin) {
     const same = origin?.originId && origin.originId === selectedOrigin?.originId
     setSelectedOrigin(origin)
-    setForm((current) => ({
-      ...current,
-      originId: origin?.originId || '',
-      originIata: origin?.iata || '',
-    }))
     setOriginError('')
-    if (hasSearched && !same) invalidateResults()
+    if (hasSearched && !same) {
+      invalidateResults(origin)
+      return
+    }
+    setForm((current) => formForSelectedOrigin(origin, current))
   }
 
   async function enrichMappedResults(mapped, signal, seq) {
