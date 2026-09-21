@@ -17,7 +17,7 @@ npm run dev
 
 Open the URL shown by Vite, normally `http://localhost:5173`.
 
-The landing page provides local registration, sign-in, and logout. Authentication
+The landing page links to dedicated Log in and Sign up pages. Authentication
 uses credentials-inclusive requests and an HttpOnly cookie; the frontend never
 stores a password or session token in localStorage. Saved flights are stored
 on the backend for the signed-in user and are not kept in localStorage.

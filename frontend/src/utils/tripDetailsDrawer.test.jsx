@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import TripDetailsDrawer from '../components/TripDetailsDrawer'
+import { SNAPSHOT_NOTICE } from '../components/TripDetailsContent'
 import { NOT_AVAILABLE } from '../utils/format'
 
 const rome = {
@@ -33,7 +34,7 @@ describe('TripDetailsDrawer', () => {
       <TripDetailsDrawer destination={rome} onClose={() => {}} isSaved={false} onToggleSaved={() => {}} />,
     )
     expect(html).toContain('role="dialog"')
-    expect(html).not.toMatch(/snapshot|not live or bookable/i)
+    expect(html).toContain(SNAPSHOT_NOTICE)
     expect(html).toContain('Rome stays within budget.')
     expect(html).toContain('Zagreb, Croatia (ZAG)')
     expect(html).toContain('65 EUR')

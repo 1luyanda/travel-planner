@@ -8,15 +8,25 @@ import {
   buildRecommendPayload,
   buildRefinePayload,
   createClarificationContext,
+  dateRangeError,
+  datesChangedFromTrip,
   describeFormFields,
+  describePlannerDates,
   explanationView,
+  uniqueExplanationView,
+  formFieldsForClarification,
   formFieldsFromPlanner,
   formForSelectedOrigin,
   formPatchFromTripRequest,
+  isClarificationQuestionText,
   localClarificationQuestions,
   newTripPlannerState,
+  plannerDatesChangedSinceClarification,
+  plannerRequestSummary,
+  composerPlaceholderFor,
   recordClarificationAnswer,
   refinementFeedbackText,
+  shouldRecommendInsteadOfRefine,
   tripRequestAfterRecommend,
   tripRequestAfterRefine,
 } from './plannerFlow'
@@ -49,6 +59,20 @@ describe('formFieldsFromPlanner', () => {
       direct_flights_only: true,
       weather_preference: 'warmer',
     })
+  })
+
+  it('includes selected YYYY-MM-DD dates in form_fields without inventing them', () => {
+    expect(
+      formFieldsFromPlanner(
+        { originIata: 'ZAG', departureDate: '2026-10-08', returnDate: '2026-10-16' },
+        null,
+      ),
+    ).toEqual({
+      origin: 'ZAG',
+      departure_date: '2026-10-08',
+      return_date: '2026-10-16',
+    })
+    expect(formFieldsFromPlanner({ originIata: 'ZAG' }, null)).toEqual({ origin: 'ZAG' })
   })
 
   it('does not send the default budget before the user or backend sets one', () => {
@@ -262,6 +286,8 @@ describe('clarification recommend payload', () => {
     expect(cleared.form).toEqual(INITIAL_PLANNER_FORM)
     expect(cleared.form.maxBudget).toBe(400)
     expect(cleared.form.originIata).toBe('')
+    expect(cleared.form.departureDate).toBe('')
+    expect(cleared.form.returnDate).toBe('')
   })
 })
 
@@ -371,6 +397,22 @@ describe('explanations and scores', () => {
     ])
   })
 
+  it('drops evidence bullets that repeat the summary', () => {
+    const view = uniqueExplanationView({
+      explanation: {
+        summary: 'Rome stays within budget.',
+        evidence: [
+          { id: 'e1', statement: 'Rome stays within budget.' },
+          { id: 'e2', statement: 'Fare is EUR 65 against a EUR 400 budget.' },
+        ],
+      },
+    })
+    expect(view.summary).toBe('Rome stays within budget.')
+    expect(view.evidence.map((item) => item.statement)).toEqual([
+      'Fare is EUR 65 against a EUR 400 budget.',
+    ])
+  })
+
   it('copies backend scores and omits missing ones', () => {
     expect(
       backendScoreItems({
@@ -389,6 +431,166 @@ describe('explanations and scores', () => {
       originIata: 'ZAG',
       maxBudget: 400,
       departureDate: '2026-09-21',
+      returnDate: '2026-09-25',
     })
+  })
+})
+
+describe('planner date fields', () => {
+  it('blocks a return date before departure and allows a blank pair', () => {
+    expect(dateRangeError({ departureDate: '2026-10-16', returnDate: '2026-10-08' })).toMatch(
+      /on or after/i,
+    )
+    expect(dateRangeError({ departureDate: '', returnDate: '' })).toBe('')
+    expect(dateRangeError({ departureDate: '2026-10-08', returnDate: '2026-10-16' })).toBe('')
+  })
+
+  it('uses a fresh recommend when form dates differ from the saved trip', () => {
+    expect(datesChangedFromTrip({ departureDate: '2026-10-08', returnDate: '2026-10-16' }, tripRequest)).toBe(
+      true,
+    )
+    expect(
+      shouldRecommendInsteadOfRefine(
+        { departureDate: '2026-09-21', returnDate: '2026-09-25' },
+        tripRequest,
+      ),
+    ).toBe(false)
+    expect(
+      shouldRecommendInsteadOfRefine(
+        { departureDate: '2026-10-08', returnDate: '2026-10-16' },
+        tripRequest,
+      ),
+    ).toBe(true)
+    expect(
+      shouldRecommendInsteadOfRefine(
+        { departureDate: '2026-10-08', returnDate: '2026-10-16' },
+        tripRequest,
+        { clarifying: true },
+      ),
+    ).toBe(false)
+  })
+
+  it('keeps clarification without form_fields and records updated form dates in text', () => {
+    const context = createClarificationContext({
+      originalPrompt: 'A warm getaway from Zagreb',
+      formFields: {
+        origin: 'ZAG',
+        departure_date: '2026-09-21',
+        return_date: '2026-09-25',
+        budget: 500,
+      },
+      questions: ['Which budget should we use?'],
+    })
+    expect(plannerDatesChangedSinceClarification({ departureDate: '2026-10-08', returnDate: '2026-10-16' }, context.formSelectionsText)).toBe(
+      true,
+    )
+    const payload = buildClarificationRecommendPayload({
+      ...context,
+      answer: '2000 EUR',
+      updatedFormDatesText: describePlannerDates({
+        departureDate: '2026-10-08',
+        returnDate: '2026-10-16',
+      }),
+    })
+    expect(payload).not.toHaveProperty('form_fields')
+    expect(payload.text).toContain('Initial form selections:')
+    expect(payload.text).toContain('departure date: 2026-09-21')
+    expect(payload.text).toContain('Updated form dates (this overrides earlier form dates):')
+    expect(payload.text).toContain('departure date: 2026-10-08')
+    expect(payload.text).toMatch(/Authoritative answer[\s\S]*2000 EUR/)
+  })
+})
+
+describe('clarification structured fields and request summary', () => {
+  it('omits asked currency from form_fields but keeps origin, dates, budget, and weather', () => {
+    const fields = formFieldsForClarification({
+      form: { originIata: 'ZAG', departureDate: '2026-10-08', returnDate: '2026-10-15' },
+      origin: { iata: 'ZAG' },
+      preferences: {
+        origin: 'ZAG',
+        departure_date: '2026-10-08',
+        return_date: '2026-10-15',
+        budget: 400,
+        weather_preference: 'warm',
+      },
+      questions: ['What currency is the budget in (for example EUR)?'],
+    })
+    expect(fields).toEqual({
+      origin: 'ZAG',
+      departure_date: '2026-10-08',
+      return_date: '2026-10-15',
+      budget: 400,
+      weather_preference: 'warm',
+    })
+    expect(fields).not.toHaveProperty('currency')
+  })
+
+  it('omits dates and budget stated in the clarification answer so they are not resent as stale form_fields', () => {
+    const fields = formFieldsForClarification({
+      form: { originIata: 'ZAG', departureDate: '2026-10-08', returnDate: '2026-10-15' },
+      origin: { iata: 'ZAG' },
+      preferences: {
+        origin: 'ZAG',
+        departure_date: '2026-10-08',
+        return_date: '2026-10-15',
+        budget: 400,
+        weather_preference: 'warm',
+      },
+      questions: ['What currency is the budget in (for example EUR)?'],
+      answer: 'EUR 95 from 2026-09-24 to 2026-10-01',
+    })
+    expect(fields?.origin).toBe('ZAG')
+    expect(fields?.weather_preference).toBe('warm')
+    expect(fields?.departure_date).toBeUndefined()
+    expect(fields?.return_date).toBeUndefined()
+    expect(fields?.budget).toBeUndefined()
+    expect(fields?.currency).toBeUndefined()
+  })
+
+  it('does not resend a conflicting budget as form_fields', () => {
+    const fields = formFieldsForClarification({
+      form: { originIata: 'ZAG', maxBudget: 500, budgetTouched: true, currency: 'EUR' },
+      origin: { iata: 'ZAG' },
+      preferences: { origin: 'ZAG', budget: 500, currency: 'EUR' },
+      questions: ['The form has budget 500 but the message has 400. Which should we use?'],
+    })
+    expect(fields?.budget).toBeUndefined()
+    expect(fields?.origin).toBe('ZAG')
+  })
+
+  it('summarises parsed preferences instead of untouched form defaults', () => {
+    expect(
+      plannerRequestSummary(
+        { originId: 'zagreb-hr', maxBudget: 400, preferWarm: false, directOnly: false },
+        'Zagreb, Croatia (ZAG)',
+        null,
+        {
+          origin: 'ZAG',
+          budget: 400,
+          weather_preference: 'warm',
+          departure_date: '2026-10-08',
+          return_date: '2026-10-15',
+        },
+      ),
+    ).toBe('Zagreb, Croatia (ZAG) · 400 · warm · 2026-10-08 → 2026-10-15')
+    expect(
+      plannerRequestSummary(
+        { originId: 'zagreb-hr', maxBudget: 400, preferWarm: false, directOnly: false },
+        'Zagreb, Croatia (ZAG)',
+        null,
+        null,
+      ),
+    ).toBe('Zagreb, Croatia (ZAG)')
+  })
+
+  it('uses a typing placeholder instead of the assistant question', () => {
+    expect(composerPlaceholderFor('recommend')).toBe('Type your answer…')
+    expect(composerPlaceholderFor(null)).toBe('Ask for a mood, dates, or budget…')
+    expect(
+      isClarificationQuestionText(
+        'What currency is the budget in (for example EUR)?',
+        ['What currency is the budget in (for example EUR)?'],
+      ),
+    ).toBe(true)
   })
 })
