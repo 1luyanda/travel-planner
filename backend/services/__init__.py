@@ -9,6 +9,7 @@ from .llm import (
     load_llm_environment,
     parse_request,
 )
+from .places import PlacesService
 from .recommendations import RecommendationService
 from .saved_flights import SavedFlightNotFoundError, SavedFlightsService
 from .users import (
@@ -20,6 +21,7 @@ from .users import (
 __all__ = [
     "CandidateService",
     "LLMClient",
+    "PlacesService",
     "RankedTripLike",
     "RecommendationService",
     "SavedFlightNotFoundError",

@@ -32,6 +32,9 @@ unranked.
    - `COSMOS_USER_FLIGHTS_CONTAINER=user-flights` — one document per user
      containing only saved flight IDs. Flight facts stay in `flights`.
    - `TRUSTED_HOSTS` — comma-separated host names accepted by the API.
+   - `GOOGLE_PLACES_API_KEY` — backend-only key for `POST /api/activities`.
+     Google Places is the source of real activity data. Do not send this key
+     from React.
 
    The backend uses the fixed `origins` and `flights` container names plus the
    configured users and user-flights containers. Create the users container
@@ -72,6 +75,10 @@ API documentation is available at `http://localhost:8000/docs`.
   search and rank again. Explicit field changes (budget, direct flights) are
   applied. Intents such as cheaper/warmer are passed to Ivan's
   `preferences_from_intents` so ranking weights update.
+- `POST /api/activities` — verified Google Places activities for a selected
+  destination city. Requires `GOOGLE_PLACES_API_KEY` on the backend. The key
+  stays server-side and is never sent from React. No itinerary, maps, or
+  booking.
 - `GET /api/saved-flights` — the authenticated user's saved flight IDs,
   hydrated from the `flights` container. Independent of recommendation filters.
 - `POST /api/saved-flights` — save `{ flight_id }` for the session user.
@@ -86,6 +93,19 @@ GET /api/flights?origin_id=zagreb-hr
 GET /api/candidates?origin_id=zagreb-hr&max_price=300&max_changeovers=0
 POST /api/recommend
 POST /api/refine
+POST /api/activities
+```
+
+Example activities body:
+
+```json
+{
+  "city": "Rome",
+  "country_code": "IT",
+  "destination_id": "ZAG-ROM-2026-09-18",
+  "moods": ["cultural"],
+  "limit": 8
+}
 ```
 
 Example recommend body:
@@ -125,7 +145,7 @@ feedback has no ranking intent, the supplied weights (or defaults) stay.
   `airports`. Unmatched or ambiguous codes return `needs_input`.
 - Refine calls Ivan's `preferences_from_intents` for cheaper/warmer. Luyanda
   can still send `ranking_preferences` as the starting weights.
-- Data and recommendation routes require the server-side `X-API-Key`
+- Data, recommendation, and activities routes require the server-side `X-API-Key`
   configured through `API_AUTH_KEY`. The health endpoint remains public.
   The browser must not receive this key; local Vite and production gateways
   inject it server-side. Local accounts use Argon2id password hashes and

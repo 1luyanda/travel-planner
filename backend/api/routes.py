@@ -7,6 +7,8 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from backend.contracts import (
+    ActivitiesRequest,
+    ActivitiesResponse,
     CandidateResponse,
     FlightListResponse,
     FlightQuery,
@@ -26,6 +28,11 @@ from backend.services import (
     RecommendationService,
     SavedFlightNotFoundError,
     SavedFlightsService,
+)
+from backend.services.places import (
+    PlacesConfigurationError,
+    PlacesService,
+    PlacesUnavailableError,
 )
 
 
@@ -230,6 +237,23 @@ async def refine(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Destination data is temporarily unavailable.",
+        ) from error
+
+
+@router.post(
+    "/activities",
+    response_model=ActivitiesResponse,
+    dependencies=[Depends(require_api_key)],
+)
+async def list_activities(body: ActivitiesRequest) -> ActivitiesResponse:
+    """Return verified Google Places activities for a selected destination."""
+
+    try:
+        return await PlacesService.from_env().search(body)
+    except (PlacesConfigurationError, PlacesUnavailableError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Activity data is temporarily unavailable.",
         ) from error
 
 
