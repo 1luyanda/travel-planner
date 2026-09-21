@@ -11,6 +11,8 @@ export default function TripDetailsPanel({
   isSaved = false,
   onToggleSaved,
   onClose,
+  moods,
+  activitiesEnabled = false,
 }) {
   const titleId = useId()
 
@@ -32,7 +34,12 @@ export default function TripDetailsPanel({
         onClose={onClose}
       />
       <div className={styles.detailsBody}>
-        <TripDetailsContent destination={destination} titleId={titleId} />
+        <TripDetailsContent
+          destination={destination}
+          titleId={titleId}
+          moods={moods}
+          activitiesEnabled={activitiesEnabled}
+        />
       </div>
     </section>
   )

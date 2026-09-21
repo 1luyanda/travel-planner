@@ -3,6 +3,8 @@
  * Uses the Vite `/api` proxy. Never talks to Cosmos or travel providers directly.
  */
 
+import { ACTIVITIES_LIMIT, normalizeActivitiesResponse } from '../utils/activities'
+
 export class ApiError extends Error {
   constructor(message, { status = 0, body = null } = {}) {
     super(message)
@@ -269,4 +271,33 @@ export async function fetchFlights(params, { signal } = {}) {
     count: Number.isFinite(Number(data.count)) ? Number(data.count) : data.flights.length,
     data_source: typeof data.data_source === 'string' ? data.data_source : null,
   }
+}
+
+export async function fetchActivities(payload, { signal } = {}) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new ApiError('A destination city is required to load activities.')
+  }
+  const city = typeof payload.city === 'string' ? payload.city.trim() : ''
+  if (!city) {
+    throw new ApiError('A destination city is required to load activities.')
+  }
+
+  const body = {
+    city,
+    moods: Array.isArray(payload.moods) ? payload.moods : [],
+    limit: Number.isInteger(payload.limit) ? payload.limit : ACTIVITIES_LIMIT,
+  }
+  if (typeof payload.country_code === 'string' && payload.country_code.trim()) {
+    body.country_code = payload.country_code.trim()
+  }
+  if (typeof payload.destination_id === 'string' && payload.destination_id.trim()) {
+    body.destination_id = payload.destination_id.trim()
+  }
+
+  const data = await requestJson('/api/activities', { method: 'POST', body, signal })
+  const normalized = normalizeActivitiesResponse(data)
+  if (!normalized) {
+    throw new ApiError('Activity data returned an unexpected response.')
+  }
+  return normalized
 }

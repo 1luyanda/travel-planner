@@ -14,6 +14,7 @@ import {
 } from '../utils/format'
 import { formatOriginLabel } from '../utils/origins'
 import { backendScoreItems, uniqueExplanationView } from '../utils/plannerFlow'
+import TripDetailsActivities from './TripDetailsActivities'
 
 export const SNAPSHOT_NOTICE = 'Stored snapshot data — not live or bookable'
 export const DETAILS_EMPTY_MESSAGE = 'Select a trip to view its details.'
@@ -94,7 +95,12 @@ export function TripDetailsHeader({
 /**
  * Shared trip-details body for the desktop panel and mobile drawer.
  */
-export default function TripDetailsContent({ destination, titleId }) {
+export default function TripDetailsContent({
+  destination,
+  titleId,
+  moods,
+  activitiesEnabled = false,
+}) {
   const flight = destination?.flight || {}
   const place = destination?.destination || {}
   const weather = destination?.weather || {}
@@ -148,6 +154,13 @@ export default function TripDetailsContent({ destination, titleId }) {
           <ScoreBreakdown items={breakdown} total={destination.scores?.total} />
         </section>
       )}
+
+      <TripDetailsActivities
+        destination={destination}
+        moods={moods}
+        enabled={activitiesEnabled}
+        titleId={titleId}
+      />
     </>
   )
 }

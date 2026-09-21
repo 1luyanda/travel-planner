@@ -238,6 +238,72 @@ button:disabled {
   border-top: 1px solid var(--tp-border);
 }
 
+.trip-details-activities {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--tp-border);
+}
+
+.trip-details-activities h3,
+.trip-details-score h3 {
+  margin: 0 0 12px;
+  font-size: 15px;
+}
+
+.trip-details-activities-status {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--tp-text-muted);
+}
+
+.trip-details-activities-error {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+
+.trip-details-activities-retry {
+  border: 1px solid var(--tp-border);
+  background: var(--tp-surface);
+  color: var(--tp-text);
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-weight: 600;
+}
+
+.trip-details-activity-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 10px;
+}
+
+.trip-details-activity-card {
+  padding: 12px 14px;
+  border: 1px solid var(--tp-border);
+  border-radius: 14px;
+  background: var(--tp-surface);
+}
+
+.trip-details-activity-name,
+.trip-details-activity-meta {
+  margin: 0;
+}
+
+.trip-details-activity-name {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.trip-details-activity-meta {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--tp-text-muted);
+  line-height: 1.4;
+}
+
 .leaflet-container {
   font-family: inherit;
 }

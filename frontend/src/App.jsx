@@ -1248,6 +1248,8 @@ export default function App() {
             isSaved={Boolean(detailsTrip && savedIds.includes(detailsTrip.id))}
             onToggleSaved={handleToggleSaved}
             onClose={handleCloseDetails}
+            moods={parsedPreferences?.moods}
+            activitiesEnabled={splitRight}
           />
         )}
         {showMap && (
@@ -1278,6 +1280,8 @@ export default function App() {
           onClose={handleCloseDetails}
           isSaved={Boolean(detailsTrip && savedIds.includes(detailsTrip.id))}
           onToggleSaved={handleToggleSaved}
+          moods={parsedPreferences?.moods}
+          activitiesEnabled={isNarrow}
         />
       )}
     </div>

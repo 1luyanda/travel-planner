@@ -9,6 +9,8 @@ export default function TripDetailsDrawer({
   onClose,
   isSaved = false,
   onToggleSaved,
+  moods,
+  activitiesEnabled = false,
 }) {
   const generatedTitleId = useId()
   const titleId = generatedTitleId
@@ -84,7 +86,12 @@ export default function TripDetailsDrawer({
           closeRef={closeRef}
         />
         <div className="drawer-body">
-          <TripDetailsContent destination={destination} titleId={titleId} />
+          <TripDetailsContent
+            destination={destination}
+            titleId={titleId}
+            moods={moods}
+            activitiesEnabled={activitiesEnabled}
+          />
         </div>
       </aside>
     </div>
