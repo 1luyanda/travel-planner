@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import DestinationCard from '../components/DestinationCard'
-import { explanationView } from './plannerFlow'
 
 const destination = {
   id: 'ZAG-ROM-2026-09-18',
@@ -25,17 +24,19 @@ const destination = {
 }
 
 describe('DestinationCard explanations', () => {
-  it('renders the backend summary and flight dates without evidence bullets', () => {
+  it('renders trip fact bullets and keeps the LLM summary off the card', () => {
     const html = renderToStaticMarkup(
       <DestinationCard destination={destination} rank={1} previousRank={null} />,
     )
-    expect(html).toContain('Rome stays within budget and is a short hop from Zagreb.')
+    expect(html).not.toContain('Rome stays within budget and is a short hop from Zagreb.')
     expect(html).toContain('Outbound:')
     expect(html).toContain('Inbound:')
-    expect(html).not.toContain('<ul')
+    expect(html).toContain('Direct')
+    expect(html).toContain('Total flight time:')
+    expect(html).toContain('27.8°C avg max')
+    expect(html).toContain('<ul')
     expect(html).not.toMatch(/Weighted score favours/i)
     expect(html).not.toMatch(/ranked in the browser/i)
-    expect(explanationView(destination).summary).toBe(destination.explanation.summary)
   })
 
   it('shows a destination photo with alt text and lazy loading', () => {

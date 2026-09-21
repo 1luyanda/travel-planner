@@ -82,7 +82,30 @@ export function cityTone(city = '') {
   return hash
 }
 
-/** Compact facts line from grounded fields only. */
+/** Labeled fact bullets from grounded fields only. */
+export function tripFactItems(destination = {}) {
+  const flight = destination.flight || {}
+  const weather = destination.weather || {}
+  const outboundDate = formatDate(flight.departure_at)
+  const inboundDate = formatDate(flight.return_at)
+  const total = formatDuration(flight.duration_minutes)
+  const temperature = formatTemperature(weather.average_max_temperature_c)
+  const rain = formatPrecipitation(weather.average_precipitation_probability_percent)
+  const sunshine = weather.average_sunshine_hours
+  const sunshineLabel =
+    sunshine == null || Number.isNaN(Number(sunshine)) ? null : `${Number(sunshine)}h sunshine`
+
+  return [
+    outboundDate ? `Outbound: ${outboundDate}` : null,
+    inboundDate ? `Inbound: ${inboundDate}` : null,
+    formatStops(flight.outbound_stops),
+    total ? `Total flight time: ${total}` : null,
+    temperature ? `${temperature} avg max` : null,
+    rain ? `${rain} rain` : null,
+    sunshineLabel,
+  ].filter(Boolean)
+}
+
 export function tripFactsLine(destination = {}) {
   const flight = destination.flight || {}
   const weather = destination.weather || {}

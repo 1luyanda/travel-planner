@@ -160,12 +160,6 @@ button:disabled {
   margin-bottom: 12px;
 }
 
-.trip-details-notice {
-  margin: 0 0 16px;
-  font-size: 13px;
-  color: var(--tp-text-muted);
-}
-
 .trip-details-header h2,
 .trip-details-header p,
 .eyebrow {
@@ -183,6 +177,11 @@ button:disabled {
 }
 
 .icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  line-height: 1;
   border: 1px solid var(--tp-border);
   background: var(--tp-surface);
   color: var(--tp-text);
@@ -190,8 +189,23 @@ button:disabled {
   padding: 8px 12px;
 }
 
+.icon-button svg {
+  display: block;
+  flex-shrink: 0;
+}
+
 .icon-button:hover {
   background: var(--tp-selected);
+}
+
+.icon-button[aria-pressed="true"] {
+  color: var(--tp-saved);
+  border-color: var(--tp-saved-border);
+  background: var(--tp-saved-bg);
+}
+
+.icon-button[aria-pressed="true"]:hover {
+  background: var(--tp-saved-bg);
 }
 
 .trip-details-summary {

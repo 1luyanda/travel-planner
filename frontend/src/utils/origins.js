@@ -71,7 +71,3 @@ export function shouldClearOriginSelection(selected, inputText) {
   if (!selected) return false
   return inputText.trim() !== formatOriginLabel(selected).trim()
 }
-
-export function snapshotHint() {
-  return 'Stored travel data. Fares are the latest available snapshot — not live or bookable.'
-}

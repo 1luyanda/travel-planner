@@ -5,9 +5,9 @@ import {
   displayValue,
   formatDate,
   formatPrice,
-  tripDatesLine,
+  tripFactItems,
 } from '../utils/format'
-import { backendScoreItems, explanationView } from '../utils/plannerFlow'
+import { backendScoreItems } from '../utils/plannerFlow'
 import styles from '../workspace.module.css'
 
 export default function DestinationCard({
@@ -28,8 +28,7 @@ export default function DestinationCard({
   const country = destination.country || {}
   const moved = previousRank && previousRank !== rank
   const breakdown = backendScoreItems(destination)
-  const { summary } = explanationView(destination)
-  const tripDates = tripDatesLine(flight)
+  const facts = tripFactItems(destination)
   const displayRank = destination.rank || rank
 
   return (
@@ -85,8 +84,13 @@ export default function DestinationCard({
           <p className={styles.savedAt}>Saved {formatDate(destination.savedAt)}</p>
         )}
         {moved && <p className={styles.movement}>Moved from #{previousRank}</p>}
-        {tripDates && <p className={styles.facts}>{tripDates}</p>}
-        {summary && <p className={styles.reason}>{summary}</p>}
+        {facts.length > 0 && (
+          <ul className={styles.evidence}>
+            {facts.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        )}
 
         {breakdown.length > 0 && (
           <details className={styles.why}>

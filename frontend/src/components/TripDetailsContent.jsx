@@ -17,7 +17,6 @@ import { formatOriginLabel } from '../utils/origins'
 import { backendScoreItems, uniqueExplanationView } from '../utils/plannerFlow'
 import TripDetailsActivities from './TripDetailsActivities'
 
-export const SNAPSHOT_NOTICE = 'Stored snapshot data — not live or bookable'
 export const DETAILS_EMPTY_MESSAGE = 'Select a trip to view its details.'
 
 function Row({ label, value }) {
@@ -120,8 +119,6 @@ export default function TripDetailsContent({
         className="trip-details-photo"
         sizes="420px"
       />
-
-      <p className="trip-details-notice">{SNAPSHOT_NOTICE}</p>
 
       {summary && <p className="trip-details-summary">{summary}</p>}
       {evidence.length > 0 && (

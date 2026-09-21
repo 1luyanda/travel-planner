@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import TripDetailsPanel from '../components/TripDetailsPanel'
-import { DETAILS_EMPTY_MESSAGE, SNAPSHOT_NOTICE } from '../components/TripDetailsContent'
+import { DETAILS_EMPTY_MESSAGE } from '../components/TripDetailsContent'
 
 const rome = {
   id: 'ZAG-ROM-2026-09-18',
@@ -39,7 +39,7 @@ describe('TripDetailsPanel', () => {
     const html = renderToStaticMarkup(
       <TripDetailsPanel destination={rome} onClose={() => {}} isSaved={false} onToggleSaved={() => {}} />,
     )
-    expect(html).toContain(SNAPSHOT_NOTICE)
+    expect(html).not.toMatch(/snapshot|not live or bookable/i)
     expect(html).toContain('Rome stays within budget.')
     expect(html).toContain('65 EUR')
     expect(html).toContain('Close')

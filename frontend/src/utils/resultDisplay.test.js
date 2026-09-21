@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { NOT_AVAILABLE, displayValue, formatPrice, tripFactsLine } from './format'
+import { NOT_AVAILABLE, displayValue, formatPrice, tripFactItems, tripFactsLine } from './format'
 import { destinationPhotoAlt, resolveDestinationPhoto } from './photos'
 import { buildMapMarkers } from './mapMarkers'
 
@@ -10,6 +10,21 @@ describe('displayValue', () => {
     expect(displayValue('Rome')).toBe('Rome')
     expect(formatPrice({})).toBeNull()
     expect(tripFactsLine({ flight: {}, weather: {} })).toBe('')
+    expect(tripFactItems({ flight: {}, weather: {} })).toEqual([])
+    expect(tripFactItems({
+      flight: {
+        outbound_stops: 0,
+        duration_minutes: 170,
+        outbound_duration_minutes: 85,
+        return_duration_minutes: 85,
+      },
+      weather: { average_max_temperature_c: 27.8, average_precipitation_probability_percent: 13 },
+    })).toEqual([
+      'Direct',
+      'Total flight time: 2h 50m',
+      '27.8°C avg max',
+      '13% rain',
+    ])
   })
 })
 
