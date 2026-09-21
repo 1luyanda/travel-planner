@@ -4,10 +4,20 @@ export const ROUTES = {
   home: '/',
   planner: '/planner',
   docs: '/docs',
+  login: '/login',
+  signup: '/signup',
 }
 
 export function isPlannerPath(pathname) {
   return pathname === ROUTES.planner || pathname === ROUTES.docs
+}
+
+export function isAuthPath(pathname) {
+  return pathname === ROUTES.login || pathname === ROUTES.signup
+}
+
+export function isAppPath(pathname) {
+  return pathname === ROUTES.home || isPlannerPath(pathname) || isAuthPath(pathname)
 }
 
 function readSnapshot() {

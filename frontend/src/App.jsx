@@ -14,6 +14,8 @@ import FiltersPopover from './components/FiltersPopover'
 import TripDetailsDrawer from './components/TripDetailsDrawer'
 import TripDetailsPanel from './components/TripDetailsPanel'
 import LandingPage from './components/LandingPage'
+import LoginPage from './components/LoginPage'
+import SignupPage from './components/SignupPage'
 import {
   deleteSavedFlight,
   fetchSavedFlights,
@@ -72,7 +74,7 @@ import {
   showPlannerConversation,
   showPlannerFilters,
 } from './utils/savedFlights'
-import { AppLink, ROUTES, isPlannerPath, useRoute } from './utils/routes.jsx'
+import { AppLink, ROUTES, isAppPath, isAuthPath, isPlannerPath, useRoute } from './utils/routes.jsx'
 import styles from './workspace.module.css'
 
 const initialForm = INITIAL_PLANNER_FORM
@@ -231,14 +233,18 @@ export default function App() {
   }, [userId])
 
   useEffect(() => {
-    if (path !== ROUTES.home && !isPlannerPath(path)) {
+    if (!isAppPath(path)) {
       navigate(ROUTES.home, { replace: true })
     }
   }, [navigate, path])
 
   useEffect(() => {
-    if (!authLoading && isPlannerPath(path) && !user) {
+    if (authLoading) return
+    if (isPlannerPath(path) && !user) {
       navigate(ROUTES.home, { replace: true })
+    }
+    if (isAuthPath(path) && user) {
+      navigate(ROUTES.planner, { replace: true })
     }
   }, [authLoading, navigate, path, user])
 
@@ -1010,6 +1016,14 @@ export default function App() {
       nextForm: item.filters || form,
       origin,
     })
+  }
+
+  if (path === ROUTES.login) {
+    return <LoginPage />
+  }
+
+  if (path === ROUTES.signup) {
+    return <SignupPage />
   }
 
   if (!isPlannerPath(path)) {

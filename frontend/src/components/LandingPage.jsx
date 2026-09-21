@@ -22,8 +22,12 @@ export default function LandingPage() {
           Travel <em>Planner</em>
         </AppLink>
         <nav className={styles.nav} aria-label="Landing">
-          <a href="#how-it-works">How it works</a>
-          <a href="#explore-destinations">Explore destinations</a>
+          <a className={styles.navText} href="#how-it-works">
+            How it works
+          </a>
+          <a className={styles.navText} href="#explore-destinations">
+            Explore destinations
+          </a>
           <AppLink to={ROUTES.planner} className={styles.startBtn}>
             Start planning
           </AppLink>
