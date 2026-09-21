@@ -16,9 +16,11 @@ from backend.contracts.flight_dates import FlightDateMetadata
 from backend.contracts.recommendations import RecommendationItem
 from backend.models.explanation import DestinationExplanation
 from backend.models.trip_request import TripRequest
+from backend.repositories import RepositoryError
 from backend.services.candidates import CandidateService
 from backend.services.explanations import explain_ranked_trips
 from backend.services.feedback import interpret_feedback
+from backend.services.hotels import HotelService
 from backend.services.llm import (
     LLMClient,
     LLMConfigurationError,
@@ -42,9 +44,11 @@ class RecommendationService:
         self,
         candidate_service: CandidateService,
         llm_client: LLMClient | None = None,
+        hotel_service: HotelService | None = None,
     ) -> None:
         self._candidates = candidate_service
         self._llm_client = llm_client
+        self._hotels = hotel_service
 
     async def recommend(self, body: RecommendRequest) -> RecommendationResponse:
         parsed = parse_request(
@@ -159,12 +163,26 @@ class RecommendationService:
             item.destination_id: item.model_dump(include=set(FlightDateMetadata.model_fields))
             for item in prepared.candidates
         }
+        recommended_ids = {item.destination_id for item in recommendations}
+        recommended_flights = [
+            flight for flight in prepared.flights if flight.id in recommended_ids
+        ]
+        hotel_ids: dict[str, str | None] = {}
+        if self._hotels is not None and recommended_flights:
+            try:
+                hotel_ids = await self._hotels.resolve_destination_ids(recommended_flights)
+            except RepositoryError:
+                # Hotel enrichment must not prevent an otherwise valid trip search.
+                issues.append("Hotel destination lookup is temporarily unavailable.")
         recommendations = [
-            RecommendationItem(**item.model_dump(), **dates_by_id[item.destination_id])
+            RecommendationItem(
+                **item.model_dump(),
+                **dates_by_id[item.destination_id],
+                hotel_destination_id=hotel_ids.get(item.destination_id),
+            )
             for item in recommendations
         ]
         issues.extend(explain_issues)
-        recommended_ids = {item.destination_id for item in recommendations}
         return RecommendationResponse(
             status="ready",
             request=trip,
@@ -172,11 +190,7 @@ class RecommendationService:
             origin=origin,
             origin_id=origin.id,
             recommendations=recommendations,
-            flights=[
-                flight
-                for flight in prepared.flights
-                if flight.id in recommended_ids
-            ],
+            flights=recommended_flights,
             rejected=list(prepared.rejected),
             intents=list(intents or []),
             changes=list(changes or []),

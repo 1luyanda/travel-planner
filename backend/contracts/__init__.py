@@ -2,6 +2,7 @@
 
 from .activities import ActivitiesRequest, ActivitiesResponse, ActivityItem
 from .auth import AuthResponse, LoginRequest, RegisterRequest
+from .hotels import HotelItem, HotelsResponse
 from .candidates import (
     CandidateItem,
     CandidateResponse,
@@ -30,6 +31,8 @@ __all__ = [
     "FlightItem",
     "FlightListResponse",
     "FlightQuery",
+    "HotelItem",
+    "HotelsResponse",
     "OriginItem",
     "RankingPreferencesBody",
     "RecommendRequest",

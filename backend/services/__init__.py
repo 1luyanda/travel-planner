@@ -3,6 +3,7 @@
 from .candidates import CandidateService
 from .explanations import RankedTripLike, explain_ranked_trips
 from .feedback import interpret_feedback
+from .hotels import HotelService
 from .llm import (
     LLMClient,
     create_llm_client_from_env,
@@ -20,6 +21,7 @@ from .users import (
 
 __all__ = [
     "CandidateService",
+    "HotelService",
     "LLMClient",
     "PlacesService",
     "RankedTripLike",
