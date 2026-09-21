@@ -19,7 +19,7 @@ class RankingPreferencesBody(BaseModel):
     """Optional ranking weights supplied by the ranking owner or frontend.
 
     Omitted fields keep Ivan's RankingPreferences defaults. On refine,
-    recognized intents such as cheaper or warmer replace these via
+    recognized intents such as cheaper or warmer adjust these via
     ``preferences_from_intents``.
     """
 
@@ -27,6 +27,9 @@ class RankingPreferencesBody(BaseModel):
     weather_weight: float | None = Field(default=None, ge=0, le=1)
     changeovers_weight: float | None = Field(default=None, ge=0, le=1)
     duration_weight: float | None = Field(default=None, ge=0, le=1)
+    precipitation_weight: float | None = Field(default=None, ge=0, le=1)
+    sunshine_weight: float | None = Field(default=None, ge=0, le=1)
+    temperature_direction: Literal["lower_is_better", "higher_is_better"] = "higher_is_better"
 
 
 class RecommendRequest(BaseModel):
@@ -66,3 +69,5 @@ class RecommendationResponse(DateFallbackSummary):
     issues: list[str] = Field(default_factory=list)
     clarification_questions: list[str] = Field(default_factory=list)
     data_source: str | None = None
+    # Effective state for stateless refinement; old consumers can ignore it.
+    ranking_preferences: RankingPreferencesBody | None = None

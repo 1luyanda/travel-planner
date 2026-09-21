@@ -32,6 +32,7 @@ import {
   INITIAL_PLANNER_FORM,
   assistantTextForResponse,
   buildClarificationRecommendPayload,
+  buildFilterRecommendPayload,
   buildRecommendPayload,
   composerPlaceholderFor,
   createClarificationContext,
@@ -39,6 +40,7 @@ import {
   describePlannerDates,
   formFieldsForClarification,
   formFieldsFromPlanner,
+  formForSelectedOrigin,
   formPatchFromTripRequest,
   isClarificationQuestionText,
   localClarificationQuestions,
@@ -283,7 +285,12 @@ export default function App() {
     }
   }, [pendingSelectId, results, visibleDestinations, view])
 
-  function invalidateResults() {
+  function invalidateResults(nextOrigin = selectedOrigin) {
+    searchAbortRef.current?.abort()
+    searchAbortRef.current?.dispose?.()
+    searchAbortRef.current = null
+    searchSeqRef.current += 1
+    const nextForm = formForSelectedOrigin(nextOrigin)
     setHasSearched(false)
     setResults([])
     setRejected([])
@@ -305,18 +312,21 @@ export default function App() {
     setFiltersOpen(false)
     setViewportMode('bounds')
     setView('explore')
+    setLoading(false)
+    setRefining(false)
+    setForm(nextForm)
+    setSearchSnapshot(nextForm)
   }
 
   function handleOriginChange(origin) {
     const same = origin?.originId && origin.originId === selectedOrigin?.originId
     setSelectedOrigin(origin)
-    setForm((current) => ({
-      ...current,
-      originId: origin?.originId || '',
-      originIata: origin?.iata || '',
-    }))
     setOriginError('')
-    if (hasSearched && !same) invalidateResults()
+    if (hasSearched && !same) {
+      invalidateResults(origin)
+      return
+    }
+    setForm((current) => formForSelectedOrigin(origin, current))
   }
 
   async function enrichMappedResults(mapped, signal, seq) {
@@ -360,8 +370,12 @@ export default function App() {
       userMessage = null,
     } = options
     const typed = (userText || '').trim()
-    const apiText = mode === 'filters' ? pendingSearchText || typed : typed
-    if (mode !== 'clarify' && !apiText) return
+    const apiText = mode === 'filters' ? '' : typed
+    if (mode === 'filters') {
+      if (!formFieldsFromPlanner(nextForm, origin)?.origin) return
+    } else if (mode !== 'clarify' && !apiText) {
+      return
+    }
     if (mode === 'clarify' && !typed) return
 
     const seq = ++searchSeqRef.current
@@ -478,7 +492,9 @@ export default function App() {
                 answer: typed,
               }),
             })
-          : buildRecommendPayload(apiText, nextForm, origin)
+          : mode === 'filters'
+            ? buildFilterRecommendPayload(nextForm, origin)
+            : buildRecommendPayload(apiText, nextForm, origin)
 
       const outcome = await runPlannerRequest({
       request,
@@ -804,6 +820,7 @@ export default function App() {
     }
     setForm(next)
     if (!hasSearched || !pendingSearchText || busy || clarifyKind) return
+    // Re-search from the form only. Reusing the original prompt fights the new dates.
     runRecommend(pendingSearchText, {
       nextForm: next,
       mode: 'filters',
@@ -1196,8 +1213,8 @@ export default function App() {
             />
           </div>
           <p id="trip-date-hint" className={styles.dateHint}>
-            Form dates are used when filled. Leave them blank to use dates from your message. If
-            they disagree, the planner will ask which to keep.
+            Form dates are used when filled. Leave them blank to use dates from your message. Dates
+            you type in the message take precedence over the date fields.
           </p>
           {dateError ? (
             <p id="trip-date-error" className={styles.originError} role="alert">

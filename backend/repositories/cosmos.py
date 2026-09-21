@@ -10,7 +10,7 @@ from azure.cosmos.exceptions import CosmosHttpResponseError
 from backend.config import Settings
 from backend.contracts import FlightQuery, OriginItem
 from backend.models.user import UserDocument
-from backend.models.user_flight import UserSavedFlightsDocument
+from backend.models.user_flight import SavedFlightSnapshot, UserSavedFlightsDocument
 
 
 ORIGINS_CONTAINER = "origins"
@@ -405,32 +405,58 @@ class CosmosDestinationRepository:
             raise RepositoryError("Saved flight lookup failed.") from error
         return UserSavedFlightsDocument.model_validate(item)
 
+    async def list_user_saved_flights(
+        self,
+        user_id: str,
+    ) -> UserSavedFlightsDocument | None:
+        """Return the authenticated user's saved-flight document."""
+
+        return await self._read_user_saved_flights(user_id)
+
     async def list_user_saved_flight_ids(self, user_id: str) -> list[str]:
         """Return the authenticated user's saved flight IDs, newest first."""
 
         document = await self._read_user_saved_flights(user_id)
-        return list(document.flight_ids) if document else []
+        return list(document.all_flight_ids()) if document else []
 
-    async def add_user_saved_flight(self, user_id: str, flight_id: str) -> list[str]:
-        """Add a flight ID to the user's list. Idempotent."""
+    async def add_user_saved_flight(
+        self,
+        user_id: str,
+        snapshot: SavedFlightSnapshot,
+    ) -> UserSavedFlightsDocument:
+        """Add a flight snapshot to the user's list. Idempotent by flight_id."""
 
         container = self._require_user_flights()
         document = await self._read_user_saved_flights(user_id)
         if document is None:
-            created = UserSavedFlightsDocument(id=user_id, flight_ids=[flight_id])
+            created = UserSavedFlightsDocument(
+                id=user_id,
+                flights=[snapshot],
+                flight_ids=[snapshot.flight_id],
+            )
             try:
                 item = await container.create_item(body=created.model_dump(mode="json"))
             except CosmosHttpResponseError as error:
                 if error.status_code == 409:
-                    return await self.add_user_saved_flight(user_id, flight_id)
+                    return await self.add_user_saved_flight(user_id, snapshot)
                 raise RepositoryError("Saved flight create failed.") from error
-            return UserSavedFlightsDocument.model_validate(item).flight_ids
+            return UserSavedFlightsDocument.model_validate(item)
 
-        if flight_id in document.flight_ids:
-            return list(document.flight_ids)
+        if any(item.flight_id == snapshot.flight_id for item in document.flights):
+            return document
 
+        flights = [snapshot, *document.flights]
+        leftover = [
+            flight_id
+            for flight_id in document.flight_ids
+            if flight_id != snapshot.flight_id
+            and flight_id not in {item.flight_id for item in flights}
+        ]
         updated = document.model_copy(
-            update={"flight_ids": [flight_id, *document.flight_ids]}
+            update={
+                "flights": flights,
+                "flight_ids": [item.flight_id for item in flights] + leftover,
+            }
         )
         try:
             item = await container.replace_item(
@@ -439,22 +465,47 @@ class CosmosDestinationRepository:
             )
         except CosmosHttpResponseError as error:
             if error.status_code == 404:
-                return await self.add_user_saved_flight(user_id, flight_id)
+                return await self.add_user_saved_flight(user_id, snapshot)
             raise RepositoryError("Saved flight update failed.") from error
-        return UserSavedFlightsDocument.model_validate(item).flight_ids
+        return UserSavedFlightsDocument.model_validate(item)
+
+    async def replace_user_saved_flights(
+        self,
+        document: UserSavedFlightsDocument,
+    ) -> UserSavedFlightsDocument:
+        """Replace the user's saved-flight document after a snapshot refresh."""
+
+        container = self._require_user_flights()
+        try:
+            item = await container.replace_item(
+                item=document.id,
+                body=document.model_dump(mode="json"),
+            )
+        except CosmosHttpResponseError as error:
+            if error.status_code == 404:
+                return document
+            raise RepositoryError("Saved flight update failed.") from error
+        return UserSavedFlightsDocument.model_validate(item)
 
     async def remove_user_saved_flight(self, user_id: str, flight_id: str) -> None:
-        """Remove a flight ID from the authenticated user's list only."""
+        """Remove a saved snapshot from the authenticated user's list only."""
 
         container = self._require_user_flights()
         document = await self._read_user_saved_flights(user_id)
-        if document is None or flight_id not in document.flight_ids:
+        if document is None:
+            return
+        remaining = [
+            item for item in document.flights if item.flight_id != flight_id
+        ]
+        leftover = [
+            item for item in document.all_flight_ids() if item != flight_id
+        ]
+        if remaining == document.flights and leftover == document.all_flight_ids():
             return
         updated = document.model_copy(
             update={
-                "flight_ids": [
-                    item for item in document.flight_ids if item != flight_id
-                ]
+                "flights": remaining,
+                "flight_ids": leftover,
             }
         )
         try:

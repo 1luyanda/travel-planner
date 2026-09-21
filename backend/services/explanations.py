@@ -184,6 +184,8 @@ def _catalog_for_trip(
     ranking_weights: Mapping[str, float] | None,
 ) -> list[EvidenceReference]:
     destination_id = str(trip.destination_id)
+    colder = getattr(trip, "temperature_direction", "higher_is_better") == "lower_is_better"
+    preferred_temperature = "lower" if colder else "higher"
     items: list[EvidenceReference] = []
 
     def add(code: str, statement: str) -> None:
@@ -214,7 +216,7 @@ def _catalog_for_trip(
         "relative_weather_score",
         (
             f"Relative weather score is {_score(trip.weather_score)}. "
-            "The current ranking treats higher maximum temperature as better."
+            f"The current ranking treats {preferred_temperature} maximum temperature as better."
         ),
     )
     add(
@@ -305,11 +307,17 @@ def _catalog_for_trip(
             "warm_preference_ranking_note",
             (
                 f"The request prefers {request.weather_preference}. "
-                "The current ranking gives a higher weather score to higher "
+                f"The current ranking gives a higher weather score to {preferred_temperature} "
                 "maximum temperatures; this does not prove local conditions."
             ),
         )
-    if weather in COOL_WEATHER_TERMS:
+    if weather in COOL_WEATHER_TERMS and colder:
+        add(
+            "cool_preference_ranking_note",
+            "The current ranking prefers lower maximum temperatures; "
+            "this is a relative score, not a guarantee of cool local conditions.",
+        )
+    elif weather in COOL_WEATHER_TERMS:
         add(
             "cool_preference_ranking_note",
             (
@@ -501,6 +509,9 @@ def _build_explanations(
                 stops_score=float(trip.stops_score),
                 duration_score=float(trip.duration_score),
                 final_score=float(trip.final_score),
+                precipitation_score=float(getattr(trip, "precipitation_score", 0.0)),
+                sunshine_score=float(getattr(trip, "sunshine_score", 0.0)),
+                temperature_direction=getattr(trip, "temperature_direction", "higher_is_better"),
                 summary=summary,
                 evidence=evidence,
                 issues=row_issues,

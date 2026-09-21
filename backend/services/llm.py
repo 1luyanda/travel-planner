@@ -13,8 +13,8 @@ Signature:
 
 Arguments:
     user_text: Free-text travel request. Extracted only from this string.
-    form_fields: Optional explicit form values. These are preserved.
-                 If they conflict with the text, status is needs_input.
+    form_fields: Optional explicit form values. These fill fields the
+                 message did not set. If both set a field, the message wins.
     reference_date: Date used to resolve relative phrases such as "next week".
                     Defaults to today. Tests should pass a fixed date.
     llm_client: Injectable model client. Tests pass a fake. Production should
@@ -27,7 +27,6 @@ Return shape (`ParseRequestResult`):
     preferences: ExtractedPreferences (partial or complete)
     issues: Validation or model problems
     clarification_questions: Questions for the user when input is missing
-                             or conflicting
 
 LLM behaviour:
     One extraction attempt, then one repair attempt if the model output is

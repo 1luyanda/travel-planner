@@ -231,7 +231,7 @@ def test_partial_or_missing_dates_do_not_trigger_fallback(dates):
 
 @pytest.mark.parametrize("use_refine", [False, True])
 @pytest.mark.parametrize("explanation_available", [False, True])
-def test_recommend_and_refine_keep_exact_first_and_expose_metadata(use_refine, explanation_available):
+def test_recommend_and_refine_keep_score_order_and_expose_metadata(use_refine, explanation_available):
     repository = FakeRepository([
         flight("exact", price_eur=95, temp_max_c=15),
         flight("near", 0, 1, price_eur=80),
@@ -252,16 +252,26 @@ def test_recommend_and_refine_keep_exact_first_and_expose_metadata(use_refine, e
     else:
         result = asyncio.run(service.recommend(RecommendRequest(form_fields=trip.model_dump(mode="json"))))
     assert result.status == "ready"
-    assert [item.destination_id for item in result.recommendations] == ["exact", "near", "far"]
+    # The best-scoring alternative must lead even though retrieval assembled
+    # exact, near, far. The LLM payload also uses that non-score order above.
+    assert [item.destination_id for item in result.recommendations] == ["far", "near", "exact"]
     assert [item.rank for item in result.recommendations] == [1, 2, 3]
-    assert result.recommendations[-1].final_score > result.recommendations[0].final_score
+    scores = [item.final_score for item in result.recommendations]
+    assert scores == sorted(scores, reverse=True)
+    assert scores[0] > scores[1] > scores[2]
     assert result.exact_match_count == 1
     assert result.fallback_count == 2
     assert result.flexible_date_fallback_used is True
-    assert result.recommendations[0].is_flexible_date_option is False
-    assert result.recommendations[1].actual_return_date == RETURN + timedelta(days=1)
-    assert result.recommendations[1].requested_return_date == RETURN
-    assert result.recommendations[1].is_flexible_date_option is True
+    by_id = {item.destination_id: item for item in result.recommendations}
+    assert by_id["exact"].is_flexible_date_option is False
+    assert by_id["near"].is_flexible_date_option is True
+    assert by_id["far"].is_flexible_date_option is True
+    for identifier, departure_delta, return_delta in (("exact", 0, 0), ("near", 0, 1), ("far", 2, 2)):
+        item = by_id[identifier]
+        assert item.requested_departure_date == DEPARTURE
+        assert item.requested_return_date == RETURN
+        assert item.actual_departure_date == DEPARTURE + timedelta(days=departure_delta)
+        assert item.actual_return_date == RETURN + timedelta(days=return_delta)
     assert bool(result.recommendations[0].summary) == explanation_available
     assert RecommendationResponse.model_validate_json(result.model_dump_json()) == result
 

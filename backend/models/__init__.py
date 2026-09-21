@@ -14,7 +14,7 @@ from backend.models.trip_request import (
     TripRequest,
 )
 from backend.models.user import UserDocument, UserResponse
-from backend.models.user_flight import UserSavedFlightsDocument
+from backend.models.user_flight import SavedFlightSnapshot, UserSavedFlightsDocument
 
 __all__ = [
     "DestinationExplanation",
@@ -29,4 +29,5 @@ __all__ = [
     "UserDocument",
     "UserResponse",
     "UserSavedFlightsDocument",
+    "SavedFlightSnapshot",
 ]

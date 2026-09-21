@@ -139,7 +139,7 @@ def test_explicit_form_fields_are_preserved():
     assert result.request.moods == ["relaxing"]
 
 
-def test_conflicting_form_and_text_asks_for_clarification():
+def test_conflicting_form_and_text_keeps_the_message():
     result = _parse(
         "From LIS, 21-25 September 2026, under EUR 400.",
         [
@@ -151,15 +151,23 @@ def test_conflicting_form_and_text_asks_for_clarification():
                 "currency": "EUR",
             }
         ],
-        form_fields={"origin": "ZAG"},
+        form_fields={
+            "origin": "ZAG",
+            "departure_date": "2026-09-30",
+            "return_date": "2026-09-30",
+            "budget": 100,
+            "currency": "EUR",
+        },
     )
 
-    assert result.status == "needs_input"
-    assert result.request is None
-    assert any("disagree about origin" in issue for issue in result.issues)
-    assert result.clarification_questions
-    assert result.preferences is not None
-    assert result.preferences.origin == "LIS"
+    assert result.status == "ready"
+    assert result.request is not None
+    assert result.request.origin == "LIS"
+    assert result.request.departure_date == date(2026, 9, 21)
+    assert result.request.return_date == date(2026, 9, 25)
+    assert result.request.budget == 400
+    assert not any("disagree" in issue for issue in result.issues)
+    assert not any("Which should we use" in question for question in result.clarification_questions)
 
 
 def test_invalid_model_output_is_repaired_on_second_attempt():
