@@ -6,7 +6,7 @@ from collections.abc import Iterable
 from math import fsum, isclose
 from typing import TYPE_CHECKING
 
-from .ranking import RankingPreferences
+from .ranking import CRITERIA, RankingPreferences
 
 if TYPE_CHECKING:
     from backend.models.feedback import RankingIntent
@@ -15,6 +15,8 @@ if TYPE_CHECKING:
 _INTENT_CRITERIA = {
     "stronger_price_preference": "price",
     "prefer_warmer": "weather",
+    "prefer_cooler": "weather",
+    "prefer_colder": "weather",  # Public policy alias for the existing AI code.
 }
 _ADJUSTMENT_STEP = 0.10
 _MIN_WEIGHT = 0.05
@@ -64,7 +66,7 @@ def preferences_from_intents(
 
     Accept semantic codes or ``interpret_feedback(...).intents`` directly.
     Structured intents must target ``ranking_preferences``; hard constraints,
-    unsupported meanings (including cooler weather), and unknown codes are
+    unsupported targets and unknown codes are
     ignored. No fewer-changeovers or shorter-flight codes exist in the current
     AI contract.
 
@@ -78,6 +80,10 @@ def preferences_from_intents(
     Legacy relative weights are normalized and bounded before adjustment.
     With no recognized intent, preserve current exactly (even legacy weights
     outside these policy bounds), or return model defaults.
+
+    Warmer/cooler set temperature direction independently of positive weight.
+    Conflicting directions in one event preserve the current direction, while
+    still increasing the temperature weight once (deduplicated by criterion).
     """
     codes = set()
     for intent in intents:
@@ -93,9 +99,8 @@ def preferences_from_intents(
     if not codes:
         return current if current is not None else RankingPreferences()
 
-    weights = _redistribute_weights(
-        (current if current is not None else RankingPreferences()).normalized_weights()
-    )
+    current = current if current is not None else RankingPreferences()
+    weights = _redistribute_weights(current.normalized_weights())
     targets = {_INTENT_CRITERIA[code] for code in codes}
     increases = {
         field: min(_ADJUSTMENT_STEP, _MAX_WEIGHT - weight)
@@ -111,9 +116,12 @@ def preferences_from_intents(
         not _MIN_WEIGHT <= weight <= _MAX_WEIGHT for weight in adjusted.values()
     ):
         raise ValueError("Adjusted ranking weights must sum to one and respect policy bounds.")
+    warmer = "prefer_warmer" in codes
+    colder = bool(codes & {"prefer_colder", "prefer_cooler"})
+    direction = current.temperature_direction
+    if warmer != colder:
+        direction = "higher_is_better" if warmer else "lower_is_better"
     return RankingPreferences(
-        price_weight=adjusted["price"],
-        weather_weight=adjusted["weather"],
-        changeovers_weight=adjusted["stops"],
-        duration_weight=adjusted["duration"],
+        **{criterion.weight_field: adjusted[criterion.name] for criterion in CRITERIA},
+        temperature_direction=direction,
     )

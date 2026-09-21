@@ -248,10 +248,10 @@ class RefineServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_price_and_weather_feedback_change_order_using_dynamic_weights(self) -> None:
         cases = [
             ("Cheaper", "stronger_price_preference", 1, 0,
-             RankingPreferences(0.40, 9 / 35, 6 / 35, 6 / 35),
+             RankingPreferences(0.35, 13 / 75, 13 / 75, 0.13, 13 / 150, 13 / 150),
              [MALTA_ID, ROME_ID, LISBON_ID], [ROME_ID, MALTA_ID, LISBON_ID]),
             ("Warmer", "prefer_warmer", 0, 1,
-             RankingPreferences(9 / 35, 0.40, 6 / 35, 6 / 35),
+             RankingPreferences(0.21875, 0.30, 0.175, 0.13125, 0.0875, 0.0875),
              [ROME_ID, MALTA_ID, LISBON_ID], [MALTA_ID, ROME_ID, LISBON_ID]),
         ]
         for text, code, cheap_stops, warm_stops, expected, before, after in cases:
@@ -281,7 +281,10 @@ class RefineServiceTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(result.status, "ready")
                     ranking.assert_called_once()
                     for field, weight in asdict(expected).items():
-                        self.assertAlmostEqual(getattr(ranking.call_args.args[1], field), weight)
+                        if field.endswith("_weight"):
+                            self.assertAlmostEqual(getattr(ranking.call_args.args[1], field), weight)
+                        else:
+                            self.assertEqual(getattr(ranking.call_args.args[1], field), weight)
                     self.assertEqual([item.code for item in result.intents], [code])
                     self.assertEqual([item.destination_id for item in result.recommendations], after)
                     self.assertGreater(
@@ -298,7 +301,7 @@ class RefineServiceTests(unittest.IsolatedAsyncioTestCase):
         ])
         current = RankingPreferences()
         trip = _trip()
-        for expected_price in (0.4, 0.5, 0.6, 0.7, 0.7, 0.7):
+        for expected_price in (0.35, 0.45, 0.55, 0.65, 0.7, 0.7):
             # The service is stateless: the caller supplies current preferences.
             body = RefineRequest(
                 text="Cheaper", request=trip,
@@ -313,8 +316,8 @@ class RefineServiceTests(unittest.IsolatedAsyncioTestCase):
             ranking.assert_called_once()
             current = ranking.call_args.args[1]
             self.assertAlmostEqual(current.price_weight, expected_price)
-            self.assertAlmostEqual(sum(asdict(current).values()), 1)
-            self.assertTrue(all(0.05 <= weight <= 0.70 for weight in asdict(current).values()))
+            self.assertAlmostEqual(sum(value for field, value in asdict(current).items() if field.endswith("_weight")), 1)
+            self.assertTrue(all(0.05 <= weight <= 0.70 for field, weight in asdict(current).items() if field.endswith("_weight")))
             self.assertEqual(data.last_query.max_price_eur, 400)
             self.assertEqual(body.model_dump(), snapshot)
             trip = result.updated_request
@@ -336,10 +339,80 @@ class RefineServiceTests(unittest.IsolatedAsyncioTestCase):
                 ),
             ))
         self.assertEqual(result.status, "ready")
-        self.assertAlmostEqual(ranking.call_args.args[1].price_weight, 0.5)
+        self.assertAlmostEqual(ranking.call_args.args[1].price_weight, 0.4 / 1.2 + 0.1)
         self.assertEqual(data.last_query.max_price_eur, 70)
         self.assertEqual(data.last_query.max_changeovers, 0)
         self.assertEqual([item.destination_id for item in result.recommendations], [ROME_ID])
+
+    async def test_colder_direction_and_six_weights_round_trip_through_refinement(self) -> None:
+        records = cosmos_records()
+        for record, temperature in zip(records, (10, 30, 20)):
+            record.update(price_eur=60, temp_max_c=temperature)
+        data = RecordingDataService()
+        data.get_destination_records = AsyncMock(return_value=records)
+        explanation = {"explanations": [
+            {"destination_id": identifier, "evidence_ids": [
+                f"{identifier}::relative_weather_score",
+                f"{identifier}::cool_preference_ranking_note",
+            ]} for identifier in (ROME_ID, MALTA_ID, LISBON_ID)
+        ]}
+        service, _ = _service([
+            _feedback_payload(prefer_cooler=True), explanation,
+            _feedback_payload(direct_flights_only=True), explanation,
+        ], data)
+        first = await service.refine(RefineRequest(text="Colder", request=_trip()))
+        self.assertEqual(first.status, "ready")
+        self.assertEqual(first.recommendations[0].destination_id, ROME_ID)
+        self.assertEqual(first.ranking_preferences.temperature_direction, "lower_is_better")
+        self.assertAlmostEqual(first.ranking_preferences.weather_weight, 0.30)
+        self.assertIn("lower maximum temperature", first.recommendations[0].summary)
+        self.assertNotIn("higher maximum temperature", first.recommendations[0].summary)
+        for item in first.recommendations:
+            self.assertEqual(item.precipitation_score, 1)
+            self.assertEqual(item.sunshine_score, 1)
+            self.assertEqual(item.temperature_direction, "lower_is_better")
+        serialized = first.model_dump(mode="json")
+        second = await service.refine(RefineRequest(
+            text="Direct flights only", request=first.updated_request,
+            ranking_preferences=RankingPreferencesBody(**serialized["ranking_preferences"]),
+        ))
+        self.assertEqual(second.ranking_preferences, first.ranking_preferences)
+        self.assertEqual([item.final_score for item in second.recommendations],
+                         [item.final_score for item in first.recommendations])
+        self.assertEqual(data.get_destination_records.call_args.args[0].max_changeovers, 0)
+
+    async def test_colder_and_old_four_weight_body_preserve_hard_filters(self) -> None:
+        service, data = _service([
+            _feedback_payload(prefer_cooler=True, direct_flights_only=True, budget=70, currency="EUR"),
+            _explain_payload(ROME_ID),
+        ])
+        body = RefineRequest(
+            text="Colder, direct flights only, my budget is now EUR 70", request=_trip(),
+            ranking_preferences=RankingPreferencesBody(
+                price_weight=0.3, weather_weight=0.3, changeovers_weight=0.2, duration_weight=0.2,
+            ),
+        )
+        snapshot = body.model_dump()
+        result = await service.refine(body)
+        self.assertEqual(result.status, "ready")
+        self.assertEqual(data.last_query.max_price_eur, 70)
+        self.assertEqual(data.last_query.max_changeovers, 0)
+        self.assertEqual([item.destination_id for item in result.recommendations], [ROME_ID])
+        self.assertEqual(result.ranking_preferences.temperature_direction, "lower_is_better")
+        self.assertAlmostEqual(result.ranking_preferences.weather_weight, 0.3 / 1.2 + 0.1)
+        self.assertEqual(result.updated_request.budget, 70)
+        self.assertEqual(body.model_dump(), snapshot)
+
+    async def test_new_scores_survive_when_explanation_is_unavailable(self) -> None:
+        service, _ = _service([_feedback_payload(prefer_cooler=True)])
+        result = await service.refine(RefineRequest(text="Colder", request=_trip()))
+        self.assertEqual(result.status, "ready")
+        self.assertTrue(result.recommendations)
+        for item in result.recommendations:
+            self.assertEqual(item.precipitation_score, 1)
+            self.assertEqual(item.sunshine_score, 1)
+            self.assertEqual(item.temperature_direction, "lower_is_better")
+            self.assertEqual(item.summary, "")
 
     async def test_constraint_only_feedback_preserves_default_or_supplied_weights(self) -> None:
         cases = [

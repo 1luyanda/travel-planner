@@ -9,6 +9,18 @@ from tests.fake_llm import FakeLLMClient
 REFERENCE = date(2026, 9, 15)
 
 
+def test_existing_cooler_ai_intent_is_now_a_ranking_preference():
+    result, original = _interpret("Colder", [_payload(prefer_cooler=True)])
+    assert result.status == "ready"
+    assert result.intents[0].code == "prefer_cooler"
+    assert result.intents[0].target == "ranking_preferences"
+    assert result.intents[0].ranking_field == "weather_weight"
+    assert result.updated_request.weather_preference == "cooler"
+    assert result.updated_request.budget == original.budget
+    assert result.issues == []
+    assert original.weather_preference == "warm"
+
+
 def _request(**overrides) -> TripRequest:
     values = {
         "origin": "ZAG",

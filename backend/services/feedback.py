@@ -313,20 +313,16 @@ def _apply_feedback(
         intents.append(
             RankingIntent(
                 code="prefer_cooler",
-                target="unsupported",
+                target="ranking_preferences",
                 ranking_field="weather_weight",
                 meaning=(
-                    "The user prefers cooler options. Current ranking treats "
-                    "higher maximum temperature as better, so this intent is "
-                    "not mapped to a RankingPreferences value."
+                    "Prefer cooler options more strongly. Increase temperature "
+                    "importance and score lower maximum temperatures higher. "
+                    "Do not apply a temperature threshold or a negative weight."
                 ),
             )
         )
         _propose_weather(snapshot, updates, changes, "cooler")
-        issues.append(
-            "Cooler weather is recorded as an intent. Ranking does not currently "
-            "score cooler destinations higher."
-        )
 
     direct = payload.get("direct_flights_only")
     if direct is True or _mentions_direct_only(text):
