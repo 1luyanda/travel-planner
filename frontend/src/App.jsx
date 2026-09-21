@@ -28,6 +28,7 @@ import {
   INITIAL_PLANNER_FORM,
   assistantTextForResponse,
   buildClarificationRecommendPayload,
+  buildFilterRecommendPayload,
   buildRecommendPayload,
   createClarificationContext,
   formFieldsFromPlanner,
@@ -335,8 +336,12 @@ export default function App() {
       userMessage = null,
     } = options
     const typed = (userText || '').trim()
-    const apiText = mode === 'filters' ? pendingSearchText || typed : typed
-    if (mode !== 'clarify' && !apiText) return
+    const apiText = mode === 'filters' ? '' : typed
+    if (mode === 'filters') {
+      if (!formFieldsFromPlanner(nextForm, origin)?.origin) return
+    } else if (mode !== 'clarify' && !apiText) {
+      return
+    }
     if (mode === 'clarify' && !typed) return
 
     const seq = ++searchSeqRef.current
@@ -436,7 +441,9 @@ export default function App() {
               ...(clarification || createClarificationContext({ originalPrompt: pendingSearchText })),
               answer: typed,
             })
-          : buildRecommendPayload(apiText, nextForm, origin)
+          : mode === 'filters'
+            ? buildFilterRecommendPayload(nextForm, origin)
+            : buildRecommendPayload(apiText, nextForm, origin)
 
       const outcome = await runPlannerRequest({
       request,
@@ -744,6 +751,7 @@ export default function App() {
     }
     setForm(next)
     if (!hasSearched || !pendingSearchText || busy || clarifyKind) return
+    // Re-search from the form only. Reusing the original prompt fights the new dates.
     runRecommend(pendingSearchText, {
       nextForm: next,
       mode: 'filters',

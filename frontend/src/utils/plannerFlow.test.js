@@ -4,6 +4,7 @@ import {
   assistantTextForResponse,
   backendScoreItems,
   buildClarificationRecommendPayload,
+  buildFilterRecommendPayload,
   buildRecommendPayload,
   buildRefinePayload,
   createClarificationContext,
@@ -88,6 +89,22 @@ describe('localClarificationQuestions', () => {
       'What is your origin airport or city IATA code (for example ZAG)?',
     )
   })
+
+  it('does not treat an old prompt as a date source when the form already has dates', () => {
+    expect(
+      localClarificationQuestions({
+        text: '',
+        form: {
+          originIata: 'ZAG',
+          departureDate: '2026-10-21',
+          returnDate: '2026-10-30',
+          budgetTouched: true,
+          maxBudget: 400,
+          currency: 'EUR',
+        },
+      }),
+    ).toEqual([])
+  })
 })
 
 describe('buildRecommendPayload', () => {
@@ -97,6 +114,26 @@ describe('buildRecommendPayload', () => {
     ).toEqual({
       text: 'Warm trip from Zagreb',
       form_fields: { origin: 'ZAG', weather_preference: 'warmer' },
+    })
+  })
+
+  it('sends form_fields without the original prompt on a filter update', () => {
+    expect(
+      buildFilterRecommendPayload(
+        {
+          originIata: 'ZAG',
+          departureDate: '2026-10-21',
+          returnDate: '2026-10-30',
+        },
+        null,
+      ),
+    ).toEqual({
+      text: '',
+      form_fields: {
+        origin: 'ZAG',
+        departure_date: '2026-10-21',
+        return_date: '2026-10-30',
+      },
     })
   })
 })

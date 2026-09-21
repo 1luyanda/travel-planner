@@ -26,7 +26,7 @@ class SaveFlightRequest(BaseModel):
 
 
 class SavedFlightItem(BaseModel):
-    """A saved flight ID plus the current document from the flights container."""
+    """A saved flight ID plus current or snapshotted allowlisted flight data."""
 
     flight_id: str
     availability: Literal["available", "unavailable"]

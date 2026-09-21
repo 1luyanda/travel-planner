@@ -83,6 +83,11 @@ export function buildRecommendPayload(text, form, origin) {
   return payload
 }
 
+/** Filter updates send form_fields only so the original prompt cannot fight the form. */
+export function buildFilterRecommendPayload(form, origin) {
+  return buildRecommendPayload('', form, origin)
+}
+
 const MONTH =
   'january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec'
 const DATE_TOKEN = new RegExp(

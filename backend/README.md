@@ -30,16 +30,16 @@ unranked.
      `true`.
    - `COSMOS_USERS_CONTAINER=users` — the users container name.
    - `COSMOS_USER_FLIGHTS_CONTAINER=user-flights` — one document per user
-     containing only saved flight IDs. Flight facts stay in `flights`.
+     containing saved-flight snapshots. The current `flights` container is
+     still used to check availability.
    - `TRUSTED_HOSTS` — comma-separated host names accepted by the API.
 
    The backend uses the fixed `origins` and `flights` container names plus the
    configured users and user-flights containers. Create the users container
    with partition key `/email_normalized` and a unique key on
    `/email_normalized` before registering accounts. Create the user-flights
-   container with partition key `/id`. Each item's `id` is the user id and
-   the only other field is `flight_ids`. Do not store airline, destination,
-   weather, or route fields there.
+   container with partition key `/id`. Each item's `id` is the user id. Store
+   snapshots in `flights` and keep `flight_ids` as a compatibility list.
 
 3. Start FastAPI:
 
@@ -72,12 +72,12 @@ API documentation is available at `http://localhost:8000/docs`.
   search and rank again. Explicit field changes (budget, direct flights) are
   applied. Intents such as cheaper/warmer are passed to Ivan's
   `preferences_from_intents` so ranking weights update.
-- `GET /api/saved-flights` — the authenticated user's saved flight IDs,
-  hydrated from the `flights` container. Independent of recommendation filters.
+- `GET /api/saved-flights` — the authenticated user's saved flights,
+  including stored snapshots when the current flight ID is gone.
 - `POST /api/saved-flights` — save `{ flight_id }` for the session user.
-  Idempotent.
-- `DELETE /api/saved-flights/{flight_id}` — remove that id from the user's
-  list only.
+  Looks up the current flight, stores a snapshot, and is idempotent.
+- `DELETE /api/saved-flights/{flight_id}` — remove that snapshot from the
+  user's list only.
 
 Example requests:
 
@@ -138,19 +138,38 @@ feedback has no ranking intent, the supplied weights (or defaults) stay.
 ## Saved flights
 
 The `user-flights` container stores one document per user. The item id and
-partition key are the user id. The only extra field is the list of flight
-IDs, newest first:
+partition key are the user id. Each saved flight is a snapshot of the
+allowlisted fields at save time, newest first. `flight_ids` is kept as a
+compatibility list so older documents that only stored IDs still load:
 
 ```json
 {
   "id": "<authenticated-user-id>",
-  "flight_ids": ["ZAG-ROM-2026-09-18"]
+  "flight_ids": ["ZAG-ROM-2026-09-18"],
+  "flights": [
+    {
+      "flight_id": "ZAG-ROM-2026-09-18",
+      "saved_at": "2026-09-18T12:40:00Z",
+      "id": "ZAG-ROM-2026-09-18",
+      "origin_id": "zagreb-hr",
+      "origin_iata": "ZAG",
+      "destination_iata": "FCO",
+      "destination_city": "Rome",
+      "price_eur": 65,
+      "currency": "EUR"
+    }
+  ]
 }
 ```
 
-`GET /api/saved-flights` looks up those IDs in the `flights` container and
-returns the current allowlisted flight data. Missing flights stay in the
-user's list and are returned as `availability: "unavailable"`.
+The snapshot `flight_id` is the exact Cosmos flight document `id`. The API
+copies that value and does not generate, normalize, or reconstruct it.
+
+`GET /api/saved-flights` checks those IDs in the `flights` container. If the
+current document exists, the item is `availability: "available"` with current
+data. If it is gone, the item is `availability: "unavailable"` and `flight`
+is filled from the stored snapshot. Legacy documents with only `flight_ids`
+still hydrate from `flights`; missing current documents then have `flight: null`.
 
 ## Flexible-date shortlist fallback
 

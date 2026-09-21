@@ -65,7 +65,13 @@ export function adaptSavedFlight(item) {
       latitude: numberOrNull(flight?.latitude),
       longitude: numberOrNull(flight?.longitude),
     },
-    weather: {},
+    weather: {
+      average_max_temperature_c: numberOrNull(flight?.temp_max_c),
+      average_min_temperature_c: numberOrNull(flight?.temp_min_c),
+      average_precipitation_probability_percent: numberOrNull(flight?.rain_pct),
+      average_sunshine_hours: numberOrNull(flight?.sunshine_hours),
+      average_max_wind_speed_kmh: numberOrNull(flight?.max_wind_speed_kmh),
+    },
     country: {
       common_name: textOrNull(flight?.destination_country),
     },
