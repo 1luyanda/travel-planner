@@ -28,9 +28,11 @@ import {
   INITIAL_PLANNER_FORM,
   assistantTextForResponse,
   buildClarificationRecommendPayload,
+  buildFilterRecommendPayload,
   buildRecommendPayload,
   createClarificationContext,
   formFieldsFromPlanner,
+  formForSelectedOrigin,
   formPatchFromTripRequest,
   localClarificationQuestions,
   newTripPlannerState,
@@ -259,7 +261,12 @@ export default function App() {
     }
   }, [pendingSelectId, results, visibleDestinations, view])
 
-  function invalidateResults() {
+  function invalidateResults(nextOrigin = selectedOrigin) {
+    searchAbortRef.current?.abort()
+    searchAbortRef.current?.dispose?.()
+    searchAbortRef.current = null
+    searchSeqRef.current += 1
+    const nextForm = formForSelectedOrigin(nextOrigin)
     setHasSearched(false)
     setResults([])
     setRejected([])
@@ -280,18 +287,21 @@ export default function App() {
     setFiltersOpen(false)
     setViewportMode('bounds')
     setView('explore')
+    setLoading(false)
+    setRefining(false)
+    setForm(nextForm)
+    setSearchSnapshot(nextForm)
   }
 
   function handleOriginChange(origin) {
     const same = origin?.originId && origin.originId === selectedOrigin?.originId
     setSelectedOrigin(origin)
-    setForm((current) => ({
-      ...current,
-      originId: origin?.originId || '',
-      originIata: origin?.iata || '',
-    }))
     setOriginError('')
-    if (hasSearched && !same) invalidateResults()
+    if (hasSearched && !same) {
+      invalidateResults(origin)
+      return
+    }
+    setForm((current) => formForSelectedOrigin(origin, current))
   }
 
   async function enrichMappedResults(mapped, signal, seq) {
@@ -335,8 +345,12 @@ export default function App() {
       userMessage = null,
     } = options
     const typed = (userText || '').trim()
-    const apiText = mode === 'filters' ? pendingSearchText || typed : typed
-    if (mode !== 'clarify' && !apiText) return
+    const apiText = mode === 'filters' ? '' : typed
+    if (mode === 'filters') {
+      if (!formFieldsFromPlanner(nextForm, origin)?.origin) return
+    } else if (mode !== 'clarify' && !apiText) {
+      return
+    }
     if (mode === 'clarify' && !typed) return
 
     const seq = ++searchSeqRef.current
@@ -436,7 +450,9 @@ export default function App() {
               ...(clarification || createClarificationContext({ originalPrompt: pendingSearchText })),
               answer: typed,
             })
-          : buildRecommendPayload(apiText, nextForm, origin)
+          : mode === 'filters'
+            ? buildFilterRecommendPayload(nextForm, origin)
+            : buildRecommendPayload(apiText, nextForm, origin)
 
       const outcome = await runPlannerRequest({
       request,
@@ -744,6 +760,7 @@ export default function App() {
     }
     setForm(next)
     if (!hasSearched || !pendingSearchText || busy || clarifyKind) return
+    // Re-search from the form only. Reusing the original prompt fights the new dates.
     runRecommend(pendingSearchText, {
       nextForm: next,
       mode: 'filters',

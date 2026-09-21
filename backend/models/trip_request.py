@@ -288,7 +288,7 @@ def merge_preferences(
     extracted: ExtractedPreferences,
     form: ExtractedPreferences,
 ) -> tuple[ExtractedPreferences, list[str], list[str]]:
-    """Preserve explicit form values. Record conflicts instead of overwriting."""
+    """Fill gaps from the form. If both sides set a field, keep the message."""
     merged = extracted.model_dump()
     issues: list[str] = []
     questions: list[str] = []
@@ -309,30 +309,12 @@ def merge_preferences(
         extracted_value = merged.get(field_name)
         if form_value is None:
             continue
-        if _has_extracted_value(field_name, extracted_value) and not _values_equal(
-            extracted_value, form_value, field_name=field_name
-        ):
-            issues.append(
-                f"The form and the message disagree about {field_name.replace('_', ' ')}."
-            )
-            questions.append(
-                f"The form has {field_name.replace('_', ' ')} {form_value!s} "
-                f"but the message has {extracted_value!s}. Which should we use?"
-            )
+        if _has_extracted_value(field_name, extracted_value):
             continue
         merged[field_name] = form_value
 
-    if form.moods:
-        if extracted.moods and _normalise_moods(extracted.moods) != _normalise_moods(
-            form.moods
-        ):
-            issues.append("The form and the message disagree about moods.")
-            questions.append(
-                f"The form moods are {form.moods} but the message moods are "
-                f"{extracted.moods}. Which moods should we use?"
-            )
-        else:
-            merged["moods"] = form.moods
+    if form.moods and not extracted.moods:
+        merged["moods"] = form.moods
 
     if form.origin_text and not merged.get("origin_text"):
         merged["origin_text"] = form.origin_text
@@ -458,26 +440,6 @@ def _has_extracted_value(field_name: str, value: Any) -> bool:
     if field_name == "moods":
         return bool(value)
     return value is not None
-
-
-def _values_equal(left: Any, right: Any, field_name: str | None = None) -> bool:
-    if field_name == "weather_preference":
-        left_weather = canonical_weather_preference(left)
-        right_weather = canonical_weather_preference(right)
-        if left_weather is not None and right_weather is not None:
-            return left_weather == right_weather
-    if isinstance(left, float) or isinstance(right, float):
-        try:
-            return float(left) == float(right)
-        except (TypeError, ValueError):
-            return False
-    if isinstance(left, str) and isinstance(right, str):
-        return left.strip().upper() == right.strip().upper()
-    return left == right
-
-
-def _normalise_moods(moods: list[str]) -> list[str]:
-    return sorted(mood.strip().lower() for mood in moods if mood.strip())
 
 
 def _matches(pattern: str, value: str) -> bool:

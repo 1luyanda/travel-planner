@@ -44,7 +44,17 @@ const apiPayload = {
       last_checked_price: 189,
       price_changed: false,
       availability: 'unavailable',
-      flight: null,
+      flight: {
+        id: 'ZAG-LIS-2026-09-18',
+        origin_id: 'zagreb-hr',
+        origin_iata: 'ZAG',
+        destination_city: 'Lisbon',
+        destination_country: 'Portugal',
+        destination_country_code: 'PT',
+        price_eur: 189,
+        currency: 'EUR',
+        temp_max_c: 24,
+      },
     },
   ],
 }
@@ -59,7 +69,9 @@ describe('adaptSavedFlights', () => {
     expect(rome.priceChanged).toBe(true)
     expect(rome.savedAt).toBe('2026-09-18T12:40:00Z')
     expect(lisbon.availability).toBe('unavailable')
-    expect(lisbon.destination.city).toBeNull()
+    expect(lisbon.destination.city).toBe('Lisbon')
+    expect(lisbon.flight.price).toBe(189)
+    expect(lisbon.weather.average_max_temperature_c).toBe(24)
   })
 })
 

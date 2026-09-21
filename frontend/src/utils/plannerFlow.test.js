@@ -4,12 +4,14 @@ import {
   assistantTextForResponse,
   backendScoreItems,
   buildClarificationRecommendPayload,
+  buildFilterRecommendPayload,
   buildRecommendPayload,
   buildRefinePayload,
   createClarificationContext,
   describeFormFields,
   explanationView,
   formFieldsFromPlanner,
+  formForSelectedOrigin,
   formPatchFromTripRequest,
   localClarificationQuestions,
   newTripPlannerState,
@@ -88,6 +90,22 @@ describe('localClarificationQuestions', () => {
       'What is your origin airport or city IATA code (for example ZAG)?',
     )
   })
+
+  it('does not treat an old prompt as a date source when the form already has dates', () => {
+    expect(
+      localClarificationQuestions({
+        text: '',
+        form: {
+          originIata: 'ZAG',
+          departureDate: '2026-10-21',
+          returnDate: '2026-10-30',
+          budgetTouched: true,
+          maxBudget: 400,
+          currency: 'EUR',
+        },
+      }),
+    ).toEqual([])
+  })
 })
 
 describe('buildRecommendPayload', () => {
@@ -97,6 +115,46 @@ describe('buildRecommendPayload', () => {
     ).toEqual({
       text: 'Warm trip from Zagreb',
       form_fields: { origin: 'ZAG', weather_preference: 'warmer' },
+    })
+  })
+
+  it('does not send leftover form dates or budget the message already states', () => {
+    expect(
+      buildRecommendPayload(
+        'From 2026-09-23 to 2026-10-02, budget 800',
+        {
+          originIata: 'ZAG',
+          departureDate: '2026-09-30',
+          returnDate: '2026-09-30',
+          budgetTouched: true,
+          maxBudget: 100,
+          currency: 'EUR',
+        },
+        null,
+      ),
+    ).toEqual({
+      text: 'From 2026-09-23 to 2026-10-02, budget 800',
+      form_fields: { origin: 'ZAG', currency: 'EUR' },
+    })
+  })
+
+  it('sends form_fields without the original prompt on a filter update', () => {
+    expect(
+      buildFilterRecommendPayload(
+        {
+          originIata: 'ZAG',
+          departureDate: '2026-10-21',
+          returnDate: '2026-10-30',
+        },
+        null,
+      ),
+    ).toEqual({
+      text: '',
+      form_fields: {
+        origin: 'ZAG',
+        departure_date: '2026-10-21',
+        return_date: '2026-10-30',
+      },
     })
   })
 })
@@ -204,6 +262,18 @@ describe('clarification recommend payload', () => {
     expect(cleared.form).toEqual(INITIAL_PLANNER_FORM)
     expect(cleared.form.maxBudget).toBe(400)
     expect(cleared.form.originIata).toBe('')
+  })
+})
+
+describe('formForSelectedOrigin', () => {
+  it('keeps the new origin and drops leftover dates and budget', () => {
+    expect(
+      formForSelectedOrigin({ originId: 'zagreb-hr', iata: 'ZAG' }),
+    ).toEqual({
+      ...INITIAL_PLANNER_FORM,
+      originId: 'zagreb-hr',
+      originIata: 'ZAG',
+    })
   })
 })
 
