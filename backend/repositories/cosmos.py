@@ -9,6 +9,7 @@ from azure.cosmos.exceptions import CosmosHttpResponseError
 
 from backend.config import Settings
 from backend.contracts import FlightQuery, OriginItem
+from backend.models.hotel import HotelDocument
 from backend.models.user import UserDocument
 from backend.models.user_flight import SavedFlightSnapshot, UserSavedFlightsDocument
 
@@ -83,6 +84,7 @@ class CosmosDestinationRepository:
         self._flights: ContainerProxy | None = None
         self._users: ContainerProxy | None = None
         self._user_flights: ContainerProxy | None = None
+        self._hotels: ContainerProxy | None = None
 
     @property
     def source_name(self) -> str:
@@ -105,6 +107,70 @@ class CosmosDestinationRepository:
         self._user_flights = database.get_container_client(
             self._settings.user_flights_container_name
         )
+        self._hotels = database.get_container_client(
+            self._settings.hotels_container_name
+        )
+
+    async def get_hotel_document(self, destination_id: str) -> HotelDocument:
+        """Find a destination's hotel document by exact id across partitions."""
+
+        if self._hotels is None:
+            raise RepositoryError("Cosmos repository has not been connected")
+        try:
+            rows = [
+                HotelDocument.model_validate(item)
+                async for item in self._hotels.query_items(
+                    query="SELECT TOP 1 * FROM c WHERE c.id = @destination_id",
+                    parameters=[
+                        {"name": "@destination_id", "value": destination_id}
+                    ],
+                    # The hotel partition key is not established. Async Cosmos
+                    # queries across partitions when partition_key is omitted.
+                )
+            ]
+        except (CosmosHttpResponseError, TypeError, ValueError) as error:
+            raise RepositoryError("Hotel lookup failed.") from error
+        if not rows:
+            raise RepositoryNotFoundError(
+                f"Hotel destination {destination_id!r} was not found"
+            )
+        return rows[0]
+
+    async def resolve_hotel_destination_id(
+        self, *, city: str, country_code: str, iata_codes: tuple[str, ...],
+    ) -> str | None:
+        """Return the stored ID only when destination metadata matches uniquely."""
+
+        # City alone is unsafe: names can be shared by different countries.
+        if not iata_codes and not (city and country_code):
+            return None
+        if self._hotels is None:
+            raise RepositoryError("Cosmos repository has not been connected")
+        matches = []
+        parameters: list[dict[str, Any]] = []
+        if city and country_code:
+            matches.append("STRINGEQUALS(c.city, @city, true)")
+            parameters.append({"name": "@city", "value": city})
+        if iata_codes:
+            matches.append(
+                "EXISTS(SELECT VALUE code FROM code IN c.iata "
+                "WHERE ARRAY_CONTAINS(@iata_codes, UPPER(code)))"
+            )
+            parameters.append({"name": "@iata_codes", "value": list(iata_codes)})
+        query = "SELECT TOP 2 VALUE c.id FROM c WHERE (" + " OR ".join(matches) + ")"
+        if country_code:
+            query += " AND STRINGEQUALS(c.country_code, @country_code, true)"
+            parameters.append({"name": "@country_code", "value": country_code})
+        try:
+            rows = [
+                item async for item in self._hotels.query_items(
+                    query=query, parameters=parameters,
+                )
+            ]
+        except (CosmosHttpResponseError, TypeError, ValueError) as error:
+            raise RepositoryError("Hotel destination lookup failed.") from error
+        # Two matches are ambiguous, including conflicting city/IATA matches.
+        return rows[0] if len(rows) == 1 else None
 
     async def search_origins(
         self,

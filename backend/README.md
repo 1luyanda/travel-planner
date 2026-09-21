@@ -53,6 +53,66 @@ unranked.
 
 API documentation is available at `http://localhost:8000/docs`.
 
+## Hotel recommendations
+
+After selecting a destination, call
+`GET /api/hotels?destination_id=abu-simbel-eg&limit=5` with the existing
+server-side `X-API-Key`. `limit` defaults to 5 and accepts 1 through 20.
+
+Hotel recommendations use only documents already stored in Cosmos DB in the
+configured database. `COSMOS_HOTELS_CONTAINER` defaults to `hotels`. The lookup
+uses a parameterized query by exact document `id` across partitions because
+the hotel partition key is not yet established. It assumes each destination
+ID identifies one hotel document across the container; no container is created.
+Confirm the deployed container name and destination ID uniqueness with the data team.
+
+`destination_id` means the hotel document's city/country ID (`abu-simbel-eg`),
+not the flight document ID currently returned by destination recommendations
+(such as `ZAG-ROM-2026-09-18`). Each item in `/api/recommend` and `/api/refine`
+now includes nullable `hotel_destination_id`. After selection, pass that value
+directly to `/api/hotels?destination_id=<hotel_destination_id>&limit=5`.
+The original recommendation `destination_id` remains the flight-offer ID.
+
+The backend resolves actual stored IDs using case-insensitive city plus country
+code, or a match between the flight's city/airport IATA codes and the hotel's
+`iata` array. When a country code is available, it constrains all matches.
+City alone is never enough. Lookups return only IDs, run after ranking, and are
+reused for identical destination metadata within one request. No ID is guessed
+or constructed from city names. Missing or ambiguous matches (including conflicting
+city and IATA matches) yield null. If hotel lookup fails, recommendations still
+return with null hotel IDs and a generic response issue. Existing callers can
+ignore the new field. Frontend integration should show hotel recommendations
+only when `hotel_destination_id` is non-null; frontend code is unchanged.
+
+Hotels are ordered by approximate straight-line distance from the stored
+destination centre/reference latitude and longitude, using Haversine with an
+Earth radius of 6371 km. Distances remain unrounded in kilometres. Ties use
+case-insensitive name, exact name, OSM ID, then coordinates. Star rating is
+optional display metadata and never affects ordering, including `stars: null`.
+
+The response includes `destination_id`, `city`, `country_code`, reference
+`latitude`/`longitude`, stored `attribution`, `hotel_count`, `returned_count`,
+and `hotels`. Each hotel includes `name`, `osm_id`, nullable `stars`, coordinates,
+`distance_km`, and nullable `address`, `website`, and `booking_url`.
+`hotel_count` counts the stored array entries before validation (rather than
+trusting a possibly stale stored count); `returned_count` counts the shortlist.
+Cosmos internal metadata is excluded.
+
+Missing, nonnumeric, non-finite, boolean, or out-of-range hotel coordinates
+are excluded, as are other malformed hotel entries. Coordinates must be JSON
+numbers, not numeric strings. Missing optional display fields become null.
+An empty/missing hotel array or no valid hotels returns HTTP 200 with an empty
+list. No matching destination document returns 404. Invalid destination reference
+coordinates or database failures return a generic 503; distances are never
+invented using substitute coordinates.
+
+No external hotel APIs are called. Stored links are returned as metadata only.
+There are no live hotel prices or availability, and no booking/payment flow.
+Destination ranking, dynamic preferences, flexible-date fallback, and frontend
+code are unchanged.
+
+Offline checks: `python -m pytest tests/test_hotels.py`.
+
 ## Endpoints
 
 - `GET /api/health`
@@ -62,6 +122,7 @@ API documentation is available at `http://localhost:8000/docs`.
 - `GET /api/auth/me`
 - `GET /api/origins?q=zag&country=HR`
 - `GET /api/origins/{origin_id}`
+- `GET /api/hotels?destination_id=abu-simbel-eg` — nearest stored hotels.
 - `GET /api/flights` — allowlisted flight fields for one origin partition
   (airline, coordinates, and display fields).
   Required: `origin_id`. Optional: `departure_date`, `return_date`, `max_price`,
