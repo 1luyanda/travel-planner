@@ -15,6 +15,7 @@ from backend.contracts.candidates import FlightQuery, OriginItem
 from backend.contracts.flight_dates import FlightDateMetadata
 from backend.contracts.recommendations import RecommendationItem
 from backend.models.explanation import DestinationExplanation
+from backend.models.feedback import RankingIntent
 from backend.models.trip_request import TripRequest
 from backend.repositories import RepositoryError
 from backend.services.candidates import CandidateService
@@ -64,10 +65,12 @@ class RecommendationService:
                 issues=list(parsed.issues),
                 clarification_questions=list(parsed.clarification_questions),
             )
+        initial_intents = _initial_ranking_intents(parsed.request)
         return await self._search(
             trip=parsed.request,
             preferences=parsed.preferences,
             ranking_preferences=body.ranking_preferences,
+            intents=initial_intents,
         )
 
     async def refine(self, body: RefineRequest) -> RecommendationResponse:
@@ -241,6 +244,29 @@ def _ranking_preferences(
                      else getattr(body, field.name))
         for field in fields(RankingPreferences)
     })
+
+
+def _initial_ranking_intents(trip: TripRequest) -> list[RankingIntent]:
+    """Turn an initial weather preference into the same policy intent as refine."""
+    if trip.weather_preference == "warm":
+        return [
+            RankingIntent(
+                code="prefer_warmer",
+                target="ranking_preferences",
+                ranking_field="weather_weight",
+                meaning="Prefer warmer options in the initial ranking.",
+            )
+        ]
+    if trip.weather_preference == "cool":
+        return [
+            RankingIntent(
+                code="prefer_cooler",
+                target="ranking_preferences",
+                ranking_field="weather_weight",
+                meaning="Prefer cooler options in the initial ranking.",
+            )
+        ]
+    return []
 
 
 def _flight_query_from_trip(origin_id: str, trip: TripRequest) -> FlightQuery:

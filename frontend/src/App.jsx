@@ -99,6 +99,7 @@ export default function App() {
   const [selectedOrigin, setSelectedOrigin] = useState(null)
   const [searchSnapshot, setSearchSnapshot] = useState(initialForm)
   const [tripRequest, setTripRequest] = useState(null)
+  const [rankingPreferences, setRankingPreferences] = useState(null)
   const [pendingSearchText, setPendingSearchText] = useState('')
   const [clarifyKind, setClarifyKind] = useState(null)
   const [clarification, setClarification] = useState(null)
@@ -213,6 +214,7 @@ export default function App() {
     setRejected([])
     setDataSource(null)
     setResults([])
+    setRankingPreferences(null)
     setPreviousRanks({})
     setAppliedFilters(null)
     setSelectedTrip(null)
@@ -294,6 +296,7 @@ export default function App() {
     setHasSearched(false)
     setResults([])
     setRejected([])
+    setRankingPreferences(null)
     setDataSource(null)
     setAppliedFilters(null)
     setPreviousRanks({})
@@ -493,7 +496,7 @@ export default function App() {
               }),
             })
           : mode === 'filters'
-            ? buildFilterRecommendPayload(nextForm, origin)
+            ? buildFilterRecommendPayload(nextForm, origin, rankingPreferences)
             : buildRecommendPayload(apiText, nextForm, origin)
 
       const outcome = await runPlannerRequest({
@@ -594,6 +597,7 @@ export default function App() {
     setDataSource(adapted.dataSource)
     setAppliedFilters(nextForm)
     setResults(adapted.results)
+    setRankingPreferences(response.ranking_preferences || null)
     setPreviousRanks({})
     setActiveRefinement(null)
     setSearchSnapshot(nextForm)
@@ -669,7 +673,15 @@ export default function App() {
             setRefining(false)
           }
         },
-        execute: (signal) => refineTrip({ text, request: savedRequest }, { signal }),
+        execute: (signal) =>
+          refineTrip(
+            {
+              text,
+              request: savedRequest,
+              ranking_preferences: rankingPreferences,
+            },
+            { signal },
+          ),
       })
 
       if (seq !== searchSeqRef.current || outcome.status === 'stale') return
@@ -710,6 +722,7 @@ export default function App() {
 
       const nextTrip = tripRequestAfterRefine(savedRequest, response)
       setTripRequest(nextTrip)
+      setRankingPreferences(response.ranking_preferences || rankingPreferences)
       setClarifyKind(null)
       setClarification(null)
       setClarificationQuestions([])
@@ -854,6 +867,7 @@ export default function App() {
     setPreviousRanks({})
     setResults(cleared.results)
     setRejected(cleared.rejected)
+    setRankingPreferences(null)
     setDataSource(null)
     setAppliedFilters(cleared.appliedFilters)
     setTripRequest(cleared.tripRequest)

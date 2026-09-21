@@ -119,6 +119,7 @@ function normalizeRecommendationResponse(data) {
     request: asObject(data.request),
     updated_request: asObject(data.updated_request),
     preferences: asObject(data.preferences),
+    ranking_preferences: asObject(data.ranking_preferences),
     origin: asObject(data.origin),
     origin_id: typeof data.origin_id === 'string' ? data.origin_id : null,
     recommendations: asList(data.recommendations),

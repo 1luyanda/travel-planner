@@ -168,8 +168,12 @@ export function buildRecommendPayload(text, form, origin) {
 }
 
 /** Filter updates send form_fields only so the original prompt cannot fight the form. */
-export function buildFilterRecommendPayload(form, origin) {
-  return buildRecommendPayload('', form, origin)
+export function buildFilterRecommendPayload(form, origin, rankingPreferences = null) {
+  const payload = buildRecommendPayload('', form, origin)
+  if (rankingPreferences && typeof rankingPreferences === 'object') {
+    payload.ranking_preferences = rankingPreferences
+  }
+  return payload
 }
 
 const MONTH =

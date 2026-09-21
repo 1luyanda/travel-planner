@@ -214,7 +214,12 @@ class RecommendServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.recommendations[0].city, "Rome")
         self.assertEqual(result.recommendations[0].rank, 1)
         self.assertTrue(result.recommendations[0].summary)
-        self.assertEqual(result.intents, [])
+        self.assertEqual([intent.code for intent in result.intents], ["prefer_warmer"])
+        self.assertAlmostEqual(result.ranking_preferences.weather_weight, 0.30)
+        self.assertEqual(
+            result.ranking_preferences.temperature_direction,
+            "higher_is_better",
+        )
         self.assertEqual(data.last_query.origin_id if data.last_query else None, "zagreb-hr")
         self.assertEqual(data.last_query.max_price_eur if data.last_query else None, 400)
         self.assertIsNone(data.last_query.max_changeovers if data.last_query else "missing")
