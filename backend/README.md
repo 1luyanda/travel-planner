@@ -114,7 +114,7 @@ Example refine body:
 ```
 
 `ranking_preferences` is optional on both bodies. On refine, recognized
-cheaper/warmer intents replace those weights using Ivan's presets. If the
+cheaper/warmer/cooler intents adjust the current weights incrementally. If the
 feedback has no ranking intent, the supplied weights (or defaults) stay.
 
 ## Integration placeholders
@@ -152,6 +152,68 @@ IDs, newest first:
 returns the current allowlisted flight data. Missing flights stay in the
 user's list and are returned as `availability: "unavailable"`.
 
+## Six-criterion scoring and preference state
+
+The scoring engine min-max normalizes each criterion, multiplies its component
+score by its normalized weight, and sums all six contributions. Equal known
+values still score 1; ranking ties retain input order.
+
+| Criterion | Preference field | Default weight | Direction |
+|---|---|---:|---|
+| Price | `price_weight` | 0.25 | Lower is better |
+| Temperature | `weather_weight` | 0.20 | Higher is better by default |
+| Precipitation probability | `precipitation_weight` | 0.10 | Lower is better |
+| Sunshine hours | `sunshine_weight` | 0.10 | Higher is better |
+| Changeovers | `changeovers_weight` | 0.20 | Lower is better |
+| Round-trip flight duration | `duration_weight` | 0.15 | Lower is better |
+
+These are intentional starting weights, not learned values. The criterion
+configuration separates source fields, directions, and weight fields. The
+`temperature_direction` preference accepts `higher_is_better` or
+`lower_is_better`; direction never requires a negative weight. Price direction
+is fixed. `weather_weight`/`weather_score` and dictionary keys `weather`/`stops`
+retain their existing names for compatibility.
+
+`stronger_price_preference`, `prefer_warmer`, and the existing AI code
+`prefer_cooler` increase their target's current normalized weight by 0.10.
+`prefer_colder` is also accepted by the policy as an alias for `prefer_cooler`;
+the AI extraction schema and prompts are unchanged. Cooler feedback now emits
+a `ranking_preferences` intent instead of `unsupported`. Warmer sets temperature
+direction to higher-is-better; cooler/colder sets it to lower-is-better.
+
+Targets are deduplicated by criterion and adjusted simultaneously. Non-targets
+decrease proportionally, with weights pinned to the 0.05 floor or 0.70 cap and
+remaining weight redistributed. When donors have insufficient capacity, all
+requested increases scale down together. Opposing temperature intents in one
+policy event retain the current direction and increase temperature importance
+once. Other feedback preserves that direction. Unknown intents preserve current
+state unchanged. No additional rain, sunshine, stop, or duration AI codes have
+been invented; those weights can be supplied explicitly through the API.
+
+Precipitation is required candidate data. Sunshine is optional: known values
+normalize against other known values, and missing sunshine scores 0 without
+inventing a raw value or redistributing its weight. An entirely missing sunshine
+column therefore contributes 0 for every candidate.
+
+**API migration:** old four-weight requests remain valid. Omitted precipitation
+and sunshine weights each default to 0.10, then all six weights normalize to
+one. This intentionally changes scores; for example, an old four-weight vector
+summing to 1 now normalizes with a total of 1.20. Explicitly setting both new
+weights to zero retains four-criterion scoring until recognized feedback applies
+the six-criterion policy floors. The original four positional Python preference
+arguments also retain their order.
+
+Recommendation items add `precipitation_score`, `sunshine_score`, and
+`temperature_direction`. Successful recommendation/refinement responses add
+`ranking_preferences`, containing the effective six normalized weights and
+temperature direction. Pass this object into the next refinement request to
+carry state forward; the backend remains stateless. Existing response fields
+remain available. Explanations use the actual temperature direction.
+
+React is unchanged and still uses its separate browser-ranking path. It must
+call the recommendation/refinement endpoints to consume these backend scores.
+Hard constraints and flexible-date retrieval run before scoring as before.
+
 ## Flexible-date shortlist fallback
 
 `CandidateService.prepare()` (used by `/api/candidates`, `/api/recommend`, and
@@ -174,9 +236,10 @@ stored records from that origin partition, but requires no new Cosmos indexes.
 
 Alternatives are deduplicated by flight/destination ID and selected by total
 absolute departure/return date difference, then absolute trip-length difference,
-then ID. Exact matches stay first. Recommendation scores use the unchanged
-ranking algorithm; exact matches retain their score order, followed by
-alternatives in date-distance order. Fewer than three valid flights remain fewer
+then ID. Exact matches stay first in the unranked candidate response. Final
+recommendations sort all selected flights by descending `final_score`, with
+`rank` matching their list position; alternative-date metadata stays attached
+to each flight by its identifier. Fewer than three valid flights remain fewer
 than three; hard filters are never relaxed. `/api/flights` is unchanged.
 
 Candidate and recommendation items add `is_flexible_date_option` (false for
@@ -226,10 +289,12 @@ result.clarification_questions
 |---|---|
 | Cheaper | Intent `stronger_price_preference`. Budget unchanged. |
 | Warmer | Intent `prefer_warmer`. `weather_preference="warmer"`. No temperature number. |
+| Colder / cooler | Intent `prefer_cooler`. `weather_preference="cooler"`. Positive temperature weight, lower-is-better direction. |
 | My budget is now EUR 300 | `budget=300`, `currency=EUR`. Other fields copied. |
 | Direct flights only | `direct_flights_only=True`. Intent maps to ranking hard filter `max_changeovers`, not a weight. |
 
-Ivan's `RankingPreferences` (`price_weight`, `weather_weight`, `changeovers_weight`, `duration_weight`) has no named mapping from these phrases to numeric weights. Intents record the related field name and leave the value unset.
+The AI returns semantic intents without numeric weights. `preferences_from_intents`
+applies the six-criterion policy described above.
 
 ## parse_request
 

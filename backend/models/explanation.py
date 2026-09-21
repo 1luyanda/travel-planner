@@ -42,6 +42,9 @@ class DestinationExplanation(BaseModel):
     summary: str
     evidence: list[EvidenceReference] = Field(default_factory=list)
     issues: list[str] = Field(default_factory=list)
+    precipitation_score: float = 0.0
+    sunshine_score: float = 0.0
+    temperature_direction: Literal["lower_is_better", "higher_is_better"] = "higher_is_better"
 
 
 class ExplainRankedTripsResult(BaseModel):

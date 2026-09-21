@@ -32,6 +32,7 @@ from ranking import (
     preferences_from_intents,
     rank_candidates,
 )
+from ranking.ranking import CRITERIA
 
 
 class RecommendationService:
@@ -146,18 +147,8 @@ class RecommendationService:
             [_to_ranking_candidate(item) for item in prepared.candidates],
             weights,
         )
-        # Keep exact matches first without changing score calculation. Nearby
-        # additions retain the date-distance order selected by CandidateService.
-        alternatives = {
-            item.destination_id: index
-            for index, item in enumerate(prepared.candidates)
-            if item.is_flexible_date_option
-        }
-        if alternatives:
-            ranked.sort(key=lambda item: (
-                item.destination_id in alternatives,
-                alternatives.get(item.destination_id, 0),
-            ))
+        # Date distance selects fallback candidates, not recommendation order.
+        # Preserve descending score order so explanations assign matching ranks.
         recommendations, explain_issues = _explanations_for(
             trip,
             ranked,
@@ -194,6 +185,11 @@ class RecommendationService:
             flexible_date_fallback_used=prepared.flexible_date_fallback_used,
             exact_match_count=prepared.exact_match_count,
             fallback_count=prepared.fallback_count,
+            ranking_preferences=RankingPreferencesBody(
+                **{criterion.weight_field: weights.normalized_weights()[criterion.name]
+                   for criterion in CRITERIA},
+                temperature_direction=weights.temperature_direction,
+            ),
         )
 
     async def _resolve_origin(
@@ -226,26 +222,11 @@ def _ranking_preferences(
     defaults = RankingPreferences()
     if body is None:
         return defaults
-    return RankingPreferences(
-        price_weight=(
-            defaults.price_weight if body.price_weight is None else body.price_weight
-        ),
-        weather_weight=(
-            defaults.weather_weight
-            if body.weather_weight is None
-            else body.weather_weight
-        ),
-        changeovers_weight=(
-            defaults.changeovers_weight
-            if body.changeovers_weight is None
-            else body.changeovers_weight
-        ),
-        duration_weight=(
-            defaults.duration_weight
-            if body.duration_weight is None
-            else body.duration_weight
-        ),
-    )
+    return RankingPreferences(**{
+        field.name: (getattr(defaults, field.name) if getattr(body, field.name) is None
+                     else getattr(body, field.name))
+        for field in fields(RankingPreferences)
+    })
 
 
 def _flight_query_from_trip(origin_id: str, trip: TripRequest) -> FlightQuery:
@@ -311,6 +292,9 @@ def _ranked_without_explanations(
             stops_score=item.stops_score,
             duration_score=item.duration_score,
             final_score=item.final_score,
+            precipitation_score=item.precipitation_score,
+            sunshine_score=item.sunshine_score,
+            temperature_direction=item.temperature_direction,
             summary="",
             evidence=[],
             issues=["Explanation was unavailable."],

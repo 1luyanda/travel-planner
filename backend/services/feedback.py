@@ -374,8 +374,9 @@ def _apply_feedback(
                 target="ranking_preferences",
                 ranking_field="weather_weight",
                 meaning=(
-                    "Prefer cooler options. The ranking uses the cooler weather "
-                    "direction so lower maximum temperatures score higher."
+                    "Prefer cooler options more strongly. Increase temperature "
+                    "importance and score lower maximum temperatures higher. "
+                    "Do not apply a temperature threshold or a negative weight."
                 ),
             )
         )
