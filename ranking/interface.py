@@ -63,7 +63,7 @@ class RankingCandidate:
 
 @dataclass(frozen=True, slots=True)
 class RankedDestination:
-    """Ranking output with supplied flight totals and four MVP scores."""
+    """Six component scores; legacy weather_score represents temperature."""
 
     destination_id: str
     destination_iata: str
@@ -79,6 +79,9 @@ class RankedDestination:
     stops_score: float
     duration_score: float
     final_score: float
+    precipitation_score: float = 0.0
+    sunshine_score: float = 0.0
+    temperature_direction: str = "higher_is_better"
 
 
 @dataclass(frozen=True, slots=True)

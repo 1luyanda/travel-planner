@@ -8,12 +8,39 @@ Weights are normalized to sum to 1. Ties retain input order.
 
 import math
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from typing import Literal
 
 from .interface import RankedDestination, RankingCandidate
 
 
-DEFAULT_WEIGHTS = {"price": 0.30, "weather": 0.30, "stops": 0.20, "duration": 0.20}
+ScoringDirection = Literal["lower_is_better", "higher_is_better"]
+
+
+@dataclass(frozen=True, slots=True)
+class CriterionConfig:
+    """Independent source, importance field, score field, and default direction."""
+
+    name: str
+    source_field: str
+    weight_field: str
+    score_field: str
+    direction: ScoringDirection
+
+
+# Keep weather/stops keys for existing dictionary and explanation consumers.
+CRITERIA = (
+    CriterionConfig("price", "price_eur", "price_weight", "price_score", "lower_is_better"),
+    CriterionConfig("weather", "average_max_temperature_c", "weather_weight", "weather_score", "higher_is_better"),
+    CriterionConfig("precipitation", "precipitation_probability_percent", "precipitation_weight", "precipitation_score", "lower_is_better"),
+    CriterionConfig("sunshine", "sunshine_hours", "sunshine_weight", "sunshine_score", "higher_is_better"),
+    CriterionConfig("stops", "changeover_count", "changeovers_weight", "stops_score", "lower_is_better"),
+    CriterionConfig("duration", "flight_duration_minutes", "duration_weight", "duration_score", "lower_is_better"),
+)
+DEFAULT_WEIGHTS = {
+    "price": 0.25, "weather": 0.20, "precipitation": 0.10,
+    "sunshine": 0.10, "stops": 0.20, "duration": 0.15,
+}
 
 
 def is_finite_number(value):
@@ -25,14 +52,18 @@ def is_finite_number(value):
 
 
 def normalize_scores(values, lower_is_better=False):
-    """Min-max scores in [0, 1]; equal values all receive 1.0."""
+    """Min-max known values; equal known values score 1, missing values score 0."""
     if not values:
         return []
-    minimum, maximum = min(values), max(values)
+    known = [value for value in values if value is not None]
+    if not known:
+        return [0.0] * len(values)
+    minimum, maximum = min(known), max(known)
     if minimum == maximum:
-        return [1.0] * len(values)
-    scores = [(value - minimum) / (maximum - minimum) for value in values]
-    return [1.0 - score for score in scores] if lower_is_better else scores
+        return [1.0 if value is not None else 0.0 for value in values]
+    scores = [(value - minimum) / (maximum - minimum) for value in known]
+    normalized = iter([1.0 - score for score in scores] if lower_is_better else scores)
+    return [next(normalized) if value is not None else 0.0 for value in values]
 
 
 def prepare_weights(weights=None):
@@ -40,7 +71,7 @@ def prepare_weights(weights=None):
     result = DEFAULT_WEIGHTS.copy()
     if weights is not None:
         if not isinstance(weights, dict) or set(weights) - set(result):
-            raise ValueError("Weights must be a dictionary using price, weather, stops, duration.")
+            raise ValueError(f"Weights must be a dictionary using {', '.join(DEFAULT_WEIGHTS)}.")
         result.update(weights)
     if any(not is_finite_number(value) or value < 0 for value in result.values()):
         raise ValueError("Weights must be finite, non-negative numbers.")
@@ -52,23 +83,30 @@ def prepare_weights(weights=None):
 
 @dataclass(frozen=True, slots=True)
 class RankingPreferences:
-    """Relative weights for the four MVP criteria; freshness is not scored."""
+    """Six relative weights plus temperature direction, independent of importance.
 
-    price_weight: float = 0.30
-    weather_weight: float = 0.30
+    Original four positional fields remain compatible. Omitted new weights use
+    their defaults and all six normalize together. Weather means temperature.
+    """
+
+    price_weight: float = 0.25
+    weather_weight: float = 0.20
     changeovers_weight: float = 0.20
-    duration_weight: float = 0.20
+    duration_weight: float = 0.15
+    precipitation_weight: float = 0.10
+    sunshine_weight: float = 0.10
+    temperature_direction: ScoringDirection = "higher_is_better"
 
     def __post_init__(self) -> None:
         self.normalized_weights()
+        if self.temperature_direction not in ("lower_is_better", "higher_is_better"):
+            raise ValueError("Invalid temperature scoring direction.")
 
     def normalized_weights(self) -> dict[str, float]:
         """Validate and normalize without changing supplied preferences."""
         return prepare_weights({
-            "price": self.price_weight,
-            "weather": self.weather_weight,
-            "stops": self.changeovers_weight,
-            "duration": self.duration_weight,
+            criterion.name: getattr(self, criterion.weight_field)
+            for criterion in CRITERIA
         })
 
 
@@ -86,19 +124,20 @@ def rank_candidates(
     Validation and file parsing belong to the data layer. Stops and flight
     duration are already round-trip totals. Ties retain input order.
     """
-    weights = (preferences or RankingPreferences()).normalized_weights()
+    preferences = preferences or RankingPreferences()
+    weights = preferences.normalized_weights()
     candidates = tuple(candidates)
-    criteria = {
-        "price": ("price_eur", True),
-        "weather": ("average_max_temperature_c", False),
-        "stops": ("changeover_count", True),
-        "duration": ("flight_duration_minutes", True),
-    }
+    criteria = tuple(
+        replace(criterion, direction=preferences.temperature_direction)
+        if criterion.name == "weather" else criterion
+        for criterion in CRITERIA
+    )
     component_scores = {
-        name: normalize_scores(
-            [getattr(candidate, field) for candidate in candidates], lower_is_better
+        criterion.name: normalize_scores(
+            [getattr(candidate, criterion.source_field) for candidate in candidates],
+            criterion.direction == "lower_is_better",
         )
-        for name, (field, lower_is_better) in criteria.items()
+        for criterion in criteria
     }
     destinations = []
     for index, candidate in enumerate(candidates):
@@ -112,10 +151,8 @@ def rank_candidates(
             flight_duration_minutes=candidate.flight_duration_minutes,
             trip_duration_days=candidate.trip_duration_days,
             average_max_temperature_c=candidate.average_max_temperature_c,
-            price_score=scores["price"],
-            weather_score=scores["weather"],
-            stops_score=scores["stops"],
-            duration_score=scores["duration"],
+            **{criterion.score_field: scores[criterion.name] for criterion in criteria},
+            temperature_direction=preferences.temperature_direction,
             final_score=calculate_final_score(scores, weights),
         ))
     return sorted(destinations, key=lambda item: item.final_score, reverse=True)
@@ -127,8 +164,5 @@ def rank_destinations(
     """Compatibility wrapper for dictionary weight overrides."""
     normalized = prepare_weights(weights)
     return rank_candidates(candidates, RankingPreferences(
-        price_weight=normalized["price"],
-        weather_weight=normalized["weather"],
-        changeovers_weight=normalized["stops"],
-        duration_weight=normalized["duration"],
+        **{criterion.weight_field: normalized[criterion.name] for criterion in CRITERIA},
     ))
