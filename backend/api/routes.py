@@ -17,6 +17,9 @@ from backend.contracts import (
     RecommendRequest,
     RecommendationResponse,
     RefineRequest,
+    SaveActivityRequest,
+    SavedActivitiesResponse,
+    SavedActivityItem,
     SaveFlightRequest,
     SavedFlightItem,
     SavedFlightsResponse,
@@ -28,6 +31,7 @@ from backend.services import (
     CandidateService,
     HotelService,
     RecommendationService,
+    SavedActivitiesService,
     SavedFlightNotFoundError,
     SavedFlightsService,
 )
@@ -51,6 +55,10 @@ def _recommendation_service(request: Request) -> RecommendationService:
 
 def _saved_flights_service(request: Request) -> SavedFlightsService:
     return request.app.state.saved_flights_service
+
+
+def _saved_activities_service(request: Request) -> SavedActivitiesService:
+    return request.app.state.saved_activities_service
 
 
 def _hotel_service(request: Request) -> HotelService:
@@ -354,4 +362,67 @@ async def delete_saved_flight(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Saved flights are temporarily unavailable.",
+        ) from error
+
+
+@router.get(
+    "/saved-activities",
+    response_model=SavedActivitiesResponse,
+    dependencies=[Depends(require_api_key)],
+)
+async def list_saved_activities(
+    user: UserDocument = Depends(require_user),
+    saved_activities: SavedActivitiesService = Depends(_saved_activities_service),
+) -> SavedActivitiesResponse:
+    """Return the authenticated user's liked activities."""
+
+    try:
+        items = await saved_activities.list_for_user(user.id)
+    except RepositoryError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Saved activities are temporarily unavailable.",
+        ) from error
+    return SavedActivitiesResponse(items=items)
+
+
+@router.post(
+    "/saved-activities",
+    response_model=SavedActivityItem,
+    dependencies=[Depends(require_api_key)],
+)
+async def save_activity(
+    body: SaveActivityRequest,
+    user: UserDocument = Depends(require_user),
+    saved_activities: SavedActivitiesService = Depends(_saved_activities_service),
+) -> SavedActivityItem:
+    """Add a liked activity to the authenticated user's saved list."""
+
+    try:
+        return await saved_activities.save(user.id, body)
+    except RepositoryError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Saved activities are temporarily unavailable.",
+        ) from error
+
+
+@router.delete(
+    "/saved-activities/{place_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_api_key)],
+)
+async def delete_saved_activity(
+    place_id: str,
+    user: UserDocument = Depends(require_user),
+    saved_activities: SavedActivitiesService = Depends(_saved_activities_service),
+) -> None:
+    """Remove a liked activity from the authenticated user's saved list."""
+
+    try:
+        await saved_activities.delete(user.id, place_id)
+    except RepositoryError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Saved activities are temporarily unavailable.",
         ) from error

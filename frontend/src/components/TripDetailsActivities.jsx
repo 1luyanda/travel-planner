@@ -161,6 +161,14 @@ export default function TripDetailsActivities({
   }
   const { likedIds, pendingIds, likeError, persistenceNote, toggleLike } = useActivityLikes()
 
+  const handleToggleLike = (placeId) => {
+    const activity = state.activities.find((item) => item.place_id === placeId)
+    toggleLike(
+      placeId,
+      activity ? { activity, city, countryCode, destinationId } : undefined,
+    )
+  }
+
   if (appliedKey !== sessionKey) {
     setAppliedKey(sessionKey)
     setRetry(0)
@@ -186,7 +194,7 @@ export default function TripDetailsActivities({
       pendingIds={pendingIds}
       likeError={likeError}
       persistenceNote={visible ? persistenceNote : ''}
-      onToggleLike={toggleLike}
+      onToggleLike={handleToggleLike}
     />
   )
 }

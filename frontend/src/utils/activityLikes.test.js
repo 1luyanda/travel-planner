@@ -1,125 +1,148 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
+  ACTIVITY_LIKES_LOAD_ERROR,
   ACTIVITY_LIKES_NOTE,
   ACTIVITY_LIKES_SAVE_ERROR,
-  activityLikesStorageKey,
+  activityLikeId,
   createActivityLikesStore,
-  parseActivityLikeIds,
-  readActivityLikes,
-  writeActivityLikes,
 } from './activityLikes'
 
-function memoryStorage(initial = {}) {
-  const data = { ...initial }
+const colosseum = { place_id: 'ChIJA', name: 'Colosseum' }
+
+function fakeApi(overrides = {}) {
   return {
-    getItem(key) {
-      return Object.prototype.hasOwnProperty.call(data, key) ? data[key] : null
-    },
-    setItem(key, value) {
-      data[key] = String(value)
-    },
-    removeItem(key) {
-      delete data[key]
-    },
-    data,
+    fetchSavedActivities: vi.fn().mockResolvedValue({ items: [] }),
+    saveActivity: vi.fn().mockResolvedValue({ place_id: 'ChIJA' }),
+    deleteSavedActivity: vi.fn().mockResolvedValue(undefined),
+    ...overrides,
   }
 }
 
-describe('activity like ids', () => {
-  it('parses only stable place ids and ignores malformed JSON', () => {
-    expect(parseActivityLikeIds('["ChIJA","ChIJA"," "]')).toEqual(['ChIJA'])
-    expect(parseActivityLikeIds('{not json')).toEqual([])
-    expect(parseActivityLikeIds('{"place_id":"ChIJA"}')).toEqual([])
-    expect(parseActivityLikeIds(null)).toEqual([])
-    expect(activityLikesStorageKey(' user-1 ')).toBe('tp:activity-likes:user-1')
-    expect(activityLikesStorageKey('')).toBeNull()
-  })
-
-  it('treats invalid stored JSON as no likes', () => {
-    const storage = memoryStorage({ 'tp:activity-likes:user-a': '{bad' })
-    const store = createActivityLikesStore({ storage })
-    store.loadUser('user-a')
-    expect(store.getSnapshot().likedIds.size).toBe(0)
+describe('activityLikeId', () => {
+  it('trims and stringifies', () => {
+    expect(activityLikeId(' ChIJA ')).toBe('ChIJA')
+    expect(activityLikeId(null)).toBe('')
   })
 })
 
-describe('activity like persistence', () => {
-  it('stores only ids for that user and survives a reload', () => {
-    const storage = memoryStorage()
-    const store = createActivityLikesStore({ storage })
-    store.loadUser('user-a')
-    expect(store.toggle('ChIJA')).toEqual({ ok: true, liked: true })
+describe('activity likes store', () => {
+  it('loads the authenticated user liked place ids from the backend', async () => {
+    const api = fakeApi({
+      fetchSavedActivities: vi.fn().mockResolvedValue({ items: [{ place_id: 'ChIJA' }] }),
+    })
+    const store = createActivityLikesStore({ api })
+    await store.loadUser('user-a')
+    expect(api.fetchSavedActivities).toHaveBeenCalledTimes(1)
     expect(store.getSnapshot().likedIds.has('ChIJA')).toBe(true)
-    expect(storage.getItem('tp:activity-likes:user-a')).toBe('["ChIJA"]')
-    expect(JSON.parse(storage.getItem('tp:activity-likes:user-a'))).not.toContain('token')
-
-    const reloaded = createActivityLikesStore({ storage })
-    reloaded.loadUser('user-a')
-    expect(reloaded.getSnapshot().likedIds.has('ChIJA')).toBe(true)
-    expect(reloaded.toggle('ChIJA')).toEqual({ ok: true, liked: false })
-    expect(reloaded.getSnapshot().likedIds.has('ChIJA')).toBe(false)
+    expect(store.getSnapshot().userId).toBe('user-a')
   })
 
-  it('does not share likes across accounts and clears memory on logout', () => {
-    const storage = memoryStorage()
-    const store = createActivityLikesStore({ storage })
-    store.loadUser('user-a')
-    store.toggle('ChIJA')
-    store.loadUser('user-b')
-    expect(store.getSnapshot().likedIds.has('ChIJA')).toBe(false)
-    store.toggle('park')
-    expect(readActivityLikes(storage, 'user-a')).toEqual(['ChIJA'])
-    expect(readActivityLikes(storage, 'user-b')).toEqual(['park'])
-    store.loadUser(null)
+  it('clears likes and skips fetching when logged out', async () => {
+    const api = fakeApi()
+    const store = createActivityLikesStore({ api })
+    await store.loadUser(null)
+    expect(api.fetchSavedActivities).not.toHaveBeenCalled()
     expect(store.getSnapshot().likedIds.size).toBe(0)
     expect(store.getSnapshot().userId).toBeNull()
-    expect(store.toggle('park')).toEqual({ requiresAuth: true })
   })
 
-  it('reverts the previous state when storage writes fail', () => {
-    const storage = {
-      getItem: () => '["ChIJA"]',
-      setItem: () => {
-        throw new Error('quota')
-      },
-      removeItem: () => {},
-    }
-    const store = createActivityLikesStore({ storage })
-    store.loadUser('user-a')
+  it('surfaces a load error without throwing', async () => {
+    const api = fakeApi({ fetchSavedActivities: vi.fn().mockRejectedValue(new Error('down')) })
+    const store = createActivityLikesStore({ api })
+    await store.loadUser('user-a')
+    expect(store.getSnapshot().error).toBe(ACTIVITY_LIKES_LOAD_ERROR)
+    expect(store.getSnapshot().likedIds.size).toBe(0)
+  })
+
+  it('requires auth before toggling', () => {
+    const store = createActivityLikesStore({ api: fakeApi() })
+    expect(store.toggle('ChIJA', { activity: colosseum, city: 'Rome' })).toEqual({ requiresAuth: true })
+  })
+
+  it('optimistically likes then confirms via saveActivity', async () => {
+    const api = fakeApi()
+    const store = createActivityLikesStore({ api })
+    await store.loadUser('user-a')
+
+    const result = store.toggle('ChIJA', { activity: colosseum, city: 'Rome', countryCode: 'IT', destinationId: 'dest-1' })
+    expect(result.ok).toBe(true)
+    expect(result.liked).toBe(true)
     expect(store.getSnapshot().likedIds.has('ChIJA')).toBe(true)
-    expect(store.toggle('park')).toEqual({ ok: false, error: ACTIVITY_LIKES_SAVE_ERROR })
-    expect(store.getSnapshot().likedIds.has('park')).toBe(false)
+    expect(store.getSnapshot().pendingIds.has('ChIJA')).toBe(true)
+
+    await result.settled
+    expect(api.saveActivity).toHaveBeenCalledWith({
+      activity: colosseum,
+      city: 'Rome',
+      countryCode: 'IT',
+      destinationId: 'dest-1',
+    })
     expect(store.getSnapshot().likedIds.has('ChIJA')).toBe(true)
+    expect(store.getSnapshot().pendingIds.size).toBe(0)
+  })
+
+  it('optimistically unlikes then confirms via deleteSavedActivity', async () => {
+    const api = fakeApi({ fetchSavedActivities: vi.fn().mockResolvedValue({ items: [{ place_id: 'ChIJA' }] }) })
+    const store = createActivityLikesStore({ api })
+    await store.loadUser('user-a')
+
+    const result = store.toggle('ChIJA')
+    expect(result.ok).toBe(true)
+    expect(result.liked).toBe(false)
+    expect(store.getSnapshot().likedIds.has('ChIJA')).toBe(false)
+
+    await result.settled
+    expect(api.deleteSavedActivity).toHaveBeenCalledWith('ChIJA')
+    expect(store.getSnapshot().likedIds.has('ChIJA')).toBe(false)
+  })
+
+  it('rejects a like with no activity context', async () => {
+    const store = createActivityLikesStore({ api: fakeApi() })
+    await store.loadUser('user-a')
+    expect(store.toggle('ChIJA')).toEqual({ ok: false, error: ACTIVITY_LIKES_SAVE_ERROR })
+  })
+
+  it('reverts the optimistic update when the backend call fails', async () => {
+    const api = fakeApi({ saveActivity: vi.fn().mockRejectedValue(new Error('boom')) })
+    const store = createActivityLikesStore({ api })
+    await store.loadUser('user-a')
+
+    const result = store.toggle('ChIJA', { activity: colosseum, city: 'Rome' })
+    expect(store.getSnapshot().likedIds.has('ChIJA')).toBe(true)
+
+    await result.settled
+    expect(store.getSnapshot().likedIds.has('ChIJA')).toBe(false)
     expect(store.getSnapshot().error).toBe(ACTIVITY_LIKES_SAVE_ERROR)
     expect(store.getSnapshot().pendingIds.size).toBe(0)
   })
 
-  it('ignores a nested toggle of the same id while saving', () => {
-    const store = createActivityLikesStore({
-      storage: {
-        getItem: () => '[]',
-        setItem() {
-          nested = store.toggle('ChIJA')
-        },
-        removeItem: () => {},
-      },
-    })
-    store.loadUser('user-a')
-    let nested
-    const first = store.toggle('ChIJA')
-    expect(first).toEqual({ ok: true, liked: true })
+  it('ignores a nested toggle of the same id while a request is pending', async () => {
+    const api = fakeApi()
+    const store = createActivityLikesStore({ api })
+    await store.loadUser('user-a')
+
+    const first = store.toggle('ChIJA', { activity: colosseum, city: 'Rome' })
+    const nested = store.toggle('ChIJA', { activity: colosseum, city: 'Rome' })
+    expect(first.ok).toBe(true)
     expect(nested).toEqual({ ok: false, pending: true })
+    await first.settled
+  })
+
+  it('does not leak likes between accounts', async () => {
+    const api = fakeApi()
+    const store = createActivityLikesStore({ api })
+    await store.loadUser('user-a')
+    const result = store.toggle('ChIJA', { activity: colosseum, city: 'Rome' })
+    await result.settled
     expect(store.getSnapshot().likedIds.has('ChIJA')).toBe(true)
-    expect(store.getSnapshot().pendingIds.size).toBe(0)
+
+    await store.loadUser('user-b')
+    expect(store.getSnapshot().likedIds.has('ChIJA')).toBe(false)
   })
 })
 
-describe('writeActivityLikes', () => {
-  it('does not throw when storage is missing', () => {
-    expect(writeActivityLikes(null, 'user-a', ['ChIJA'])).toEqual({
-      ok: false,
-      error: ACTIVITY_LIKES_SAVE_ERROR,
-    })
-    expect(ACTIVITY_LIKES_NOTE).toMatch(/this browser only/i)
+describe('constants', () => {
+  it('describes account-backed persistence', () => {
+    expect(ACTIVITY_LIKES_NOTE).toMatch(/account/i)
   })
 })

@@ -20,7 +20,7 @@ export function useActivityLikes({ store = activityLikesStore } = {}) {
   }, [store, userId])
 
   const toggleLike = useCallback(
-    (placeId) => followActivityLikeResult(store.toggle(placeId), navigate),
+    (placeId, context) => followActivityLikeResult(store.toggle(placeId, context), navigate),
     [navigate, store],
   )
 

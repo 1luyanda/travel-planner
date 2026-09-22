@@ -1,11 +1,14 @@
 /**
- * Per-user activity likes. There is no activities-like API, so likes are
- * stored in localStorage as place_id strings only.
+ * Per-user activity likes. Liking an activity snapshots it to the
+ * authenticated user's `saved-activities` document in Cosmos DB via the
+ * backend API; there is no local persistence.
  */
 
-export const ACTIVITY_LIKES_NOTE = 'Likes are saved on this browser only.'
+import { deleteSavedActivity, fetchSavedActivities, saveActivity } from '../services/travelApi'
+
+export const ACTIVITY_LIKES_NOTE = 'Likes are saved to your account.'
 export const ACTIVITY_LIKES_SAVE_ERROR = 'Could not save that like.'
-export const ACTIVITY_LIKES_STORAGE_PREFIX = 'tp:activity-likes:'
+export const ACTIVITY_LIKES_LOAD_ERROR = 'Could not load your liked activities.'
 
 function trimText(value) {
   if (value == null) return ''
@@ -14,67 +17,6 @@ function trimText(value) {
 
 export function activityLikeId(value) {
   return trimText(value)
-}
-
-export function activityLikesStorageKey(userId) {
-  const id = trimText(userId)
-  if (!id) return null
-  return `${ACTIVITY_LIKES_STORAGE_PREFIX}${id}`
-}
-
-export function parseActivityLikeIds(raw) {
-  if (raw == null || raw === '') return []
-  try {
-    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
-    if (!Array.isArray(parsed)) return []
-    const seen = new Set()
-    const ids = []
-    for (const item of parsed) {
-      const id = activityLikeId(item)
-      if (!id || seen.has(id)) continue
-      seen.add(id)
-      ids.push(id)
-    }
-    return ids
-  } catch {
-    return []
-  }
-}
-
-export function getBrowserStorage() {
-  try {
-    const storage = globalThis.localStorage
-    if (!storage) return null
-    const probe = `${ACTIVITY_LIKES_STORAGE_PREFIX}probe`
-    storage.setItem(probe, '1')
-    storage.removeItem(probe)
-    return storage
-  } catch {
-    return null
-  }
-}
-
-export function readActivityLikes(storage, userId) {
-  const key = activityLikesStorageKey(userId)
-  if (!key) return []
-  if (!storage) return []
-  try {
-    return parseActivityLikeIds(storage.getItem(key))
-  } catch {
-    return []
-  }
-}
-
-export function writeActivityLikes(storage, userId, ids) {
-  const key = activityLikesStorageKey(userId)
-  if (!key) return { ok: false, error: ACTIVITY_LIKES_SAVE_ERROR }
-  if (!storage) return { ok: false, error: ACTIVITY_LIKES_SAVE_ERROR }
-  try {
-    storage.setItem(key, JSON.stringify([...parseActivityLikeIds(ids)].sort()))
-    return { ok: true }
-  } catch {
-    return { ok: false, error: ACTIVITY_LIKES_SAVE_ERROR }
-  }
 }
 
 function emptySnapshot(userId = null) {
@@ -88,15 +30,16 @@ function emptySnapshot(userId = null) {
 
 const SERVER_SNAPSHOT = emptySnapshot()
 
-export function createActivityLikesStore({ storage } = {}) {
-  let snapshot = emptySnapshot()
-  const listeners = new Set()
-
-  function resolveStorage() {
-    if (typeof storage === 'function') return storage()
-    if (storage) return storage
-    return getBrowserStorage()
+export function createActivityLikesStore({ api } = {}) {
+  const backend = {
+    fetchSavedActivities,
+    saveActivity,
+    deleteSavedActivity,
+    ...api,
   }
+  let snapshot = emptySnapshot()
+  let loadToken = 0
+  const listeners = new Set()
 
   function emit(next) {
     snapshot = {
@@ -121,51 +64,70 @@ export function createActivityLikesStore({ storage } = {}) {
     },
     loadUser(userId) {
       const id = trimText(userId) || null
-      emit({
-        ...emptySnapshot(id),
-        likedIds: new Set(id ? readActivityLikes(resolveStorage(), id) : []),
-      })
+      const token = ++loadToken
+      emit(emptySnapshot(id))
+      if (!id) return undefined
+
+      return backend
+        .fetchSavedActivities()
+        .then((data) => {
+          if (token !== loadToken) return
+          const ids = new Set(
+            (data?.items || [])
+              .map((item) => activityLikeId(item?.place_id))
+              .filter(Boolean),
+          )
+          emit({ userId: id, likedIds: ids, pendingIds: new Set(), error: '' })
+        })
+        .catch(() => {
+          if (token !== loadToken) return
+          emit({ userId: id, likedIds: new Set(), pendingIds: new Set(), error: ACTIVITY_LIKES_LOAD_ERROR })
+        })
     },
-    toggle(placeId) {
+    toggle(placeId, context) {
       const id = activityLikeId(placeId)
       if (!snapshot.userId) return { requiresAuth: true }
       if (!id) return { ok: false, error: ACTIVITY_LIKES_SAVE_ERROR }
       if (snapshot.pendingIds.has(id)) return { ok: false, pending: true }
 
-      const previous = new Set(snapshot.likedIds)
-      const likedIds = new Set(previous)
-      const liked = !likedIds.has(id)
+      const userId = snapshot.userId
+      const wasLiked = snapshot.likedIds.has(id)
+      const liked = !wasLiked
+      if (liked && !context?.activity) {
+        return { ok: false, error: ACTIVITY_LIKES_SAVE_ERROR }
+      }
+
+      const previousLiked = new Set(snapshot.likedIds)
+      const likedIds = new Set(previousLiked)
       if (liked) likedIds.add(id)
       else likedIds.delete(id)
 
       const pendingIds = new Set(snapshot.pendingIds)
       pendingIds.add(id)
-      emit({
-        userId: snapshot.userId,
-        likedIds,
-        pendingIds,
-        error: '',
-      })
+      emit({ userId, likedIds, pendingIds, error: '' })
 
-      const written = writeActivityLikes(resolveStorage(), snapshot.userId, [...likedIds])
-      pendingIds.delete(id)
-      if (!written.ok) {
-        emit({
-          userId: snapshot.userId,
-          likedIds: previous,
-          pendingIds: new Set(pendingIds),
-          error: written.error,
+      const request = liked
+        ? backend.saveActivity({
+            activity: context.activity,
+            city: context.city,
+            countryCode: context.countryCode,
+            destinationId: context.destinationId,
+          })
+        : backend.deleteSavedActivity(id)
+
+      const settled = request
+        .then(() => {
+          const nextPending = new Set(snapshot.pendingIds)
+          nextPending.delete(id)
+          emit({ userId, likedIds: snapshot.likedIds, pendingIds: nextPending, error: '' })
         })
-        return { ok: false, error: written.error }
-      }
+        .catch(() => {
+          const nextPending = new Set(snapshot.pendingIds)
+          nextPending.delete(id)
+          emit({ userId, likedIds: previousLiked, pendingIds: nextPending, error: ACTIVITY_LIKES_SAVE_ERROR })
+        })
 
-      emit({
-        userId: snapshot.userId,
-        likedIds,
-        pendingIds: new Set(pendingIds),
-        error: '',
-      })
-      return { ok: true, liked }
+      return { ok: true, liked, settled }
     },
   }
 }

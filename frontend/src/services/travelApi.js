@@ -325,3 +325,53 @@ export async function fetchActivities(payload, { signal } = {}) {
   }
   return normalized
 }
+
+export async function fetchSavedActivities({ signal } = {}) {
+  const data = await requestJson('/api/saved-activities', { signal })
+  if (!data || typeof data !== 'object' || !Array.isArray(data.items)) {
+    throw new ApiError('Saved activities returned an unexpected response.')
+  }
+  return {
+    items: data.items.filter((item) => item && typeof item === 'object'),
+  }
+}
+
+// There is no activities container to re-read later, so the full activity
+// item plus its destination context is sent and stored as a snapshot at
+// like time.
+export async function saveActivity(
+  { activity, city, countryCode, destinationId },
+  { signal } = {},
+) {
+  const placeId = typeof activity?.place_id === 'string' ? activity.place_id.trim() : ''
+  if (!placeId) {
+    throw new ApiError('An activity place_id is required to save it.')
+  }
+  const cleanCity = typeof city === 'string' ? city.trim() : ''
+  if (!cleanCity) {
+    throw new ApiError('A destination city is required to save an activity.')
+  }
+  const body = { activity, city: cleanCity }
+  if (typeof countryCode === 'string' && countryCode.trim()) {
+    body.country_code = countryCode.trim()
+  }
+  if (typeof destinationId === 'string' && destinationId.trim()) {
+    body.destination_id = destinationId.trim()
+  }
+  const data = await requestJson('/api/saved-activities', { method: 'POST', body, signal })
+  if (!data || typeof data !== 'object' || typeof data.place_id !== 'string') {
+    throw new ApiError('Saving that activity returned an unexpected response.')
+  }
+  return data
+}
+
+export async function deleteSavedActivity(placeId, { signal } = {}) {
+  const id = typeof placeId === 'string' ? placeId.trim() : ''
+  if (!id) {
+    throw new ApiError('place_id is required.')
+  }
+  await requestJson(`/api/saved-activities/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    signal,
+  })
+}

@@ -11,6 +11,10 @@ from backend.config import Settings
 from backend.contracts import FlightQuery, OriginItem
 from backend.models.hotel import HotelDocument
 from backend.models.user import UserDocument
+from backend.models.user_activity import (
+    SavedActivitySnapshot,
+    UserSavedActivitiesDocument,
+)
 from backend.models.user_flight import SavedFlightSnapshot, UserSavedFlightsDocument
 
 
@@ -84,6 +88,7 @@ class CosmosDestinationRepository:
         self._flights: ContainerProxy | None = None
         self._users: ContainerProxy | None = None
         self._user_flights: ContainerProxy | None = None
+        self._user_activities: ContainerProxy | None = None
         self._hotels: ContainerProxy | None = None
 
     @property
@@ -106,6 +111,9 @@ class CosmosDestinationRepository:
         )
         self._user_flights = database.get_container_client(
             self._settings.user_flights_container_name
+        )
+        self._user_activities = database.get_container_client(
+            self._settings.user_activities_container_name
         )
         self._hotels = database.get_container_client(
             self._settings.hotels_container_name
@@ -583,6 +591,93 @@ class CosmosDestinationRepository:
             if error.status_code == 404:
                 return
             raise RepositoryError("Saved flight delete failed.") from error
+
+    def _require_user_activities(self) -> ContainerProxy:
+        if self._user_activities is None:
+            raise RepositoryError("Cosmos repository has not been connected")
+        return self._user_activities
+
+    async def _read_user_saved_activities(
+        self,
+        user_id: str,
+    ) -> UserSavedActivitiesDocument | None:
+        container = self._require_user_activities()
+        try:
+            item = await container.read_item(item=user_id, partition_key=user_id)
+        except CosmosHttpResponseError as error:
+            if error.status_code == 404:
+                return None
+            raise RepositoryError("Saved activity lookup failed.") from error
+        return UserSavedActivitiesDocument.model_validate(item)
+
+    async def list_user_saved_activities(
+        self,
+        user_id: str,
+    ) -> UserSavedActivitiesDocument | None:
+        """Return the authenticated user's liked-activities document."""
+
+        return await self._read_user_saved_activities(user_id)
+
+    async def add_user_saved_activity(
+        self,
+        user_id: str,
+        snapshot: SavedActivitySnapshot,
+    ) -> UserSavedActivitiesDocument:
+        """Add a liked activity to the user's list. Idempotent by place_id."""
+
+        container = self._require_user_activities()
+        document = await self._read_user_saved_activities(user_id)
+        if document is None:
+            created = UserSavedActivitiesDocument(
+                id=user_id,
+                activities=[snapshot],
+            )
+            try:
+                item = await container.create_item(body=created.model_dump(mode="json"))
+            except CosmosHttpResponseError as error:
+                if error.status_code == 409:
+                    return await self.add_user_saved_activity(user_id, snapshot)
+                raise RepositoryError("Saved activity create failed.") from error
+            return UserSavedActivitiesDocument.model_validate(item)
+
+        if any(item.place_id == snapshot.place_id for item in document.activities):
+            return document
+
+        activities = [snapshot, *document.activities]
+        updated = document.model_copy(update={"activities": activities})
+        try:
+            item = await container.replace_item(
+                item=updated.id,
+                body=updated.model_dump(mode="json"),
+            )
+        except CosmosHttpResponseError as error:
+            if error.status_code == 404:
+                return await self.add_user_saved_activity(user_id, snapshot)
+            raise RepositoryError("Saved activity update failed.") from error
+        return UserSavedActivitiesDocument.model_validate(item)
+
+    async def remove_user_saved_activity(self, user_id: str, place_id: str) -> None:
+        """Remove a liked activity from the authenticated user's list only."""
+
+        container = self._require_user_activities()
+        document = await self._read_user_saved_activities(user_id)
+        if document is None:
+            return
+        remaining = [
+            item for item in document.activities if item.place_id != place_id
+        ]
+        if remaining == document.activities:
+            return
+        updated = document.model_copy(update={"activities": remaining})
+        try:
+            await container.replace_item(
+                item=updated.id,
+                body=updated.model_dump(mode="json"),
+            )
+        except CosmosHttpResponseError as error:
+            if error.status_code == 404:
+                return
+            raise RepositoryError("Saved activity delete failed.") from error
 
     async def close(self) -> None:
         if self._client is not None:

@@ -12,6 +12,7 @@ from .llm import (
 )
 from .places import PlacesService
 from .recommendations import RecommendationService
+from .saved_activities import SavedActivitiesService
 from .saved_flights import SavedFlightNotFoundError, SavedFlightsService
 from .users import (
     DuplicateEmailError,
@@ -26,6 +27,7 @@ __all__ = [
     "PlacesService",
     "RankedTripLike",
     "RecommendationService",
+    "SavedActivitiesService",
     "SavedFlightNotFoundError",
     "SavedFlightsService",
     "create_llm_client_from_env",
