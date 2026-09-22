@@ -369,7 +369,7 @@ export default function App() {
   }
 
   async function loadAdaptedSavedFlights(signal) {
-    const payload = await fetchSavedFlights({ signal })
+    const payload = await fetchSavedFlights({ signal, userId })
     return attachCityPhotos(adaptSavedFlights(payload), signal)
   }
 
@@ -994,7 +994,7 @@ export default function App() {
         current.filter((item) => item.id !== reference.flight_id && item.id !== destination.id),
       )
       try {
-        await deleteSavedFlight(reference.flight_id)
+        await deleteSavedFlight(reference.flight_id, { userId })
         setSavedError('')
       } catch (error) {
         setSavedItems(previous)
@@ -1005,6 +1005,7 @@ export default function App() {
 
     const optimistic = adaptSavedFlight({
       flight_id: reference.flight_id,
+      hotel_destination_id: destination.hotelDestinationId,
       origin_id: reference.origin_id,
       saved_at: new Date().toISOString(),
       last_checked_at: new Date().toISOString(),
@@ -1032,7 +1033,10 @@ export default function App() {
       ...current.filter((item) => item.id !== reference.flight_id),
     ])
     try {
-      const saved = await saveFlight(reference)
+      const saved = await saveFlight(
+        { ...reference, hotelDestinationId: destination.hotelDestinationId },
+        { userId },
+      )
       const adapted = keepSavedFlightPhotos(adaptSavedFlight(saved), destination)
       const withPhotos = await attachCityPhotos([adapted])
       setSavedItems((current) => [
