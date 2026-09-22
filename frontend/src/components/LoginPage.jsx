@@ -92,6 +92,9 @@ export default function LoginPage() {
         New here? <AppLink to={ROUTES.signup}>Sign up</AppLink>
       </p>
       <p className={styles.authSwitch}>
+        <AppLink to={ROUTES.planner}>Continue as guest</AppLink>
+      </p>
+      <p className={styles.authSwitch}>
         <AppLink to={ROUTES.home}>Back to homepage</AppLink>
       </p>
     </AuthScreen>

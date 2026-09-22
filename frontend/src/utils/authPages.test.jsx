@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import AuthPanel from '../components/AuthPanel'
 import LandingPage from '../components/LandingPage'
 import LoginPage from '../components/LoginPage'
+import Sidebar from '../components/Sidebar'
 import SignupPage from '../components/SignupPage'
 
 const auth = {
@@ -47,7 +48,9 @@ describe('auth navigation', () => {
     expect(html).not.toContain('Get app')
     expect(html).not.toContain('placeholder="Email"')
     expect(html).not.toContain('role="tablist"')
-    expect(html).toContain('Your mood. Your budget.')
+    expect(html).toContain('href="/planner"')
+    expect(html).toContain('Start planning')
+    expect(html).toContain('Continue as guest')
   })
 
   it('preserves signed-in greeting, planner link, and logout in the header', () => {
@@ -74,7 +77,8 @@ describe('auth navigation', () => {
     expect(html).toContain('Sign up')
     expect(html).toContain('href="/"')
     expect(html).toContain('Back to homepage')
-    expect(html).toContain('autoComplete="email"')
+    expect(html).toContain('href="/planner"')
+    expect(html).toContain('Continue as guest')
     expect(html).toContain('autoComplete="current-password"')
   })
 
@@ -90,7 +94,33 @@ describe('auth navigation', () => {
     expect(html).toContain('href="/login"')
     expect(html).toContain('Log in')
     expect(html).toContain('Back to homepage')
+    expect(html).toContain('href="/planner"')
+    expect(html).toContain('Continue as guest')
     expect(html).toContain('autoComplete="name"')
     expect(html).toContain('autoComplete="new-password"')
+  })
+
+  it('lets guests open the planner without a Saved tab', () => {
+    const html = renderToStaticMarkup(
+      <Sidebar view="explore" history={[]} savedCount={0} user={null} />,
+    )
+    expect(html).toContain('Guest')
+    expect(html).toContain('Log in to save trips')
+    expect(html).toContain('href="/login"')
+    expect(html).not.toContain('Saved')
+  })
+
+  it('keeps Saved available for signed-in users', () => {
+    const html = renderToStaticMarkup(
+      <Sidebar
+        view="explore"
+        history={[]}
+        savedCount={2}
+        user={{ display_name: 'Ada' }}
+      />,
+    )
+    expect(html).toContain('Ada')
+    expect(html).toContain('Saved (2)')
+    expect(html).toContain('Log out')
   })
 })

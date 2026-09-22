@@ -63,6 +63,7 @@ export default function DestinationCard({
           </div>
           <div className={styles.cardPrice}>
             <strong>{formatPrice(flight) || displayValue(null)}</strong>
+            {onToggleSaved ? (
             <button
               type="button"
               className={isSaved ? styles.saveOn : styles.saveBtn}
@@ -70,11 +71,12 @@ export default function DestinationCard({
               aria-label={isSaved ? `Remove ${place.city} from saved` : `Save ${place.city}`}
               onClick={(event) => {
                 event.stopPropagation()
-                onToggleSaved?.(destination)
+                onToggleSaved(destination)
               }}
             >
               <Heart size={16} fill={isSaved ? 'currentColor' : 'none'} />
             </button>
+            ) : null}
           </div>
         </div>
 

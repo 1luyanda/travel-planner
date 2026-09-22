@@ -147,10 +147,8 @@ describe('localClarificationQuestions', () => {
 })
 
 describe('ranking refinement actions', () => {
-  it('keeps Direct flights as a hard filter and leaves ranking phrases to chat', () => {
-    expect(REFINEMENT_ACTIONS).toEqual([
-      { label: 'Direct flights', text: 'Direct', hardFilter: true },
-    ])
+  it('does not offer ranking chips; ranking phrases stay in chat', () => {
+    expect(REFINEMENT_ACTIONS).toEqual([])
   })
 })
 
@@ -514,7 +512,7 @@ describe('explanations and scores', () => {
   })
 
   it('maps chip labels to backend feedback text', () => {
-    expect(refinementFeedbackText('Direct flights')).toBe('Direct')
+    expect(refinementFeedbackText('Direct flights')).toBe('Direct flights')
     expect(refinementFeedbackText('Shorter travel')).toBe('Shorter travel')
     expect(refinementFeedbackText('More sunshine')).toBe('More sunshine')
     expect(refinementFeedbackText('Less rain')).toBe('Less rain')

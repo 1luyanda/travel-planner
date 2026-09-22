@@ -68,6 +68,7 @@ import {
 import {
   adaptSavedFlight,
   adaptSavedFlights,
+  canSaveFlights,
   destinationsForView,
   flightReferenceFromDestination,
   keepSavedFlightPhotos,
@@ -251,9 +252,6 @@ export default function App() {
 
   useEffect(() => {
     if (authLoading) return
-    if (isPlannerPath(path) && !user) {
-      navigate(ROUTES.home, { replace: true })
-    }
     if (isAuthPath(path) && user) {
       navigate(ROUTES.planner, { replace: true })
     }
@@ -266,6 +264,10 @@ export default function App() {
     media.addEventListener('change', sync)
     return () => media.removeEventListener('change', sync)
   }, [])
+
+  useEffect(() => {
+    if (!userId && view === 'saved') setView('explore')
+  }, [userId, view])
 
   useEffect(() => {
     if (!focusOrigin || !isPlannerPath(path)) return
@@ -984,6 +986,7 @@ export default function App() {
   }
 
   async function handleToggleSaved(destination) {
+    if (!canSaveFlights(user)) return
     const reference = flightReferenceFromDestination(destination)
     if (!reference.flight_id) return
     const alreadySaved = savedIds.includes(reference.flight_id) || savedIds.includes(destination.id)
@@ -1085,11 +1088,12 @@ export default function App() {
     return <LandingPage />
   }
 
-  if (authLoading || !user) {
-    return <div className={styles.workspace}>Loading your account…</div>
+  if (authLoading) {
+    return <div className={styles.workspace}>Loading…</div>
   }
 
   const composerPlaceholder = composerPlaceholderFor(clarifyKind)
+  const saveHandler = canSaveFlights(user) ? handleToggleSaved : undefined
 
   return (
     <div
@@ -1171,7 +1175,7 @@ export default function App() {
               selectedId={selectedDestinationId}
               savedIds={savedIds}
               onSelect={handleSelectDestination}
-              onToggleSaved={handleToggleSaved}
+              onToggleSaved={saveHandler}
               onViewDetails={handleViewDetails}
               onExplore={() => setView('explore')}
             />
@@ -1203,7 +1207,7 @@ export default function App() {
                 canRefine={Boolean(tripRequest)}
                 onRefine={handleRefine}
                 onSelect={handleSelectDestination}
-                onToggleSaved={handleToggleSaved}
+                onToggleSaved={saveHandler}
                 onViewDetails={handleViewDetails}
               />
             </>
@@ -1268,7 +1272,7 @@ export default function App() {
             destination={detailsTrip}
             onClose={handleCloseDetails}
             isSaved={Boolean(detailsTrip && savedIds.includes(detailsTrip.id))}
-            onToggleSaved={handleToggleSaved}
+            onToggleSaved={saveHandler}
             moods={parsedPreferences?.moods}
             activitiesEnabled={Boolean(detailsTrip)}
             hotelSelection={hotelSelection}
