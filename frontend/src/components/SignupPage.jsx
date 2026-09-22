@@ -147,6 +147,9 @@ export default function SignupPage() {
         Already have an account? <AppLink to={ROUTES.login}>Log in</AppLink>
       </p>
       <p className={styles.authSwitch}>
+        <AppLink to={ROUTES.planner}>Continue as guest</AppLink>
+      </p>
+      <p className={styles.authSwitch}>
         <AppLink to={ROUTES.home}>Back to homepage</AppLink>
       </p>
     </AuthScreen>

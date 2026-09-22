@@ -56,7 +56,7 @@ export default function ConversationPane({
       {loading && <p className={styles.notice}>Loading destinations…</p>}
       {refining && !loading && <p className={styles.notice}>Updating recommendations…</p>}
 
-      {showResults && results.length > 0 && (
+      {showResults && results.length > 0 && REFINEMENT_ACTIONS.length > 0 && (
         <div className={styles.chips} role="group" aria-label="Refine recommendations">
           {REFINEMENT_ACTIONS.map((action) => (
             <button

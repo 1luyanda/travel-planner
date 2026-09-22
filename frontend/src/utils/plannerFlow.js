@@ -7,9 +7,7 @@
 const IATA = /^[A-Za-z]{3}$/
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 
-export const REFINEMENT_ACTIONS = [
-  { label: 'Direct flights', text: 'Direct', hardFilter: true },
-]
+export const REFINEMENT_ACTIONS = []
 
 export const INITIAL_PLANNER_FORM = {
   originId: '',

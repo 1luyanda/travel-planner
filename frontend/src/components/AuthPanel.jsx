@@ -31,6 +31,9 @@ export default function AuthPanel() {
       <AppLink to={ROUTES.login} className={styles.authLoginLink}>
         Log in
       </AppLink>
+      <AppLink to={ROUTES.planner} className={styles.authLoginLink}>
+        Continue as guest
+      </AppLink>
       <AppLink to={ROUTES.signup} className={styles.authGetStarted}>
         Sign up
       </AppLink>

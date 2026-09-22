@@ -14,6 +14,7 @@ from backend.repositories import (
     RepositoryConflictError,
     RepositoryNotFoundError,
 )
+from backend.services.identity import hash_identity
 
 
 class DuplicateEmailError(RuntimeError):
@@ -27,25 +28,44 @@ class InvalidCredentialsError(RuntimeError):
 class UserService:
     """Owns local user creation, lookup, and password verification."""
 
-    def __init__(self, repository: CosmosDestinationRepository) -> None:
+    def __init__(
+        self,
+        repository: CosmosDestinationRepository,
+        *,
+        identity_secret: str,
+    ) -> None:
+        if not identity_secret:
+            raise ValueError("identity_secret is required to hash user identity fields.")
         self._repository = repository
+        self._identity_secret = identity_secret
         self._password_hash = PasswordHash.recommended()
         self._dummy_hash = self._password_hash.hash(
             "unavailable-password-for-timing-equality"
         )
 
+    def hash_email(self, email: str) -> str:
+        return hash_identity(self._identity_secret, str(email).strip())
+
+    def hash_email_normalized(self, email: str) -> str:
+        return hash_identity(self._identity_secret, str(email).strip().lower())
+
+    def hash_display_name(self, display_name: str) -> str:
+        return hash_identity(self._identity_secret, display_name)
+
     async def register(self, body: RegisterRequest) -> UserDocument:
         email_normalized = str(body.email).strip().lower()
-        existing = await self._repository.find_user_by_email(email_normalized)
+        existing = await self._repository.find_user_by_email(
+            self.hash_email_normalized(email_normalized)
+        )
         if existing is not None:
             raise DuplicateEmailError
 
         now = datetime.now(timezone.utc)
         user = UserDocument(
             id=str(uuid4()),
-            email=body.email,
-            email_normalized=email_normalized,
-            display_name=body.display_name,
+            email=self.hash_email(str(body.email).strip()),
+            email_normalized=self.hash_email_normalized(email_normalized),
+            display_name=self.hash_display_name(body.display_name),
             password_hash=self._password_hash.hash(body.password),
             created_at=now,
             updated_at=now,
@@ -57,7 +77,9 @@ class UserService:
 
     async def authenticate(self, body: LoginRequest) -> UserDocument:
         email_normalized = str(body.email).strip().lower()
-        user = await self._repository.find_user_by_email(email_normalized)
+        user = await self._repository.find_user_by_email(
+            self.hash_email_normalized(email_normalized)
+        )
         password_hash = user.password_hash if user else self._dummy_hash
 
         try:
@@ -79,10 +101,15 @@ class UserService:
             raise InvalidCredentialsError from None
 
     @staticmethod
-    def response_for(user: UserDocument) -> UserResponse:
+    def response_for(
+        user: UserDocument,
+        *,
+        email: str,
+        display_name: str,
+    ) -> UserResponse:
         return UserResponse(
             id=user.id,
-            email=user.email,
-            display_name=user.display_name,
+            email=email,
+            display_name=display_name,
             created_at=user.created_at,
         )

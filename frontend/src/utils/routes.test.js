@@ -20,9 +20,9 @@ describe('routes', () => {
     expect(isAppPath('/unknown')).toBe(false)
   })
 
-  it('sends unsigned planner visits to login and signed-in auth pages to the planner', () => {
-    expect(sessionRedirect(ROUTES.planner, null)).toBe(ROUTES.login)
-    expect(sessionRedirect(ROUTES.docs, null)).toBe(ROUTES.login)
+  it('lets guests stay on the planner and sends signed-in auth pages to the planner', () => {
+    expect(sessionRedirect(ROUTES.planner, null)).toBeNull()
+    expect(sessionRedirect(ROUTES.docs, null)).toBeNull()
     expect(sessionRedirect(ROUTES.login, { id: 'user-1' })).toBe(ROUTES.planner)
     expect(sessionRedirect(ROUTES.signup, { id: 'user-1' })).toBe(ROUTES.planner)
     expect(sessionRedirect(ROUTES.planner, { id: 'user-1' })).toBeNull()

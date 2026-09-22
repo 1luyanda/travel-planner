@@ -125,4 +125,23 @@ describe('DestinationCard explanations', () => {
     )
     expect(html).toContain('Flight no longer available')
   })
+
+  it('hides the save control when saving is unavailable', () => {
+    const html = renderToStaticMarkup(
+      <DestinationCard destination={destination} rank={1} previousRank={null} />,
+    )
+    expect(html).not.toContain('Save Rome')
+  })
+
+  it('shows the save control when a handler is provided', () => {
+    const html = renderToStaticMarkup(
+      <DestinationCard
+        destination={destination}
+        rank={1}
+        previousRank={null}
+        onToggleSaved={() => {}}
+      />,
+    )
+    expect(html).toContain('Save Rome')
+  })
 })

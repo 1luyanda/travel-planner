@@ -31,8 +31,8 @@ def _user_service(request: Request) -> UserService:
     return request.app.state.user_service
 
 
-def _user_response(user: UserDocument) -> UserResponse:
-    return UserService.response_for(user)
+def _user_response(user: UserDocument, *, email: str, display_name: str) -> UserResponse:
+    return UserService.response_for(user, email=email, display_name=display_name)
 
 
 @router.post(
@@ -58,8 +58,19 @@ async def register(
             detail="Account storage is temporarily unavailable.",
         ) from error
 
-    set_session_cookie(response, user.id)
-    return AuthResponse(user=_user_response(user))
+    set_session_cookie(
+        response,
+        user.id,
+        email=str(body.email),
+        display_name=body.display_name,
+    )
+    return AuthResponse(
+        user=_user_response(
+            user,
+            email=str(body.email),
+            display_name=body.display_name,
+        )
+    )
 
 
 @router.post("/login", response_model=AuthResponse)
@@ -82,8 +93,17 @@ async def login(
             detail="Authentication service is temporarily unavailable.",
         ) from error
 
-    set_session_cookie(response, user.id)
-    return AuthResponse(user=_user_response(user))
+    email = str(body.email)
+    display_name = email.split("@", 1)[0]
+    set_session_cookie(
+        response,
+        user.id,
+        email=email,
+        display_name=display_name,
+    )
+    return AuthResponse(
+        user=_user_response(user, email=email, display_name=display_name)
+    )
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
@@ -95,4 +115,8 @@ async def logout(response: Response) -> Response:
 
 @router.get("/me", response_model=UserResponse)
 async def me(user: UserDocument = Depends(require_user)) -> UserResponse:
-    return _user_response(user)
+    return _user_response(
+        user,
+        email=str(user.email),
+        display_name=user.display_name,
+    )

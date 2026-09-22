@@ -109,6 +109,10 @@ export function showPlannerFilters(view) {
   return view === 'explore'
 }
 
+export function canSaveFlights(user) {
+  return Boolean(user?.id)
+}
+
 export function flightReferenceFromDestination(destination) {
   return {
     flight_id: textOrNull(destination?.documentId) || textOrNull(destination?.id),

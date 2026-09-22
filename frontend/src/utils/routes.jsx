@@ -21,11 +21,10 @@ export function isAppPath(pathname) {
 }
 
 /**
- * Session-aware in-app redirect. Unsigned planner access goes to login;
+ * Session-aware in-app redirect. Guests may use the planner;
  * signed-in auth pages go to the planner. Never follows query-string URLs.
  */
 export function sessionRedirect(pathname, user) {
-  if (isPlannerPath(pathname) && !user) return ROUTES.login
   if (isAuthPath(pathname) && user) return ROUTES.planner
   return null
 }
