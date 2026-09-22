@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ROUTES, isAppPath, isAuthPath, isPlannerPath } from './routes.jsx'
+import { ROUTES, isAppPath, isAuthPath, isPlannerPath, sessionRedirect } from './routes.jsx'
 
 describe('routes', () => {
   it('sends the planner and docs compatibility path to the workspace', () => {
@@ -18,5 +18,17 @@ describe('routes', () => {
     expect(isAppPath(ROUTES.login)).toBe(true)
     expect(isAppPath(ROUTES.signup)).toBe(true)
     expect(isAppPath('/unknown')).toBe(false)
+  })
+
+  it('sends unsigned planner visits to login and signed-in auth pages to the planner', () => {
+    expect(sessionRedirect(ROUTES.planner, null)).toBe(ROUTES.login)
+    expect(sessionRedirect(ROUTES.docs, null)).toBe(ROUTES.login)
+    expect(sessionRedirect(ROUTES.login, { id: 'user-1' })).toBe(ROUTES.planner)
+    expect(sessionRedirect(ROUTES.signup, { id: 'user-1' })).toBe(ROUTES.planner)
+    expect(sessionRedirect(ROUTES.planner, { id: 'user-1' })).toBeNull()
+    expect(sessionRedirect(ROUTES.login, null)).toBeNull()
+    expect(sessionRedirect(ROUTES.home, null)).toBeNull()
+    expect(sessionRedirect('https://evil.example/phish', null)).toBeNull()
+    expect(sessionRedirect('/login?next=https://evil.example', null)).toBeNull()
   })
 })

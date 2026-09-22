@@ -354,10 +354,18 @@ button:disabled {
 }
 
 .trip-details-activity-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
   padding: 12px 14px;
   border: 1px solid var(--tp-border);
   border-radius: 14px;
   background: var(--tp-surface);
+}
+
+.trip-details-activity-body {
+  min-width: 0;
 }
 
 .trip-details-activity-name,
@@ -375,6 +383,37 @@ button:disabled {
   font-size: 13px;
   color: var(--tp-text-muted);
   line-height: 1.4;
+}
+
+.trip-details-activities-like-note {
+  margin: 0 0 12px;
+  color: var(--tp-text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.trip-details-activity-like {
+  width: 44px;
+  height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--tp-border);
+  border-radius: 50%;
+  background: var(--tp-surface);
+  color: var(--tp-accent);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.trip-details-activity-like:hover,
+.trip-details-activity-like-on {
+  background: var(--tp-selected);
+  border-color: var(--tp-accent);
+}
+
+.trip-details-activity-like:disabled {
+  opacity: 0.7;
 }
 
 .leaflet-container {
