@@ -42,8 +42,15 @@ npm run build
   rerenders and switching between offers with the same hotel ID do not refetch;
   reopening details refreshes the data. Errors have a Retry button and leave
   the rest of Trip Details usable. A missing ID or empty response shows an
-  empty-state message. Older saved-flight responses without this ID use that
-  same empty state.
+  empty-state message. After a successful save, the hotel lookup ID is retained
+  in browser localStorage, scoped by authenticated user ID and flight ID, and
+  restored into Saved responses before adaptation. Successful removal deletes
+  this metadata; failed saves/removals leave it unchanged. Hotel lists are never
+  persisted. The backend still receives only `flight_id`.
+  This frontend-only metadata survives reloads in the same browser and origin;
+  it does not sync across devices. Legacy saves, cleared/disabled storage, or a
+  different browser without the ID use the existing empty state. Cross-device
+  hotel-ID persistence would require extending the saved-flight backend contract.
 - Hotels keep backend order. Distances are rounded to two decimals for display
   and described as approximate straight-line distances. Stars and safe HTTP(S)
   official website links appear only when supplied; links open in a new tab.
