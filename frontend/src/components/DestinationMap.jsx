@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import markerIcon from 'leaflet/dist/images/marker-icon.png'
@@ -39,7 +39,29 @@ function MapResize() {
   return null
 }
 
-function MapViewport({ markers, selectedId, viewportMode, markerRefs }) {
+function MapViewChangeWatcher({ onViewChange, ignoreViewChangeRef }) {
+  const map = useMap()
+
+  useEffect(() => {
+    const handle = () => {
+      if (ignoreViewChangeRef.current > 0) {
+        ignoreViewChangeRef.current -= 1
+        return
+      }
+      onViewChange()
+    }
+    map.on('dragend', handle)
+    map.on('zoomend', handle)
+    return () => {
+      map.off('dragend', handle)
+      map.off('zoomend', handle)
+    }
+  }, [map, onViewChange, ignoreViewChangeRef])
+
+  return null
+}
+
+function MapViewport({ markers, selectedId, viewportMode, markerRefs, fitNonce, beforeFitAll, onCityFocus }) {
   const map = useMap()
   const markerSignature = markers.map((item) => `${item.key}:${item.position.join(',')}`).join('|')
 
@@ -49,6 +71,7 @@ function MapViewport({ markers, selectedId, viewportMode, markerRefs }) {
     const selected = findMarkerForSelection(markers, selectedId)
 
     if (viewportMode === 'selected' && selected) {
+      onCityFocus?.()
       if (reduced) map.setView(selected.position, CITY_ZOOM, { animate: false })
       else map.flyTo(selected.position, CITY_ZOOM)
       const openPopup = () => markerRefs.current.get(selected.key)?.openPopup()
@@ -60,6 +83,7 @@ function MapViewport({ markers, selectedId, viewportMode, markerRefs }) {
       }
     }
 
+    beforeFitAll?.()
     if (markers.length === 1) {
       map.setView(markers[0].position, CITY_ZOOM, { animate: !reduced })
       return undefined
@@ -70,7 +94,7 @@ function MapViewport({ markers, selectedId, viewportMode, markerRefs }) {
       { padding: [36, 36], maxZoom: 12, animate: !reduced },
     )
     return undefined
-  }, [map, markerSignature, markers, selectedId, viewportMode, markerRefs])
+  }, [map, markerSignature, markers, selectedId, viewportMode, markerRefs, fitNonce, beforeFitAll, onCityFocus])
 
   return null
 }
@@ -84,6 +108,25 @@ export default function DestinationMap({
 }) {
   const markers = useMemo(() => buildMapMarkers(results), [results])
   const markerRefs = useRef(new Map())
+  const ignoreViewChangeRef = useRef(0)
+  const [viewChanged, setViewChanged] = useState(false)
+  const [fitNonce, setFitNonce] = useState(0)
+  const markerSignature = markers.map((item) => `${item.key}:${item.position.join(',')}`).join('|')
+  const handleViewChange = useCallback(() => setViewChanged(true), [])
+  const handleCityFocus = useCallback(() => setViewChanged(true), [])
+  const handleBeforeFitAll = useCallback(() => {
+    ignoreViewChangeRef.current += 1
+  }, [])
+
+  useEffect(() => {
+    setViewChanged(false)
+  }, [markerSignature])
+
+  function handleShowAllClick() {
+    setViewChanged(false)
+    setFitNonce((current) => current + 1)
+    onShowAll?.()
+  }
 
   if (!markers.length) {
     return (
@@ -114,11 +157,15 @@ export default function DestinationMap({
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         <MapResize />
+        <MapViewChangeWatcher onViewChange={handleViewChange} ignoreViewChangeRef={ignoreViewChangeRef} />
         <MapViewport
           markers={markers}
           selectedId={selectedId}
           viewportMode={viewportMode}
           markerRefs={markerRefs}
+          fitNonce={fitNonce}
+          beforeFitAll={handleBeforeFitAll}
+          onCityFocus={handleCityFocus}
         />
         {markers.map((marker) => {
           const isSelected = marker.resultIds.includes(selectedId)
@@ -148,9 +195,11 @@ export default function DestinationMap({
           )
         })}
       </MapContainer>
-      <button type="button" className={styles.showAll} onClick={onShowAll}>
-        Show all destinations
-      </button>
+      {viewChanged ? (
+        <button type="button" className={styles.showAll} onClick={handleShowAllClick}>
+          Show all destinations
+        </button>
+      ) : null}
     </section>
   )
 }
