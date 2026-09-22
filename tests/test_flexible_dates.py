@@ -75,11 +75,11 @@ def prepare(records, request=None):
     return asyncio.run(service.prepare(request or query())), repository
 
 
-@pytest.mark.parametrize("exact_count", [0, 1, 2, 3, 4])
+@pytest.mark.parametrize("exact_count", [0, 1, 2, 3, 4, 5])
 def test_fill_only_the_shortfall_and_keep_exact_matches_first(exact_count):
     records = [flight(f"exact-{i}") for i in range(exact_count)] + [
-        flight("far", 5, 5), flight("middle", 2, 2), flight("near", 1, 1),
-        flight("outside", 8, 0),
+        flight("far", 5, 5), flight("late", 4, 4), flight("mid", 3, 3),
+        flight("middle", 2, 2), flight("near", 1, 1), flight("outside", 8, 0),
     ]
     snapshot = deepcopy(records)
     request = query()
@@ -88,7 +88,7 @@ def test_fill_only_the_shortfall_and_keep_exact_matches_first(exact_count):
     needed = max(0, MIN_RECOMMENDATION_RESULTS - exact_count)
     assert [item.destination_id for item in result.candidates] == (
         [f"exact-{i}" for i in range(exact_count)]
-        + ["near", "middle", "far"][:needed]
+        + ["near", "middle", "mid", "late", "far"][:needed]
     )
     assert len(repository.requests) == (
         1 if exact_count >= MIN_RECOMMENDATION_RESULTS else 2
@@ -109,9 +109,10 @@ def test_both_date_distance_and_duration_difference_then_identifier_order():
         flight("b-same-duration", 1, 1),  # distance 2, duration difference 0
         flight("a-same-duration", -1, -1),  # same metrics, identifier wins
         flight("nearest", 0, 1),  # distance 1 wins despite duration difference
+        flight("farthest", 2, 1),  # distance 3 fills the fifth slot
     ])
     assert [item.destination_id for item in result.candidates] == [
-        "nearest", "a-same-duration", "b-same-duration",
+        "nearest", "a-same-duration", "b-same-duration", "longer-trip", "farthest",
     ]
 
 
