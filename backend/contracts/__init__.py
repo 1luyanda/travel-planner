@@ -24,7 +24,13 @@ from .saved_activities import (
     SavedActivitiesResponse,
     SavedActivityItem,
 )
-from .saved_flights import SaveFlightRequest, SavedFlightItem, SavedFlightsResponse
+from .saved_flights import (
+    SaveFlightRequest,
+    SavedEvidenceBody,
+    SavedExplanationBody,
+    SavedFlightItem,
+    SavedFlightsResponse,
+)
 
 __all__ = [
     "ActivitiesRequest",
@@ -51,6 +57,8 @@ __all__ = [
     "SavedActivitiesResponse",
     "SavedActivityItem",
     "SaveFlightRequest",
+    "SavedEvidenceBody",
+    "SavedExplanationBody",
     "SavedFlightItem",
     "SavedFlightsResponse",
 ]

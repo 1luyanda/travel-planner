@@ -473,6 +473,31 @@ describe('saved flights API', () => {
     expect(payload.flight_id).toBe('ZAG-ROM-2026-09-18')
   })
 
+  it('saves the on-screen LLM summary with the flight id', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url, options) => {
+        expect(url).toBe('/api/saved-flights')
+        expect(JSON.parse(options.body)).toEqual({
+          flight_id: 'ZAG-ROM-2026-09-18',
+          explanation: {
+            summary: 'Rome stays within budget.',
+            evidence: [{ statement: 'Fare is EUR 65 against a EUR 400 budget.' }],
+          },
+        })
+        return { ok: true, json: async () => savedFlightItem }
+      }),
+    )
+    const payload = await saveFlight({
+      flight_id: 'ZAG-ROM-2026-09-18',
+      explanation: {
+        summary: 'Rome stays within budget.',
+        evidence: [{ statement: 'Fare is EUR 65 against a EUR 400 budget.' }],
+      },
+    })
+    expect(payload.flight_id).toBe('ZAG-ROM-2026-09-18')
+  })
+
   it('unsaves through DELETE and accepts an empty success body', async () => {
     vi.stubGlobal(
       'fetch',

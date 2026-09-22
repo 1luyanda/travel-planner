@@ -45,7 +45,11 @@ export function adaptSavedFlight(item) {
     lastCheckedPrice: numberOrNull(item?.last_checked_price),
     rank: null,
     scores: {},
-    explanation: { summary: null, evidence: [], issues: [] },
+    explanation: {
+      summary: textOrNull(item?.explanation?.summary),
+      evidence: Array.isArray(item?.explanation?.evidence) ? item.explanation.evidence : [],
+      issues: [],
+    },
     flight: {
       origin_iata: textOrNull(flight?.origin_iata),
       origin_airport: textOrNull(flight?.origin_airport),
@@ -114,9 +118,24 @@ export function canSaveFlights(user) {
 }
 
 export function flightReferenceFromDestination(destination) {
-  return {
-    flight_id: textOrNull(destination?.documentId) || textOrNull(destination?.id),
-  }
+  const flightId = textOrNull(destination?.documentId) || textOrNull(destination?.id)
+  const explanation = explanationPayload(destination?.explanation)
+  return explanation ? { flight_id: flightId, explanation } : { flight_id: flightId }
+}
+
+function explanationPayload(explanation) {
+  const summary = textOrNull(explanation?.summary) || ''
+  const evidence = Array.isArray(explanation?.evidence)
+    ? explanation.evidence
+        .map((item) => ({
+          id: textOrNull(item?.id) || undefined,
+          code: textOrNull(item?.code) || undefined,
+          statement: textOrNull(item?.statement),
+        }))
+        .filter((item) => item.statement)
+    : []
+  if (!summary && !evidence.length) return null
+  return { summary, evidence }
 }
 
 export function keepSavedFlightPhotos(adapted, source) {
@@ -126,5 +145,8 @@ export function keepSavedFlightPhotos(adapted, source) {
     photoUrl: adapted.photoUrl || textOrNull(source?.photoUrl) || textOrNull(source?.photo_url),
     photoUrlSmall:
       adapted.photoUrlSmall || textOrNull(source?.photoUrlSmall) || textOrNull(source?.photo_url_small),
+    explanation: adapted.explanation?.summary
+      ? adapted.explanation
+      : source?.explanation || adapted.explanation,
   }
 }

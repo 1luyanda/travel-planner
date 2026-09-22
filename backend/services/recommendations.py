@@ -51,6 +51,7 @@ class RecommendationService:
         self._candidates = candidate_service
         self._llm_client = llm_client
         self._hotels = hotel_service
+        self._explanation_cache: dict[tuple, tuple[str, list]] = {}
 
     async def recommend(self, body: RecommendRequest) -> RecommendationResponse:
         parsed = parse_request(
@@ -100,6 +101,7 @@ class RecommendationService:
             ranking_preferences=body.ranking_preferences,
             intents=interpreted.intents,
             changes=interpreted.changes,
+            reuse_explanations=True,
         )
         result.request = interpreted.request
         result.updated_request = interpreted.updated_request
@@ -116,6 +118,7 @@ class RecommendationService:
         ranking_preferences: RankingPreferencesBody | None = None,
         intents=None,
         changes=None,
+        reuse_explanations: bool = False,
     ) -> RecommendationResponse:
         origin, origin_issues, origin_questions = await self._resolve_origin(trip)
         if origin is None:
@@ -163,11 +166,11 @@ class RecommendationService:
         ranked = ranked[:MAX_RECOMMENDATION_RESULTS]
         # Date distance selects fallback candidates, not recommendation order.
         # Preserve descending score order so explanations assign matching ranks.
-        recommendations, explain_issues = _explanations_for(
+        recommendations, explain_issues = self._explanations_for(
             trip,
             ranked,
-            llm_client=self._client(),
             ranking_weights=weights.normalized_weights(),
+            reuse_explanations=reuse_explanations,
         )
         dates_by_id = {
             item.destination_id: item.model_dump(include=set(FlightDateMetadata.model_fields))
@@ -241,6 +244,60 @@ class RecommendationService:
             )
         return matches[0], [], []
 
+    def _explanations_for(
+        self,
+        trip: TripRequest,
+        ranked: list[RankedDestination],
+        *,
+        ranking_weights: dict[str, float],
+        reuse_explanations: bool,
+    ) -> tuple[list[DestinationExplanation], list[str]]:
+        if not ranked:
+            return [], []
+
+        cached_by_id: dict[str, tuple[str, list]] = {}
+        missing: list[RankedDestination] = []
+        if reuse_explanations:
+            for item in ranked:
+                hit = self._explanation_cache.get(
+                    _explanation_cache_key(trip, item.destination_id)
+                )
+                if hit is None:
+                    missing.append(item)
+                else:
+                    cached_by_id[item.destination_id] = hit
+        else:
+            missing = list(ranked)
+
+        issues: list[str] = []
+        generated_by_id: dict[str, DestinationExplanation] = {}
+        if missing:
+            generated, explain_issues = _generate_explanations(
+                trip,
+                missing,
+                llm_client=self._client(),
+                ranking_weights=ranking_weights,
+            )
+            issues.extend(explain_issues)
+            for item in generated:
+                generated_by_id[item.destination_id] = item
+                if item.summary:
+                    _remember(
+                        self._explanation_cache,
+                        _explanation_cache_key(trip, item.destination_id),
+                        (item.summary, list(item.evidence)),
+                    )
+
+        explanations: list[DestinationExplanation] = []
+        for index, item in enumerate(ranked, start=1):
+            generated = generated_by_id.get(item.destination_id)
+            if generated is not None:
+                explanations.append(generated.model_copy(update={"rank": index}))
+                continue
+            summary, evidence = cached_by_id[item.destination_id]
+            explanations.append(_explanation_from_ranked(item, index, summary, evidence))
+        return explanations, issues
+
 
 def _ranking_preferences(
     body: RankingPreferencesBody | None,
@@ -295,7 +352,7 @@ def _to_ranking_candidate(item: CandidateItem) -> RankingCandidate:
     )
 
 
-def _explanations_for(
+def _generate_explanations(
     trip: TripRequest,
     ranked: list[RankedDestination],
     *,
@@ -323,30 +380,66 @@ def _explanations_for(
     return _ranked_without_explanations(ranked), list(explained.issues)
 
 
+def _explanation_cache_key(trip: TripRequest, destination_id: str) -> tuple:
+    return (
+        destination_id,
+        trip.origin,
+        str(trip.departure_date),
+        str(trip.return_date),
+        trip.budget,
+        trip.currency,
+        tuple(trip.moods),
+    )
+
+
+def _remember(cache: dict, key, value) -> None:
+    if key in cache:
+        cache.pop(key)
+    elif len(cache) >= 64:
+        cache.pop(next(iter(cache)))
+    cache[key] = value
+
+
+def _explanation_from_ranked(
+    item: RankedDestination,
+    rank: int,
+    summary: str,
+    evidence: list,
+    issues: list[str] | None = None,
+) -> DestinationExplanation:
+    return DestinationExplanation(
+        destination_id=item.destination_id,
+        destination_iata=item.destination_iata,
+        city=item.city,
+        rank=rank,
+        price_eur=item.price_eur,
+        changeover_count=item.changeover_count,
+        flight_duration_minutes=item.flight_duration_minutes,
+        average_max_temperature_c=item.average_max_temperature_c,
+        price_score=item.price_score,
+        weather_score=item.weather_score,
+        stops_score=item.stops_score,
+        duration_score=item.duration_score,
+        final_score=item.final_score,
+        precipitation_score=item.precipitation_score,
+        sunshine_score=item.sunshine_score,
+        temperature_direction=item.temperature_direction,
+        summary=summary,
+        evidence=evidence,
+        issues=list(issues or []),
+    )
+
+
 def _ranked_without_explanations(
     ranked: list[RankedDestination],
 ) -> list[DestinationExplanation]:
     return [
-        DestinationExplanation(
-            destination_id=item.destination_id,
-            destination_iata=item.destination_iata,
-            city=item.city,
-            rank=index,
-            price_eur=item.price_eur,
-            changeover_count=item.changeover_count,
-            flight_duration_minutes=item.flight_duration_minutes,
-            average_max_temperature_c=item.average_max_temperature_c,
-            price_score=item.price_score,
-            weather_score=item.weather_score,
-            stops_score=item.stops_score,
-            duration_score=item.duration_score,
-            final_score=item.final_score,
-            precipitation_score=item.precipitation_score,
-            sunshine_score=item.sunshine_score,
-            temperature_direction=item.temperature_direction,
-            summary="",
-            evidence=[],
-            issues=["Explanation was unavailable."],
+        _explanation_from_ranked(
+            item,
+            index,
+            "",
+            [],
+            ["Explanation was unavailable."],
         )
         for index, item in enumerate(ranked, start=1)
     ]

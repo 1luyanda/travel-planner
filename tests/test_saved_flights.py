@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 from backend.api import auth_router, router
 from backend.config import Settings, get_settings
-from backend.contracts import SaveFlightRequest
+from backend.contracts import SaveFlightRequest, SavedExplanationBody
 from backend.models.user import UserDocument
 from backend.models.user_flight import SavedFlightSnapshot, UserSavedFlightsDocument
 from backend.repositories import (
@@ -247,6 +247,93 @@ async def test_save_stores_a_complete_snapshot_not_only_an_id() -> None:
     assert snapshot["temp_max_c"] == 27.8
     assert snapshot["photo_url"] == "https://example.com/rome.jpg"
     assert stored["flight_ids"] == ["ZAG-ROM-2026-09-18"]
+
+
+@pytest.mark.anyio
+async def test_save_stores_the_llm_summary_and_overwrites_on_resave() -> None:
+    flights = FakeFlightsStore([ROME_FLIGHT])
+    user_flights = FakeUserFlightsStore()
+    repository = connected_repository(flights=flights, user_flights=user_flights)
+    service = SavedFlightsService(repository)
+    first = SavedExplanationBody(
+        summary="Rome stays within budget.",
+        evidence=[{"id": "e1", "statement": "Fare is EUR 65 against a EUR 400 budget."}],
+    )
+    second = SavedExplanationBody(
+        summary="Rome is cheaper after the fare drop.",
+        evidence=[{"id": "e2", "statement": "Fare is EUR 65 against a EUR 400 budget."}],
+    )
+
+    saved = await service.save(
+        "user-1",
+        SaveFlightRequest(flight_id="ZAG-ROM-2026-09-18", explanation=first),
+    )
+    listed = await service.list_for_user("user-1")
+    overwritten = await service.save(
+        "user-1",
+        SaveFlightRequest(flight_id="ZAG-ROM-2026-09-18", explanation=second),
+    )
+    listed_again = await service.list_for_user("user-1")
+
+    assert saved.explanation is not None
+    assert saved.explanation.summary == "Rome stays within budget."
+    assert listed[0].explanation is not None
+    assert listed[0].explanation.summary == "Rome stays within budget."
+    assert overwritten.explanation is not None
+    assert overwritten.explanation.summary == "Rome is cheaper after the fare drop."
+    assert listed_again[0].explanation is not None
+    assert listed_again[0].explanation.summary == "Rome is cheaper after the fare drop."
+    assert user_flights.items["user-1"]["flights"][0]["explanation"]["summary"] == (
+        "Rome is cheaper after the fare drop."
+    )
+
+
+@pytest.mark.anyio
+async def test_resave_without_summary_keeps_the_stored_llm_text() -> None:
+    flights = FakeFlightsStore([ROME_FLIGHT])
+    repository = connected_repository(flights=flights)
+    service = SavedFlightsService(repository)
+    await service.save(
+        "user-1",
+        SaveFlightRequest(
+            flight_id="ZAG-ROM-2026-09-18",
+            explanation=SavedExplanationBody(summary="Rome stays within budget."),
+        ),
+    )
+
+    again = await service.save("user-1", SaveFlightRequest(flight_id="ZAG-ROM-2026-09-18"))
+    listed = await service.list_for_user("user-1")
+
+    assert again.explanation is not None
+    assert again.explanation.summary == "Rome stays within budget."
+    assert listed[0].explanation is not None
+    assert listed[0].explanation.summary == "Rome stays within budget."
+
+
+@pytest.mark.anyio
+async def test_price_refresh_keeps_the_stored_llm_summary() -> None:
+    flights = FakeFlightsStore([ROME_FLIGHT])
+    repository = connected_repository(flights=flights)
+    service = SavedFlightsService(repository)
+    await service.save(
+        "user-1",
+        SaveFlightRequest(
+            flight_id="ZAG-ROM-2026-09-18",
+            explanation=SavedExplanationBody(summary="Rome stays within budget."),
+        ),
+    )
+    flights.flights["ZAG-ROM-2026-09-18"] = {**ROME_FLIGHT, "price_eur": 81}
+
+    items = await service.list_for_user("user-1")
+    stored = (await repository.list_user_saved_flights("user-1")).flights[0]
+
+    assert items[0].flight is not None
+    assert items[0].flight.price_eur == 81
+    assert items[0].explanation is not None
+    assert items[0].explanation.summary == "Rome stays within budget."
+    assert stored.price_eur == 81
+    assert stored.explanation is not None
+    assert stored.explanation.summary == "Rome stays within budget."
 
 
 @pytest.mark.anyio
