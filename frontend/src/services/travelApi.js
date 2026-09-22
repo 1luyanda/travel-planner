@@ -244,6 +244,9 @@ export async function saveFlight(flight, { signal } = {}) {
     throw new ApiError('A flight id is required to save this trip.')
   }
   const body = { flight_id: flightId }
+  if (flight?.explanation && typeof flight.explanation === 'object') {
+    body.explanation = flight.explanation
+  }
   const data = await requestJson('/api/saved-flights', { method: 'POST', body, signal })
   if (!data || typeof data !== 'object' || typeof data.flight_id !== 'string') {
     throw new ApiError('Saving that flight returned an unexpected response.')

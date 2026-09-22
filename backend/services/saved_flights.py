@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from backend.contracts import FlightItem, SaveFlightRequest, SavedFlightItem
+from backend.contracts import FlightItem, SaveFlightRequest, SavedExplanationBody, SavedFlightItem
+from backend.contracts.saved_flights import SavedEvidenceBody
 from backend.models.user_flight import SavedFlightSnapshot
 from backend.repositories import (
     CosmosDestinationRepository,
@@ -28,12 +29,20 @@ class SavedFlightsService:
                 "That stored flight was not found."
             ) from error
 
-        snapshot = SavedFlightSnapshot.from_flight(raw_flight)
-        await self._repository.add_user_saved_flight(user_id, snapshot)
+        snapshot = SavedFlightSnapshot.from_flight(
+            raw_flight,
+            explanation=_normalize_explanation(body.explanation),
+        )
+        document = await self._repository.add_user_saved_flight(user_id, snapshot)
+        stored = next(
+            (item for item in document.flights if item.flight_id == snapshot.flight_id),
+            snapshot,
+        )
         return SavedFlightItem(
-            flight_id=snapshot.flight_id,
+            flight_id=stored.flight_id,
             availability="available",
-            flight=snapshot.to_flight_item(),
+            flight=stored.to_flight_item(),
+            explanation=stored.explanation,
         )
 
     async def delete(self, user_id: str, flight_id: str) -> None:
@@ -84,6 +93,7 @@ def _hydrate_saved_flights(
                 snapshot = SavedFlightSnapshot.from_flight(
                     current,
                     saved_at=snapshot.saved_at if snapshot else None,
+                    explanation=snapshot.explanation if snapshot else None,
                 )
             refreshed.append(snapshot)
             items.append(
@@ -91,6 +101,7 @@ def _hydrate_saved_flights(
                     flight_id=flight_id,
                     availability="available",
                     flight=FlightItem.model_validate(current),
+                    explanation=snapshot.explanation,
                 )
             )
             continue
@@ -101,6 +112,7 @@ def _hydrate_saved_flights(
                     flight_id=flight_id,
                     availability="unavailable",
                     flight=snapshot.to_flight_item(),
+                    explanation=snapshot.explanation,
                 )
             )
             continue
@@ -123,3 +135,26 @@ def _should_refresh_snapshot(
     if snapshot is None:
         return True
     return snapshot.differs_from_flight(current)
+
+
+def _normalize_explanation(
+    value: SavedExplanationBody | None,
+) -> SavedExplanationBody | None:
+    if value is None:
+        return None
+    summary = (value.summary or "").strip()
+    evidence: list[SavedEvidenceBody] = []
+    for item in value.evidence or []:
+        statement = (item.statement or "").strip()
+        if not statement:
+            continue
+        evidence.append(
+            SavedEvidenceBody(
+                id=(item.id or "").strip() or None,
+                code=(item.code or "").strip() or None,
+                statement=statement,
+            )
+        )
+    if not summary and not evidence:
+        return None
+    return SavedExplanationBody(summary=summary, evidence=evidence)

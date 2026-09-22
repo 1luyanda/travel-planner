@@ -62,6 +62,17 @@ def _flight_select(limit: int | None = None) -> str:
     return f"SELECT TOP {int(limit)} {fields} FROM c"
 
 
+def _replace_saved_snapshot(
+    current: SavedFlightSnapshot,
+    snapshot: SavedFlightSnapshot,
+) -> SavedFlightSnapshot:
+    """Overwrite the stored snapshot. Keep the old summary if the new save has none."""
+
+    if snapshot.explanation is None and current.explanation is not None:
+        return snapshot.model_copy(update={"explanation": current.explanation})
+    return snapshot
+
+
 class RepositoryError(RuntimeError):
     """Raised when normalized destination data cannot be retrieved."""
 
@@ -509,9 +520,14 @@ class CosmosDestinationRepository:
             return UserSavedFlightsDocument.model_validate(item)
 
         if any(item.flight_id == snapshot.flight_id for item in document.flights):
-            return document
-
-        flights = [snapshot, *document.flights]
+            flights = [
+                _replace_saved_snapshot(item, snapshot)
+                if item.flight_id == snapshot.flight_id
+                else item
+                for item in document.flights
+            ]
+        else:
+            flights = [snapshot, *document.flights]
         leftover = [
             flight_id
             for flight_id in document.flight_ids

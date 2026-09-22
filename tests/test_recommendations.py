@@ -557,6 +557,31 @@ class RefineServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.updated_request.budget, 70)
         self.assertEqual(body.model_dump(), snapshot)
 
+    async def test_refine_reuses_summaries_from_the_first_search(self) -> None:
+        service, _ = _service([
+            _explain_payload(),
+            _feedback_payload(prefer_cooler=True),
+        ])
+        first = await service.recommend(
+            RecommendRequest(form_fields=_trip().model_dump(mode="json"))
+        )
+        second = await service.refine(
+            RefineRequest(
+                text="smaller temperature",
+                request=first.request,
+                ranking_preferences=first.ranking_preferences,
+            )
+        )
+
+        self.assertEqual(first.status, "ready")
+        self.assertEqual(second.status, "ready")
+        self.assertEqual(len(service._llm_client.calls), 2)
+        self.assertEqual(
+            {item.destination_id: item.summary for item in second.recommendations},
+            {item.destination_id: item.summary for item in first.recommendations},
+        )
+        self.assertTrue(all(item.summary for item in second.recommendations))
+
     async def test_new_scores_survive_when_explanation_is_unavailable(self) -> None:
         service, _ = _service([_feedback_payload(prefer_cooler=True)])
         result = await service.refine(RefineRequest(text="Colder", request=_trip()))

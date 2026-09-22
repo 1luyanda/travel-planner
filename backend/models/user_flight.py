@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from backend.contracts.candidates import FlightItem
+from backend.contracts.saved_flights import SavedExplanationBody
 
 
 class SavedFlightSnapshot(FlightItem):
@@ -14,6 +15,7 @@ class SavedFlightSnapshot(FlightItem):
 
     flight_id: str = Field(min_length=1, max_length=200)
     saved_at: datetime
+    explanation: SavedExplanationBody | None = None
 
     @classmethod
     def from_flight(
@@ -21,6 +23,7 @@ class SavedFlightSnapshot(FlightItem):
         raw: dict,
         *,
         saved_at: datetime | None = None,
+        explanation: SavedExplanationBody | None = None,
     ) -> "SavedFlightSnapshot":
         cosmos_id = raw.get("id")
         if not isinstance(cosmos_id, str) or cosmos_id == "":
@@ -31,12 +34,13 @@ class SavedFlightSnapshot(FlightItem):
         return cls(
             flight_id=cosmos_id,
             saved_at=saved_at or datetime.now(timezone.utc),
+            explanation=explanation,
             **payload,
         )
 
     def to_flight_item(self) -> FlightItem:
         return FlightItem.model_validate(
-            self.model_dump(exclude={"flight_id", "saved_at"})
+            self.model_dump(exclude={"flight_id", "saved_at", "explanation"})
         )
 
     def differs_from_flight(self, raw: dict) -> bool:

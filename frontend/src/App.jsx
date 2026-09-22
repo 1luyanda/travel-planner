@@ -1008,6 +1008,7 @@ export default function App() {
       last_checked_price: reference.price,
       price_changed: false,
       availability: 'available',
+      explanation: destination.explanation,
       flight: {
         id: reference.flight_id,
         origin_id: reference.origin_id,

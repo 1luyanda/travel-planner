@@ -72,6 +72,26 @@ describe('adaptSavedFlights', () => {
     expect(lisbon.destination.city).toBe('Lisbon')
     expect(lisbon.flight.price).toBe(189)
     expect(lisbon.weather.average_max_temperature_c).toBe(24)
+    expect(rome.explanation.summary).toBeNull()
+    expect(lisbon.explanation.summary).toBeNull()
+  })
+
+  it('maps a stored LLM summary onto the saved destination', () => {
+    const [rome] = adaptSavedFlights({
+      items: [
+        {
+          ...apiPayload.items[0],
+          explanation: {
+            summary: 'Rome stays within budget.',
+            evidence: [{ id: 'e1', statement: 'Fare is EUR 65 against a EUR 400 budget.' }],
+          },
+        },
+      ],
+    })
+    expect(rome.explanation.summary).toBe('Rome stays within budget.')
+    expect(rome.explanation.evidence).toEqual([
+      { id: 'e1', statement: 'Fare is EUR 65 against a EUR 400 budget.' },
+    ])
   })
 })
 
@@ -127,10 +147,39 @@ describe('saved flight photos', () => {
     expect(merged.photoUrl).toBe('https://images.example/rome.jpg')
     expect(merged.photoUrlSmall).toBe('https://images.example/rome-small.jpg')
   })
+
+  it('keeps the explore summary when the save response has none', () => {
+    const [rome] = adaptSavedFlights(apiPayload)
+    const merged = keepSavedFlightPhotos(rome, {
+      explanation: { summary: 'Rome stays within budget.', evidence: [] },
+    })
+    expect(merged.explanation.summary).toBe('Rome stays within budget.')
+  })
 })
 
 describe('flightReferenceFromDestination', () => {
-  it('sends only the flight id', () => {
+  it('sends the flight id and current explanation when present', () => {
+    expect(
+      flightReferenceFromDestination({
+        id: 'ZAG-ROM-2026-09-18',
+        documentId: 'ZAG-ROM-2026-09-18',
+        originId: 'zagreb-hr',
+        flight: { price: 65 },
+        explanation: {
+          summary: 'Rome stays within budget.',
+          evidence: [{ id: 'e1', statement: 'Fare is EUR 65 against a EUR 400 budget.' }],
+        },
+      }),
+    ).toEqual({
+      flight_id: 'ZAG-ROM-2026-09-18',
+      explanation: {
+        summary: 'Rome stays within budget.',
+        evidence: [{ id: 'e1', statement: 'Fare is EUR 65 against a EUR 400 budget.' }],
+      },
+    })
+  })
+
+  it('sends only the flight id when there is no summary', () => {
     expect(
       flightReferenceFromDestination({
         id: 'ZAG-ROM-2026-09-18',
