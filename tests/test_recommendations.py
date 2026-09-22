@@ -161,6 +161,8 @@ class RankingPreferencesApiTests(unittest.TestCase):
             "precipitation_weight": 0.15, "sunshine_weight": 0.15,
             "changeovers_weight": 0.1, "duration_weight": 0.1,
             "temperature_direction": "lower_is_better",
+            "sunshine_direction": "higher_is_better",
+            "precipitation_direction": "lower_is_better",
         }
         with TestClient(app) as client:
             response = client.post("/api/recommend", json={

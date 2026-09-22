@@ -71,6 +71,8 @@ function mapRecommendation(item, { originId, originIata, originCity, originCount
     scores: {
       price: numberOrNull(item?.price_score),
       weather: numberOrNull(item?.weather_score),
+      precipitation: numberOrNull(item?.precipitation_score),
+      sunshine: numberOrNull(item?.sunshine_score),
       stops: numberOrNull(item?.stops_score),
       duration: numberOrNull(item?.duration_score),
       total: numberOrNull(item?.final_score),

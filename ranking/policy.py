@@ -17,6 +17,12 @@ _INTENT_CRITERIA = {
     "prefer_warmer": "weather",
     "prefer_cooler": "weather",
     "prefer_colder": "weather",  # Public policy alias for the existing AI code.
+    "prefer_more_sunshine": "sunshine",
+    "prefer_less_sunshine": "sunshine",
+    "prefer_less_rain": "precipitation",
+    "prefer_more_rain": "precipitation",
+    "prefer_fewer_stops": "stops",
+    "stronger_duration_preference": "duration",
 }
 _ADJUSTMENT_STEP = 0.10
 _MIN_WEIGHT = 0.05
@@ -67,8 +73,7 @@ def preferences_from_intents(
     Accept semantic codes or ``interpret_feedback(...).intents`` directly.
     Structured intents must target ``ranking_preferences``; hard constraints,
     unsupported targets and unknown codes are
-    ignored. No fewer-changeovers or shorter-flight codes exist in the current
-    AI contract.
+    ignored.
 
     Deduplicate targets and increase each by 0.10, capped at 0.70, together.
     If donors cannot fund all increases while keeping their 0.05 floors,
@@ -82,8 +87,9 @@ def preferences_from_intents(
     outside these policy bounds), or return model defaults.
 
     Warmer/cooler set temperature direction independently of positive weight.
+    More/less sunshine and more/less rain set their own directions the same way.
     Conflicting directions in one event preserve the current direction, while
-    still increasing the temperature weight once (deduplicated by criterion).
+    still increasing the criterion weight once (deduplicated by criterion).
     """
     codes = set()
     for intent in intents:
@@ -118,10 +124,22 @@ def preferences_from_intents(
         raise ValueError("Adjusted ranking weights must sum to one and respect policy bounds.")
     warmer = "prefer_warmer" in codes
     colder = bool(codes & {"prefer_colder", "prefer_cooler"})
-    direction = current.temperature_direction
+    temperature_direction = current.temperature_direction
     if warmer != colder:
-        direction = "higher_is_better" if warmer else "lower_is_better"
+        temperature_direction = "higher_is_better" if warmer else "lower_is_better"
+    more_sun = "prefer_more_sunshine" in codes
+    less_sun = "prefer_less_sunshine" in codes
+    sunshine_direction = current.sunshine_direction
+    if more_sun != less_sun:
+        sunshine_direction = "higher_is_better" if more_sun else "lower_is_better"
+    less_rain = "prefer_less_rain" in codes
+    more_rain = "prefer_more_rain" in codes
+    precipitation_direction = current.precipitation_direction
+    if less_rain != more_rain:
+        precipitation_direction = "lower_is_better" if less_rain else "higher_is_better"
     return RankingPreferences(
         **{criterion.weight_field: adjusted[criterion.name] for criterion in CRITERIA},
-        temperature_direction=direction,
+        temperature_direction=temperature_direction,
+        sunshine_direction=sunshine_direction,
+        precipitation_direction=precipitation_direction,
     )

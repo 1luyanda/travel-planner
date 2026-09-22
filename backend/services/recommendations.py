@@ -205,6 +205,8 @@ class RecommendationService:
                 **{criterion.weight_field: weights.normalized_weights()[criterion.name]
                    for criterion in CRITERIA},
                 temperature_direction=weights.temperature_direction,
+                sunshine_direction=weights.sunshine_direction,
+                precipitation_direction=weights.precipitation_direction,
             ),
         )
 

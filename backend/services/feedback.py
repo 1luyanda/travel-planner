@@ -56,39 +56,20 @@ CHEAPER_TERMS = frozenset({"cheaper", "cheapest", "less expensive", "lower price
 SHORTER_TERMS = frozenset(
     {"shorter", "shorter travel", "shorter flights", "less flying", "faster"}
 )
-WARMER_TERMS = frozenset(
-    {
-        "warmer",
-        "warm",
-        "hotter",
-        "hot",
-        "sunnier",
-        "sunny",
-        "sunshine",
-        "more sunshine",
-        "more sunny",
-        "less rain",
-        "less rainy",
-        "drier",
-    }
+WARMER_TERMS = frozenset({"warmer", "warm", "hotter", "hot"})
+COOLER_TERMS = frozenset({"cooler", "cool", "colder", "cold", "chilly"})
+MORE_SUNSHINE_TERMS = frozenset(
+    {"more sunshine", "sunnier", "more sunny", "more sun"}
 )
-COOLER_TERMS = frozenset(
-    {
-        "cooler",
-        "cool",
-        "colder",
-        "cold",
-        "chilly",
-        "rain",
-        "rainy",
-        "rainier",
-        "more rain",
-        "more rainy",
-        "wetter",
-        "less sunshine",
-        "cloudy",
-        "cloudier",
-    }
+LESS_SUNSHINE_TERMS = frozenset(
+    {"less sunshine", "less sunny", "cloudier", "cloudy"}
+)
+LESS_RAIN_TERMS = frozenset({"less rain", "less rainy", "drier"})
+MORE_RAIN_TERMS = frozenset(
+    {"more rain", "more rainy", "rainier", "wetter"}
+)
+FEWER_STOPS_TERMS = frozenset(
+    {"fewer stops", "fewer stop", "less stops", "fewer changeovers", "fewer connections"}
 )
 
 INTERPRET_TOOL: dict[str, Any] = {
@@ -118,11 +99,40 @@ INTERPRET_TOOL: dict[str, Any] = {
                 },
                 "prefer_warmer": {
                     "type": "boolean",
-                    "description": "True when the user wants warmer options.",
+                    "description": "True when the user wants warmer temperatures.",
                 },
                 "prefer_cooler": {
                     "type": "boolean",
-                    "description": "True when the user wants cooler options.",
+                    "description": "True when the user wants cooler temperatures.",
+                },
+                "prefer_more_sunshine": {
+                    "type": "boolean",
+                    "description": (
+                        "True when the user wants more sunshine hours. "
+                        "This is not warmer weather."
+                    ),
+                },
+                "prefer_less_sunshine": {
+                    "type": "boolean",
+                    "description": (
+                        "True when the user wants fewer sunshine hours. "
+                        "This is not cooler weather."
+                    ),
+                },
+                "prefer_less_rain": {
+                    "type": "boolean",
+                    "description": "True when the user wants lower rain probability.",
+                },
+                "prefer_more_rain": {
+                    "type": "boolean",
+                    "description": "True when the user wants higher rain probability.",
+                },
+                "prefer_fewer_stops": {
+                    "type": "boolean",
+                    "description": (
+                        "True when the user wants fewer stops in ranking. "
+                        "Direct flights only is a hard filter, not this flag."
+                    ),
                 },
                 "direct_flights_only": {
                     "type": ["boolean", "null"],
@@ -293,6 +303,11 @@ def _normalise_payload(payload: dict[str, Any]) -> dict[str, Any]:
         ),
         "prefer_warmer": bool(payload.get("prefer_warmer")),
         "prefer_cooler": bool(payload.get("prefer_cooler")),
+        "prefer_more_sunshine": bool(payload.get("prefer_more_sunshine")),
+        "prefer_less_sunshine": bool(payload.get("prefer_less_sunshine")),
+        "prefer_less_rain": bool(payload.get("prefer_less_rain")),
+        "prefer_more_rain": bool(payload.get("prefer_more_rain")),
+        "prefer_fewer_stops": bool(payload.get("prefer_fewer_stops")),
         "direct_flights_only": payload.get("direct_flights_only"),
         "budget": payload.get("budget"),
         "currency": payload.get("currency"),
@@ -318,6 +333,19 @@ def _apply_feedback(
     shorter = payload.get("stronger_duration_preference", False) or _mentions_any(
         text, SHORTER_TERMS
     )
+    more_sunshine = payload["prefer_more_sunshine"] or (
+        _mentions_any(text, MORE_SUNSHINE_TERMS)
+        or (
+            _mentions_any(text, frozenset({"sunshine", "sunny"}))
+            and not _mentions_any(text, LESS_SUNSHINE_TERMS)
+        )
+    )
+    less_sunshine = payload["prefer_less_sunshine"] or _mentions_any(
+        text, LESS_SUNSHINE_TERMS
+    )
+    less_rain = payload["prefer_less_rain"] or _mentions_any(text, LESS_RAIN_TERMS)
+    more_rain = payload["prefer_more_rain"] or _mentions_any(text, MORE_RAIN_TERMS)
+    fewer_stops = payload["prefer_fewer_stops"] or _mentions_any(text, FEWER_STOPS_TERMS)
     warmer = payload["prefer_warmer"] or _mentions_any(text, WARMER_TERMS)
     cooler = payload["prefer_cooler"] or _mentions_any(text, COOLER_TERMS)
 
@@ -381,6 +409,71 @@ def _apply_feedback(
             )
         )
         _propose_weather(snapshot, updates, changes, "cool")
+
+    if more_sunshine:
+        intents.append(
+            RankingIntent(
+                code="prefer_more_sunshine",
+                target="ranking_preferences",
+                ranking_field="sunshine_weight",
+                meaning=(
+                    "Prefer more sunshine hours. This changes sunshine ranking "
+                    "only, not temperature direction."
+                ),
+            )
+        )
+
+    if less_sunshine:
+        intents.append(
+            RankingIntent(
+                code="prefer_less_sunshine",
+                target="ranking_preferences",
+                ranking_field="sunshine_weight",
+                meaning=(
+                    "Prefer fewer sunshine hours. This changes sunshine ranking "
+                    "only, not temperature direction."
+                ),
+            )
+        )
+
+    if less_rain:
+        intents.append(
+            RankingIntent(
+                code="prefer_less_rain",
+                target="ranking_preferences",
+                ranking_field="precipitation_weight",
+                meaning=(
+                    "Prefer lower rain probability. This changes precipitation "
+                    "ranking only, not temperature direction."
+                ),
+            )
+        )
+
+    if more_rain:
+        intents.append(
+            RankingIntent(
+                code="prefer_more_rain",
+                target="ranking_preferences",
+                ranking_field="precipitation_weight",
+                meaning=(
+                    "Prefer higher rain probability. This changes precipitation "
+                    "ranking only, not temperature direction."
+                ),
+            )
+        )
+
+    if fewer_stops:
+        intents.append(
+            RankingIntent(
+                code="prefer_fewer_stops",
+                target="ranking_preferences",
+                ranking_field="changeovers_weight",
+                meaning=(
+                    "Prefer fewer stops in ranking. This is not the direct-flights "
+                    "hard filter."
+                ),
+            )
+        )
 
     direct = payload.get("direct_flights_only")
     if direct is True or _mentions_direct_only(text):
@@ -588,10 +681,15 @@ def _system_prompt(request: TripRequest) -> str:
         "- Record only what the user stated in this feedback.\n"
         "- cheaper / less expensive: stronger_price_preference=true. "
         "Do not change budget.\n"
-        "- warmer / hotter / sunnier / less rain: prefer_warmer=true. "
-        "weather_preference may be 'warmer'. Never invent a temperature number.\n"
-        "- cooler / colder / rainier / more rain: prefer_cooler=true. "
-        "weather_preference may be 'cooler'.\n"
+        "- warmer / hotter: prefer_warmer=true. weather_preference may be "
+        "'warmer'. Never invent a temperature number.\n"
+        "- cooler / colder: prefer_cooler=true. weather_preference may be "
+        "'cooler'.\n"
+        "- more sunshine / sunnier: prefer_more_sunshine=true. This is not warmer.\n"
+        "- less sunshine / cloudier: prefer_less_sunshine=true. This is not cooler.\n"
+        "- less rain / drier: prefer_less_rain=true. This is not warmer.\n"
+        "- more rain / wetter: prefer_more_rain=true. This is not cooler.\n"
+        "- fewer stops: prefer_fewer_stops=true. Direct flights only is separate.\n"
         "- shorter / faster travel: stronger_duration_preference=true.\n"
         "- A new budget such as EUR 300: set budget and currency only if stated.\n"
         "- direct flights only: direct_flights_only=true.\n"

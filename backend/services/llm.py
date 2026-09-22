@@ -145,10 +145,10 @@ EXTRACTION_TOOL: dict[str, Any] = {
                 "weather_preference": {
                     "type": ["string", "null"],
                     "description": (
-                        "Weather meaning only: use warm for positive temperature, "
-                        "sunshine, or less-rain requests, including 'warm escape'; "
-                        "use cool for negative temperature or more-rain requests; "
-                        "otherwise null."
+                        "Weather meaning only: use warm for warmer or hotter "
+                        "temperature requests, including 'warm escape'; use cool "
+                        "for cooler or colder temperature requests; otherwise null. "
+                        "Do not use warm/cool for sunshine or rain."
                     ),
                 },
             },
@@ -600,9 +600,9 @@ def _system_prompt(reference_date: date) -> str:
         "- Do not use fixture data, default destinations, or assumed budgets.\n"
         "- currency: € means EUR. '400 EUR' and 'EUR 400' are EUR. Do not invent EUR without a cue.\n"
         "- moods: mood words such as relaxing. Do not put weather words in moods.\n"
-        "- weather_preference: canonicalize positive temperature, sunshine, "
-        "and less-rain requests to warm; canonicalize negative temperature "
-        "and more-rain requests to cool. 'warm escape' is warm.\n"
+        "- weather_preference: canonicalize warmer/hotter temperature requests "
+        "to warm and cooler/colder temperature requests to cool. 'warm escape' "
+        "is warm. Do not treat sunshine or rain as temperature.\n"
         "- Do not treat rain or sunshine as a mood.\n"
         "- Accept explicit calendar dates in common formats, including "
         "yearless dates such as 12.10, 12.10., or 12/10. Copy those as written, "

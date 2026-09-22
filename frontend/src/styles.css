@@ -93,20 +93,16 @@ button:disabled {
 }
 
 .drawer-root {
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 40;
   display: flex;
-  justify-content: flex-end;
+  pointer-events: none;
+  padding: 16px 20px 8px;
 }
 
 .drawer-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  border: 0;
-  border-radius: 0;
-  background: var(--tp-overlay);
+  display: none;
 }
 
 .drawer-panel {
@@ -114,13 +110,18 @@ button:disabled {
   z-index: 2;
   display: flex;
   flex-direction: column;
-  width: min(420px, 100%);
+  width: 100%;
   height: 100%;
+  max-height: none;
   min-height: 0;
   overflow: hidden;
   background: var(--tp-surface);
+  border: 1px solid var(--tp-border);
+  border-radius: 16px;
+  box-shadow: 0 18px 48px rgba(20, 45, 53, 0.18);
   padding: 0;
   color: var(--tp-text);
+  pointer-events: auto;
 }
 
 .drawer-body {
@@ -327,8 +328,28 @@ button:disabled {
     grid-template-columns: 1fr;
     gap: 2px;
   }
+}
+
+@media (max-width: 780px) {
+  .drawer-root {
+    position: fixed;
+    pointer-events: auto;
+    padding: 12px;
+  }
+
+  .drawer-overlay {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    border: 0;
+    background: var(--tp-overlay);
+    pointer-events: auto;
+  }
 
   .drawer-panel {
     width: 100%;
+    height: 100%;
+    border-radius: 16px;
   }
 }

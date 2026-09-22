@@ -12,7 +12,6 @@ import SavedPane from './components/SavedPane'
 import DestinationMap from './components/DestinationMap'
 import FiltersPopover from './components/FiltersPopover'
 import TripDetailsDrawer from './components/TripDetailsDrawer'
-import TripDetailsPanel from './components/TripDetailsPanel'
 import LandingPage from './components/LandingPage'
 import LoginPage from './components/LoginPage'
 import SignupPage from './components/SignupPage'
@@ -99,6 +98,7 @@ export default function App() {
   const [selectedOrigin, setSelectedOrigin] = useState(null)
   const [searchSnapshot, setSearchSnapshot] = useState(initialForm)
   const [tripRequest, setTripRequest] = useState(null)
+  const [rankingPreferences, setRankingPreferences] = useState(null)
   const [pendingSearchText, setPendingSearchText] = useState('')
   const [clarifyKind, setClarifyKind] = useState(null)
   const [clarification, setClarification] = useState(null)
@@ -140,11 +140,16 @@ export default function App() {
   const searchAbortRef = useRef(null)
   const searchSeqRef = useRef(0)
   const tripRequestRef = useRef(null)
+  const rankingPreferencesRef = useRef(null)
   const resultsRef = useRef([])
 
   useEffect(() => {
     tripRequestRef.current = tripRequest
   }, [tripRequest])
+
+  useEffect(() => {
+    rankingPreferencesRef.current = rankingPreferences
+  }, [rankingPreferences])
 
   useEffect(() => {
     resultsRef.current = results
@@ -160,7 +165,6 @@ export default function App() {
   const detailsTrip = resolveSelectedTrip(mapResults, selectedTrip)
   const showMap = view === 'saved' || hasSearched
   const showInspiration = view === 'explore' && !hasSearched
-  const splitRight = showMap && !isNarrow
   const dateError = dateRangeError(form)
   const busy = loading || refining
   const conversationPhase = loading
@@ -213,6 +217,7 @@ export default function App() {
     setRejected([])
     setDataSource(null)
     setResults([])
+    setRankingPreferences(null)
     setPreviousRanks({})
     setAppliedFilters(null)
     setSelectedTrip(null)
@@ -294,6 +299,7 @@ export default function App() {
     setHasSearched(false)
     setResults([])
     setRejected([])
+    setRankingPreferences(null)
     setDataSource(null)
     setAppliedFilters(null)
     setPreviousRanks({})
@@ -424,6 +430,7 @@ export default function App() {
       setTripRequest(null)
       setResults([])
       setRejected([])
+      setRankingPreferences(null)
       setPreviousRanks({})
       setActiveRefinement(null)
     } else if (mode === 'clarify') {
@@ -493,7 +500,7 @@ export default function App() {
               }),
             })
           : mode === 'filters'
-            ? buildFilterRecommendPayload(nextForm, origin)
+            ? buildFilterRecommendPayload(nextForm, origin, rankingPreferencesRef.current)
             : buildRecommendPayload(apiText, nextForm, origin)
 
       const outcome = await runPlannerRequest({
@@ -594,6 +601,7 @@ export default function App() {
     setDataSource(adapted.dataSource)
     setAppliedFilters(nextForm)
     setResults(adapted.results)
+    setRankingPreferences(response.ranking_preferences || rankingPreferencesRef.current)
     setPreviousRanks({})
     setActiveRefinement(null)
     setSearchSnapshot(nextForm)
@@ -669,7 +677,15 @@ export default function App() {
             setRefining(false)
           }
         },
-        execute: (signal) => refineTrip({ text, request: savedRequest }, { signal }),
+        execute: (signal) =>
+          refineTrip(
+            {
+              text,
+              request: savedRequest,
+              ranking_preferences: rankingPreferencesRef.current,
+            },
+            { signal },
+          ),
       })
 
       if (seq !== searchSeqRef.current || outcome.status === 'stale') return
@@ -728,6 +744,7 @@ export default function App() {
       const adapted = adaptRecommendations(response, { selectedOrigin })
       setPreviousRanks(oldRanks)
       setResults(adapted.results)
+      setRankingPreferences(response.ranking_preferences || rankingPreferencesRef.current)
       setRejected(adapted.rejected)
       setDataSource(adapted.dataSource)
       setMessages((current) => [
@@ -854,6 +871,7 @@ export default function App() {
     setPreviousRanks({})
     setResults(cleared.results)
     setRejected(cleared.rejected)
+    setRankingPreferences(null)
     setDataSource(null)
     setAppliedFilters(cleared.appliedFilters)
     setTripRequest(cleared.tripRequest)
@@ -1119,7 +1137,8 @@ export default function App() {
           )}
         </div>
 
-        <div className={styles.centerScroll}>
+        <div className={styles.centerMain}>
+          <div className={styles.centerScroll}>
           {error && showPlannerConversation(view, hasSearched) && <p className={styles.noticeError}>{error}</p>}
           {flightWarning && showPlannerConversation(view, hasSearched) && <p className={styles.notice}>{flightWarning}</p>}
           {savedError && view === 'explore' && <p className={styles.noticeError}>{savedError}</p>}
@@ -1195,61 +1214,66 @@ export default function App() {
           )}
         </div>
 
+          {showPlannerComposer(view) && (
+            <div className={styles.composerFields}>
+              <div className={styles.tripFields}>
+                <OriginSelect
+                  value={selectedOrigin}
+                  onChange={handleOriginChange}
+                  error={originError}
+                  inputRef={originInputRef}
+                />
+                <TripDateFields
+                  departureDate={form.departureDate || ''}
+                  returnDate={form.returnDate || ''}
+                  onChange={handleDateChange}
+                  error={dateError}
+                  disabled={busy}
+                />
+              </div>
+              <p id="trip-date-hint" className={styles.dateHint}>
+                Form dates are used when filled. Leave them blank to use dates from your message. Dates
+                you type in the message take precedence over the date fields.
+              </p>
+              {dateError ? (
+                <p id="trip-date-error" className={styles.originError} role="alert">
+                  {dateError}
+                </p>
+              ) : null}
+            </div>
+          )}
+
+          <TripDetailsDrawer
+            destination={detailsTrip}
+            onClose={handleCloseDetails}
+            isSaved={Boolean(detailsTrip && savedIds.includes(detailsTrip.id))}
+            onToggleSaved={handleToggleSaved}
+            moods={parsedPreferences?.moods}
+            activitiesEnabled={Boolean(detailsTrip)}
+          />
+        </div>
+
         {showPlannerComposer(view) && (
           <div className={styles.composerDock}>
-            <div className={styles.tripFields}>
-            <OriginSelect
-              value={selectedOrigin}
-              onChange={handleOriginChange}
-              error={originError}
-              inputRef={originInputRef}
+            <Composer
+              inputRef={composerRef}
+              draft={draft}
+              onDraftChange={setDraft}
+              onSubmit={handleComposerSubmit}
+              loading={busy}
+              placeholder={composerPlaceholder}
             />
-            <TripDateFields
-              departureDate={form.departureDate || ''}
-              returnDate={form.returnDate || ''}
-              onChange={handleDateChange}
-              error={dateError}
-              disabled={busy}
-            />
-          </div>
-          <p id="trip-date-hint" className={styles.dateHint}>
-            Form dates are used when filled. Leave them blank to use dates from your message. Dates
-            you type in the message take precedence over the date fields.
-          </p>
-          {dateError ? (
-            <p id="trip-date-error" className={styles.originError} role="alert">
-              {dateError}
-            </p>
-          ) : null}
-          <Composer
-            inputRef={composerRef}
-            draft={draft}
-            onDraftChange={setDraft}
-            onSubmit={handleComposerSubmit}
-            loading={busy}
-            placeholder={composerPlaceholder}
-          />
           </div>
         )}
       </div>
 
-      <div className={splitRight ? `${styles.right} ${styles.rightSplit}` : styles.right}>
+      <div className={styles.right}>
         {showInspiration && !isNarrow && (
           <InspirationPanel
             destinations={[]}
             onPlan={() => originInputRef.current?.focus()}
             onExplore={handleExploreDestinations}
             onSelectDestination={handlePreview}
-          />
-        )}
-        {splitRight && (
-          <TripDetailsPanel
-            destination={detailsTrip}
-            isSaved={Boolean(detailsTrip && savedIds.includes(detailsTrip.id))}
-            onToggleSaved={handleToggleSaved}
-            onClose={handleCloseDetails}
-            moods={parsedPreferences?.moods}
-            activitiesEnabled={splitRight}
           />
         )}
         {showMap && (
@@ -1271,17 +1295,6 @@ export default function App() {
           onChange={handleFilterChange}
           onReset={handleResetFilters}
           onClose={() => setFiltersOpen(false)}
-        />
-      )}
-
-      {isNarrow && (
-        <TripDetailsDrawer
-          destination={detailsTrip}
-          onClose={handleCloseDetails}
-          isSaved={Boolean(detailsTrip && savedIds.includes(detailsTrip.id))}
-          onToggleSaved={handleToggleSaved}
-          moods={parsedPreferences?.moods}
-          activitiesEnabled={isNarrow}
         />
       )}
     </div>

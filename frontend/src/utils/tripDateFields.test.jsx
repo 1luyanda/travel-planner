@@ -16,5 +16,6 @@ describe('TripDateFields', () => {
     expect(html).toContain('value="2026-10-16"')
     expect(html).toContain('for="departure-date"')
     expect(html).toContain('for="return-date"')
+    expect(html).toContain('dateFieldControl')
   })
 })

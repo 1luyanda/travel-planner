@@ -96,11 +96,14 @@ class RankingPreferences:
     precipitation_weight: float = 0.10
     sunshine_weight: float = 0.10
     temperature_direction: ScoringDirection = "higher_is_better"
+    sunshine_direction: ScoringDirection = "higher_is_better"
+    precipitation_direction: ScoringDirection = "lower_is_better"
 
     def __post_init__(self) -> None:
         self.normalized_weights()
-        if self.temperature_direction not in ("lower_is_better", "higher_is_better"):
-            raise ValueError("Invalid temperature scoring direction.")
+        for field in ("temperature_direction", "sunshine_direction", "precipitation_direction"):
+            if getattr(self, field) not in ("lower_is_better", "higher_is_better"):
+                raise ValueError("Invalid scoring direction.")
 
     def normalized_weights(self) -> dict[str, float]:
         """Validate and normalize without changing supplied preferences."""
@@ -127,9 +130,14 @@ def rank_candidates(
     preferences = preferences or RankingPreferences()
     weights = preferences.normalized_weights()
     candidates = tuple(candidates)
+    direction_overrides = {
+        "weather": preferences.temperature_direction,
+        "sunshine": preferences.sunshine_direction,
+        "precipitation": preferences.precipitation_direction,
+    }
     criteria = tuple(
-        replace(criterion, direction=preferences.temperature_direction)
-        if criterion.name == "weather" else criterion
+        replace(criterion, direction=direction_overrides[criterion.name])
+        if criterion.name in direction_overrides else criterion
         for criterion in CRITERIA
     )
     component_scores = {

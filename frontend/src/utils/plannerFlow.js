@@ -8,10 +8,7 @@ const IATA = /^[A-Za-z]{3}$/
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 
 export const REFINEMENT_ACTIONS = [
-  { label: 'Cheaper', text: 'Cheaper' },
-  { label: 'Warmer', text: 'Warmer' },
-  { label: 'Direct flights', text: 'Direct' },
-  { label: 'Shorter travel', text: 'Shorter' },
+  { label: 'Direct flights', text: 'Direct', hardFilter: true },
 ]
 
 export const INITIAL_PLANNER_FORM = {
@@ -61,11 +58,21 @@ export function plannerDateValue(value) {
   return isIsoDate(value) ? value : ''
 }
 
-export function dateRangeError(form = {}) {
+export function todayIsoDate(now = new Date()) {
+  const date = now instanceof Date ? now : new Date(now)
+  const year = date.getUTCFullYear()
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(date.getUTCDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+export function dateRangeError(form = {}, today = todayIsoDate()) {
   const departure = plannerDateValue(form.departureDate)
   const returnDate = plannerDateValue(form.returnDate)
   if (form.departureDate && !departure) return 'Enter a valid departure date as YYYY-MM-DD.'
   if (form.returnDate && !returnDate) return 'Enter a valid return date as YYYY-MM-DD.'
+  if (departure && departure < today) return 'Departure date is in the past and cannot be requested.'
+  if (returnDate && returnDate < today) return 'Return date is in the past and cannot be requested.'
   if (departure && returnDate && returnDate < departure) {
     return 'Return date must be on or after the departure date.'
   }
@@ -127,7 +134,9 @@ export function formFieldsFromPlanner(form = {}, origin = null) {
   }
 
   if (form.directOnly === true) fields.direct_flights_only = true
-  if (form.preferWarm === true) fields.weather_preference = 'warmer'
+  const weather = trimText(form.weatherPreference).toLowerCase()
+  if (weather === 'cooler') fields.weather_preference = 'cooler'
+  else if (weather === 'warmer' || form.preferWarm === true) fields.weather_preference = 'warmer'
 
   if (isIsoDate(form.departureDate)) fields.departure_date = form.departureDate
   if (isIsoDate(form.returnDate)) fields.return_date = form.returnDate
@@ -160,16 +169,29 @@ export function formFieldsForRecommendText(text, form, origin) {
   return Object.keys(next).length ? next : null
 }
 
-export function buildRecommendPayload(text, form, origin) {
+function withRankingPreferences(payload, rankingPreferences) {
+  if (!rankingPreferences || typeof rankingPreferences !== 'object' || Array.isArray(rankingPreferences)) {
+    return payload
+  }
+  const next = { ...payload, ranking_preferences: rankingPreferences }
+  if (next.form_fields && 'weather_preference' in next.form_fields) {
+    const { weather_preference: _weatherPreference, ...formFields } = next.form_fields
+    if (Object.keys(formFields).length) next.form_fields = formFields
+    else delete next.form_fields
+  }
+  return next
+}
+
+export function buildRecommendPayload(text, form, origin, rankingPreferences = null) {
   const payload = { text: typeof text === 'string' ? text : '' }
   const formFields = formFieldsForRecommendText(payload.text, form, origin)
   if (formFields) payload.form_fields = formFields
-  return payload
+  return withRankingPreferences(payload, rankingPreferences)
 }
 
 /** Filter updates send form_fields only so the original prompt cannot fight the form. */
-export function buildFilterRecommendPayload(form, origin) {
-  return buildRecommendPayload('', form, origin)
+export function buildFilterRecommendPayload(form, origin, rankingPreferences = null) {
+  return buildRecommendPayload('', form, origin, rankingPreferences)
 }
 
 const MONTH =
@@ -290,11 +312,14 @@ export function localClarificationQuestions({ text = '', form = {}, origin = nul
   return questions
 }
 
-export function buildRefinePayload(text, tripRequest) {
-  return {
-    text: typeof text === 'string' ? text : '',
-    request: tripRequest,
-  }
+export function buildRefinePayload(text, tripRequest, rankingPreferences = null) {
+  return withRankingPreferences(
+    {
+      text: typeof text === 'string' ? text : '',
+      request: tripRequest,
+    },
+    rankingPreferences,
+  )
 }
 
 export function describeFormFields(formFields) {
@@ -600,7 +625,9 @@ export function backendScoreItems(destination) {
   const scores = destination?.scores || {}
   return [
     { key: 'price', label: 'Price (cheaper is better)', score: scores.price },
-    { key: 'weather', label: 'Weather score', score: scores.weather },
+    { key: 'weather', label: 'Weather (maximum temperature)', score: scores.weather },
+    { key: 'precipitation', label: 'Precipitation (less rain is better)', score: scores.precipitation },
+    { key: 'sunshine', label: 'Sunshine (more hours is better)', score: scores.sunshine },
     { key: 'stops', label: 'Stops (fewer is better)', score: scores.stops },
     { key: 'duration', label: 'Duration (shorter is better)', score: scores.duration },
   ].filter((item) => item.score != null && Number.isFinite(Number(item.score)))

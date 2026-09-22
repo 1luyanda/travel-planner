@@ -258,3 +258,28 @@ def test_real_ranking_winner_changes_when_feedback_switches_to_colder():
     cold = preferences_from_intents(["prefer_colder"], warm)
     assert rank_candidates(candidates, warm)[0].city == "Warm"
     assert rank_candidates(candidates, cold)[0].city == "Cold"
+
+
+def test_chat_ranking_intents_adjust_only_their_criterion():
+    defaults = RankingPreferences()
+    more_sun = preferences_from_intents(["prefer_more_sunshine"])
+    less_sun = preferences_from_intents(["prefer_less_sunshine"])
+    less_rain = preferences_from_intents(["prefer_less_rain"])
+    fewer_stops = preferences_from_intents(["prefer_fewer_stops"])
+    shorter = preferences_from_intents(["stronger_duration_preference"])
+
+    assert more_sun.sunshine_weight == pytest.approx(0.20)
+    assert more_sun.sunshine_direction == "higher_is_better"
+    assert more_sun.weather_weight < defaults.weather_weight
+    assert more_sun.temperature_direction == defaults.temperature_direction
+
+    assert less_sun.sunshine_weight == pytest.approx(0.20)
+    assert less_sun.sunshine_direction == "lower_is_better"
+    assert less_sun.temperature_direction == defaults.temperature_direction
+
+    assert less_rain.precipitation_weight == pytest.approx(0.20)
+    assert less_rain.weather_weight < defaults.weather_weight
+    assert less_rain.temperature_direction == defaults.temperature_direction
+
+    assert fewer_stops.changeovers_weight == pytest.approx(0.30)
+    assert shorter.duration_weight == pytest.approx(0.25)

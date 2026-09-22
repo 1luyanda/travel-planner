@@ -33,6 +33,8 @@ describe('TripDetailsDrawer', () => {
       <TripDetailsDrawer destination={rome} onClose={() => {}} isSaved={false} onToggleSaved={() => {}} />,
     )
     expect(html).toContain('role="dialog"')
+    expect(html).toContain('drawer-root')
+    expect(html).toContain('drawer-overlay')
     expect(html).not.toMatch(/snapshot|not live or bookable/i)
     expect(html).toContain('Rome stays within budget.')
     expect(html).toContain('Zagreb, Croatia (ZAG)')

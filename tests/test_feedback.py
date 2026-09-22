@@ -114,9 +114,9 @@ def test_warmer_does_not_invent_a_temperature_threshold():
     )
 
 
-def test_cooler_and_more_rain_use_cooler_intent():
+def test_cooler_uses_cooler_intent():
     result, _ = _interpret(
-        "I prefer cooler weather with more rain",
+        "I prefer cooler weather",
         [_payload(prefer_cooler=True, weather_preference="cooler")],
     )
 
@@ -125,6 +125,42 @@ def test_cooler_and_more_rain_use_cooler_intent():
     assert result.updated_request.weather_preference == "cool"
     assert [item.code for item in result.intents] == ["prefer_cooler"]
     assert result.intents[0].target == "ranking_preferences"
+
+
+def test_more_sunshine_is_not_warmer():
+    result, original = _interpret("More sunshine", [_payload(prefer_more_sunshine=True)])
+
+    assert result.status == "ready"
+    assert [item.code for item in result.intents] == ["prefer_more_sunshine"]
+    assert result.intents[0].ranking_field == "sunshine_weight"
+    assert result.updated_request.weather_preference == original.weather_preference
+
+
+def test_less_sunshine_is_not_cooler():
+    result, original = _interpret("Less sunshine", [_payload(prefer_less_sunshine=True)])
+
+    assert result.status == "ready"
+    assert [item.code for item in result.intents] == ["prefer_less_sunshine"]
+    assert result.intents[0].ranking_field == "sunshine_weight"
+    assert result.updated_request.weather_preference == original.weather_preference
+
+
+def test_less_rain_is_not_warmer():
+    result, original = _interpret("Less rain", [_payload(prefer_less_rain=True)])
+
+    assert result.status == "ready"
+    assert [item.code for item in result.intents] == ["prefer_less_rain"]
+    assert result.intents[0].ranking_field == "precipitation_weight"
+    assert result.updated_request.weather_preference == original.weather_preference
+
+
+def test_fewer_stops_is_not_a_hard_filter():
+    result, original = _interpret("Fewer stops", [_payload(prefer_fewer_stops=True)])
+
+    assert result.status == "ready"
+    assert [item.code for item in result.intents] == ["prefer_fewer_stops"]
+    assert result.intents[0].ranking_field == "changeovers_weight"
+    assert result.updated_request.direct_flights_only == original.direct_flights_only
 
 
 def test_shorter_feedback_uses_duration_preference():

@@ -131,6 +131,7 @@ function normalizeRecommendationResponse(data) {
       (item) => typeof item === 'string' && item.trim(),
     ),
     data_source: typeof data.data_source === 'string' ? data.data_source : null,
+    ranking_preferences: asObject(data.ranking_preferences),
   }
 }
 

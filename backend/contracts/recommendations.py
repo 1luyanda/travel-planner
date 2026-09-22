@@ -30,6 +30,8 @@ class RankingPreferencesBody(BaseModel):
     precipitation_weight: float | None = Field(default=None, ge=0, le=1)
     sunshine_weight: float | None = Field(default=None, ge=0, le=1)
     temperature_direction: Literal["lower_is_better", "higher_is_better"] = "higher_is_better"
+    sunshine_direction: Literal["lower_is_better", "higher_is_better"] = "higher_is_better"
+    precipitation_direction: Literal["lower_is_better", "higher_is_better"] = "lower_is_better"
 
 
 class RecommendRequest(BaseModel):

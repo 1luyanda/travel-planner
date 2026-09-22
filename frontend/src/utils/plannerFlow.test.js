@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   INITIAL_PLANNER_FORM,
+  REFINEMENT_ACTIONS,
   assistantTextForResponse,
   backendScoreItems,
   buildClarificationRecommendPayload,
@@ -9,6 +10,7 @@ import {
   buildRefinePayload,
   createClarificationContext,
   dateRangeError,
+  todayIsoDate,
   datesChangedFromTrip,
   describeFormFields,
   describePlannerDates,
@@ -58,6 +60,18 @@ describe('formFieldsFromPlanner', () => {
       currency: 'EUR',
       direct_flights_only: true,
       weather_preference: 'warmer',
+    })
+  })
+
+  it('sends cooler weather preference independently of sunshine', () => {
+    expect(
+      formFieldsFromPlanner(
+        { originIata: 'ZAG', weatherPreference: 'cooler' },
+        null,
+      ),
+    ).toEqual({
+      origin: 'ZAG',
+      weather_preference: 'cooler',
     })
   })
 
@@ -132,6 +146,14 @@ describe('localClarificationQuestions', () => {
   })
 })
 
+describe('ranking refinement actions', () => {
+  it('keeps Direct flights as a hard filter and leaves ranking phrases to chat', () => {
+    expect(REFINEMENT_ACTIONS).toEqual([
+      { label: 'Direct flights', text: 'Direct', hardFilter: true },
+    ])
+  })
+})
+
 describe('buildRecommendPayload', () => {
   it('sends text plus backend form field names', () => {
     expect(
@@ -181,6 +203,33 @@ describe('buildRecommendPayload', () => {
       },
     })
   })
+
+  it('persists ranking preferences on filter updates without resending weather as a ranking intent', () => {
+    const rankingPreferences = {
+      price_weight: 0.25,
+      weather_weight: 0.2,
+      precipitation_weight: 0.1,
+      sunshine_weight: 0.2,
+      changeovers_weight: 0.15,
+      duration_weight: 0.1,
+      temperature_direction: 'higher_is_better',
+    }
+    expect(
+      buildFilterRecommendPayload(
+        {
+          originIata: 'ZAG',
+          weatherPreference: 'warmer',
+          preferWarm: true,
+        },
+        null,
+        rankingPreferences,
+      ),
+    ).toEqual({
+      text: '',
+      form_fields: { origin: 'ZAG' },
+      ranking_preferences: rankingPreferences,
+    })
+  })
 })
 
 describe('buildRefinePayload', () => {
@@ -188,6 +237,23 @@ describe('buildRefinePayload', () => {
     expect(buildRefinePayload('Cheaper', tripRequest)).toEqual({
       text: 'Cheaper',
       request: tripRequest,
+    })
+  })
+
+  it('persists ranking preferences on refine without treating More sunshine as Warmer', () => {
+    const rankingPreferences = {
+      price_weight: 0.2,
+      weather_weight: 0.15,
+      precipitation_weight: 0.1,
+      sunshine_weight: 0.3,
+      changeovers_weight: 0.15,
+      duration_weight: 0.1,
+      temperature_direction: 'lower_is_better',
+    }
+    expect(buildRefinePayload('Direct', tripRequest, rankingPreferences)).toEqual({
+      text: 'Direct',
+      request: tripRequest,
+      ranking_preferences: rankingPreferences,
     })
   })
 })
@@ -419,11 +485,18 @@ describe('explanations and scores', () => {
         scores: { price: 0.8, weather: null, stops: 1, duration: 0.4, total: 0.7 },
       }).map((item) => item.key),
     ).toEqual(['price', 'stops', 'duration'])
+    expect(
+      backendScoreItems({
+        scores: { precipitation: 0.6, sunshine: 0.9 },
+      }).map((item) => item.key),
+    ).toEqual(['precipitation', 'sunshine'])
   })
 
   it('maps chip labels to backend feedback text', () => {
     expect(refinementFeedbackText('Direct flights')).toBe('Direct')
-    expect(refinementFeedbackText('Shorter travel')).toBe('Shorter')
+    expect(refinementFeedbackText('Shorter travel')).toBe('Shorter travel')
+    expect(refinementFeedbackText('More sunshine')).toBe('More sunshine')
+    expect(refinementFeedbackText('Less rain')).toBe('Less rain')
   })
 
   it('patches the form from a returned TripRequest without inventing values', () => {
@@ -443,6 +516,19 @@ describe('planner date fields', () => {
     )
     expect(dateRangeError({ departureDate: '', returnDate: '' })).toBe('')
     expect(dateRangeError({ departureDate: '2026-10-08', returnDate: '2026-10-16' })).toBe('')
+  })
+
+  it('blocks dates in the past and allows today', () => {
+    expect(todayIsoDate(new Date(Date.UTC(2026, 8, 22)))).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(
+      dateRangeError({ departureDate: '2026-09-21', returnDate: '2026-09-25' }, '2026-09-22'),
+    ).toBe('Departure date is in the past and cannot be requested.')
+    expect(
+      dateRangeError({ departureDate: '2026-09-22', returnDate: '2026-09-21' }, '2026-09-22'),
+    ).toBe('Return date is in the past and cannot be requested.')
+    expect(
+      dateRangeError({ departureDate: '2026-09-22', returnDate: '2026-09-25' }, '2026-09-22'),
+    ).toBe('')
   })
 
   it('uses a fresh recommend when form dates differ from the saved trip', () => {

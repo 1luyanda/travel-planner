@@ -2,7 +2,8 @@ import { useEffect, useId, useRef } from 'react'
 import TripDetailsContent, { TripDetailsHeader } from './TripDetailsContent'
 
 /**
- * Mobile full-screen trip-details dialog. Desktop uses TripDetailsPanel.
+ * Trip-details popup over the chat column. The map stays outside this overlay
+ * so it remains interactive.
  */
 export default function TripDetailsDrawer({
   destination,
@@ -21,8 +22,6 @@ export default function TripDetailsDrawer({
     if (!destination) return undefined
 
     closeRef.current?.focus()
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
 
     function focusables() {
       const root = panelRef.current
@@ -54,7 +53,6 @@ export default function TripDetailsDrawer({
 
     document.addEventListener('keydown', onKeyDown)
     return () => {
-      document.body.style.overflow = previousOverflow
       document.removeEventListener('keydown', onKeyDown)
     }
   }, [destination, onClose])
