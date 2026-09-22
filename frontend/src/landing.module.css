@@ -6,12 +6,26 @@
 }
 
 .header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 18px 32px;
   background: var(--tp-bg);
+  padding: 16px 0;
+}
+
+.headerInner,
+.heroInner,
+.steps,
+.explore {
+  width: min(100%, 1120px);
+  margin: 0 auto;
+  padding-left: 24px;
+  padding-right: 24px;
+  box-sizing: border-box;
+}
+
+.headerInner {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px 24px;
 }
 
 .brand {
@@ -38,10 +52,18 @@
 .nav {
   display: flex;
   align-items: center;
-  flex: 1;
-  min-width: 0;
-  gap: 18px;
+  justify-content: center;
   flex-wrap: wrap;
+  gap: 8px 28px;
+  min-width: 0;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px 14px;
 }
 
 .navText {
@@ -54,6 +76,14 @@
 .navText:hover {
   color: var(--tp-accent);
   text-decoration: underline;
+}
+
+.navText:focus-visible,
+.startBtn:focus-visible,
+.startBtnLarge:focus-visible,
+.authTextButton:focus-visible {
+  outline: 2px solid var(--tp-accent);
+  outline-offset: 3px;
 }
 
 .startBtn,
@@ -88,18 +118,21 @@
 }
 
 .hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 1fr);
-  gap: 32px;
-  align-items: center;
   background: var(--tp-bg);
-  padding: 48px 32px 72px;
+  padding: 16px 0 8px;
+}
+
+.heroInner {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(260px, 1fr);
+  gap: 24px 32px;
+  align-items: center;
 }
 
 .heroCopy {
   display: grid;
-  gap: 18px;
-  max-width: 560px;
+  gap: 16px;
+  max-width: 34rem;
 }
 
 .badge {
@@ -115,28 +148,41 @@
 
 .hero h1 {
   margin: 0;
-  font-size: clamp(36px, 6vw, 64px);
-  line-height: 0.95;
-  letter-spacing: -0.06em;
+  font-size: clamp(30px, 4.2vw, 48px);
+  line-height: 1.12;
+  letter-spacing: -0.05em;
   font-weight: 800;
   color: var(--tp-text);
+  text-wrap: pretty;
 }
 
 .accent {
   color: var(--tp-accent);
+  display: inline-block;
 }
 
 .lede {
   margin: 0;
-  font-size: 18px;
+  font-size: 17px;
   line-height: 1.5;
   color: var(--tp-text-muted);
-  max-width: 440px;
+  max-width: 36rem;
+}
+
+.heroHint {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--tp-text-muted);
 }
 
 .collage {
   position: relative;
-  min-height: 420px;
+  width: min(100%, 400px);
+  aspect-ratio: 5 / 4;
+  max-height: 280px;
+  margin-inline: auto;
+  justify-self: center;
 }
 
 .collage::before,
@@ -149,17 +195,17 @@
 }
 
 .collage::before {
-  width: 170px;
-  height: 64px;
-  top: -8px;
-  right: 18%;
+  width: 28%;
+  height: 12%;
+  top: 8%;
+  right: 10%;
 }
 
 .collage::after {
-  width: 120px;
-  height: 48px;
-  bottom: 8px;
-  left: 8%;
+  width: 22%;
+  height: 10%;
+  bottom: 6%;
+  left: 10%;
 }
 
 .shotMain,
@@ -167,6 +213,7 @@
 .shotRound,
 .shotSmall {
   position: absolute;
+  margin: 0;
   overflow: hidden;
   background: var(--tp-selected);
 }
@@ -184,40 +231,65 @@
   object-fit: cover;
 }
 
+.shotLabel {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  z-index: 1;
+  margin: 0;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: rgb(8 40 44 / 72%);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
 .shotMain {
-  width: min(58%, 320px);
-  height: 340px;
-  right: 8%;
-  top: 24px;
+  width: min(56%, 240px);
+  aspect-ratio: 4 / 5;
+  height: auto;
+  left: 22%;
+  top: 4%;
   border-radius: 28px;
-  overflow: hidden;
+  z-index: 1;
 }
 
 .shotMid {
-  width: 160px;
-  height: 210px;
+  width: min(30%, 118px);
+  aspect-ratio: 3 / 4;
+  height: auto;
   left: 4%;
-  bottom: 36px;
+  bottom: 6%;
   border-radius: 22px;
-  overflow: hidden;
+  z-index: 3;
 }
 
 .shotRound {
-  width: 120px;
-  height: 120px;
-  right: 6%;
-  bottom: 18px;
+  width: min(24%, 92px);
+  aspect-ratio: 1;
+  height: auto;
+  left: 64%;
+  bottom: 6%;
   border-radius: 50%;
-  overflow: hidden;
+  z-index: 3;
+}
+
+.shotRound .shotLabel {
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
 }
 
 .shotSmall {
-  width: 110px;
-  height: 84px;
-  left: 28%;
-  top: 8px;
+  width: min(24%, 88px);
+  aspect-ratio: 4 / 3;
+  height: auto;
+  left: 8%;
+  top: 4%;
   border-radius: 18px;
-  overflow: hidden;
+  z-index: 2;
 }
 
 .floatCard {
@@ -267,9 +339,8 @@
 
 .steps,
 .explore {
-  padding: 64px 32px;
-  max-width: 1080px;
-  margin: 0 auto;
+  padding-top: 28px;
+  padding-bottom: 56px;
 }
 
 .steps h2,
@@ -367,7 +438,6 @@
   display: flex;
   align-items: center;
   gap: 14px;
-  margin-inline-start: auto;
   flex-shrink: 0;
 }
 
@@ -595,38 +665,61 @@
 }
 
 @media (max-width: 900px) {
-  .hero,
-  .header {
+  .headerInner,
+  .heroInner,
+  .steps,
+  .explore {
     padding-left: 18px;
     padding-right: 18px;
   }
 
-  .hero {
+  .headerInner {
+    grid-template-columns: auto 1fr;
+  }
+
+  .nav {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+    order: 3;
+  }
+
+  .heroInner {
     grid-template-columns: 1fr;
-    padding-bottom: 36px;
   }
 
   .collage {
-    min-height: 360px;
+    max-height: 240px;
     order: 2;
   }
 
   .heroCopy {
     order: 1;
+    max-width: none;
+  }
+
+  .shotRound,
+  .shotSmall {
+    display: none;
+  }
+
+  .shotMain {
+    left: 24%;
+    width: min(62%, 220px);
+  }
+
+  .shotMid {
+    left: 8%;
   }
 
   .steps,
   .explore {
-    padding: 40px 18px;
+    padding-top: 24px;
+    padding-bottom: 48px;
   }
 
   .steps ol,
   .grid {
     grid-template-columns: 1fr;
-  }
-
-  .navText {
-    display: none;
   }
 
   .authPageHeader {
@@ -636,11 +729,24 @@
 }
 
 @media (max-width: 640px) {
-  .header {
+  .headerInner {
+    grid-template-columns: 1fr;
+  }
+
+  .headerActions,
+  .authSignedIn,
+  .authActions {
+    justify-content: flex-start;
+    white-space: normal;
     flex-wrap: wrap;
   }
 
+  .collage {
+    max-height: 220px;
+  }
+
   .shotMain {
-    height: 260px;
+    left: 20%;
+    top: 6%;
   }
 }

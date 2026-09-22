@@ -20,6 +20,16 @@ export function isAppPath(pathname) {
   return pathname === ROUTES.home || isPlannerPath(pathname) || isAuthPath(pathname)
 }
 
+/**
+ * Session-aware in-app redirect. Unsigned planner access goes to login;
+ * signed-in auth pages go to the planner. Never follows query-string URLs.
+ */
+export function sessionRedirect(pathname, user) {
+  if (isPlannerPath(pathname) && !user) return ROUTES.login
+  if (isAuthPath(pathname) && user) return ROUTES.planner
+  return null
+}
+
 function readSnapshot() {
   return {
     path: window.location.pathname,
@@ -27,7 +37,7 @@ function readSnapshot() {
   }
 }
 
-const RouteContext = createContext(null)
+export const RouteContext = createContext(null)
 
 export function RouteProvider({ children }) {
   const [snapshot, setSnapshot] = useState(readSnapshot)
