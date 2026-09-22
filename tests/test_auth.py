@@ -15,6 +15,10 @@ from backend.services import (
     InvalidCredentialsError,
     UserService,
 )
+from backend.services.identity import hash_identity
+
+
+IDENTITY_SECRET = "test-session-secret-value-32chars"
 
 
 class FakeUserRepository:
@@ -53,13 +57,13 @@ def auth_settings() -> Settings:
         api_auth_key="test-api-key",
         trusted_hosts=("testserver",),
         app_environment="test",
-        auth_session_secret="test-session-secret",
+        auth_session_secret="test-session-secret-value-32chars",
     )
 
 
 @pytest.mark.anyio
 async def test_passwords_are_argon2id_hashed_and_duplicate_emails_are_rejected():
-    service = UserService(FakeUserRepository())
+    service = UserService(FakeUserRepository(), identity_secret=IDENTITY_SECRET)
     request = {
         "email": "Person@example.com",
         "password": "a-long-demo-password",
@@ -70,14 +74,25 @@ async def test_passwords_are_argon2id_hashed_and_duplicate_emails_are_rejected()
 
     assert user.password_hash.startswith("$argon2id$")
     assert request["password"] not in user.password_hash
+    assert user.email == hash_identity(IDENTITY_SECRET, "Person@example.com")
+    assert user.email_normalized == hash_identity(IDENTITY_SECRET, "person@example.com")
+    assert user.display_name == hash_identity(IDENTITY_SECRET, "Person")
+    assert "Person@example.com" not in user.email
+    assert "person@example.com" not in user.email_normalized
+    assert user.display_name != "Person"
 
     with pytest.raises(DuplicateEmailError):
         await service.register(RegisterRequest(**request))
 
+    logged_in = await service.authenticate(
+        LoginRequest(email="Person@example.com", password="a-long-demo-password")
+    )
+    assert logged_in.id == user.id
+
 
 @pytest.mark.anyio
 async def test_login_failures_are_generic_for_unknown_and_wrong_password():
-    service = UserService(FakeUserRepository())
+    service = UserService(FakeUserRepository(), identity_secret=IDENTITY_SECRET)
 
     await service.register(
         RegisterRequest(
@@ -99,7 +114,7 @@ def test_session_cookie_me_logout_and_account_isolation(monkeypatch):
     import backend.security as security
 
     repository = FakeUserRepository()
-    service = UserService(repository)
+    service = UserService(repository, identity_secret=IDENTITY_SECRET)
     app = FastAPI()
     app.include_router(auth_router)
     app.state.user_service = service
@@ -125,7 +140,12 @@ def test_session_cookie_me_logout_and_account_isolation(monkeypatch):
         me = first_client.get("/api/auth/me", headers=api_headers)
         assert me.status_code == 200
         assert me.json()["email"] == "first@example.com"
+        assert me.json()["display_name"] == "First"
         assert "password" not in me.text
+        stored = next(iter(repository.users.values()))
+        assert stored.email != "first@example.com"
+        assert stored.email_normalized != "first@example.com"
+        assert stored.display_name != "First"
 
         with TestClient(app) as second_client:
             second_client.post(
@@ -158,7 +178,10 @@ def test_invalid_login_does_not_disclose_account_state(monkeypatch):
 
     app = FastAPI()
     app.include_router(auth_router)
-    app.state.user_service = UserService(FakeUserRepository())
+    app.state.user_service = UserService(
+        FakeUserRepository(),
+        identity_secret=IDENTITY_SECRET,
+    )
     monkeypatch.setattr(security, "get_settings", auth_settings)
 
     response = TestClient(app).post(

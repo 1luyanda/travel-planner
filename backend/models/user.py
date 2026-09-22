@@ -13,9 +13,9 @@ class UserDocument(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     id: str
-    email: EmailStr
-    email_normalized: str
-    display_name: str = Field(min_length=1, max_length=100)
+    email: str = Field(min_length=1, max_length=128)
+    email_normalized: str = Field(min_length=1, max_length=128)
+    display_name: str = Field(min_length=1, max_length=128)
     password_hash: str
     created_at: datetime
     updated_at: datetime

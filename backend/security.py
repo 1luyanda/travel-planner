@@ -97,13 +97,20 @@ def _decode(value: str) -> bytes:
     return base64.urlsafe_b64decode(value + padding)
 
 
-def create_session_value(user_id: str) -> str:
-    """Create a signed, short-lived cookie value containing only user ID."""
+def create_session_value(
+    user_id: str,
+    *,
+    email: str = "",
+    display_name: str = "",
+) -> str:
+    """Create a signed, short-lived cookie value with user ID and profile fields."""
 
     settings = get_settings()
     payload = json.dumps(
         {
             "sub": user_id,
+            "email": email,
+            "name": display_name,
             "exp": int(time()) + settings.auth_session_ttl_seconds,
         },
         separators=(",", ":"),
@@ -117,11 +124,17 @@ def create_session_value(user_id: str) -> str:
     return f"{encoded_payload}.{_encode(signature)}"
 
 
-def set_session_cookie(response: Response, user_id: str) -> None:
+def set_session_cookie(
+    response: Response,
+    user_id: str,
+    *,
+    email: str = "",
+    display_name: str = "",
+) -> None:
     settings = get_settings()
     response.set_cookie(
         key=settings.auth_cookie_name or SESSION_COOKIE_NAME,
-        value=create_session_value(user_id),
+        value=create_session_value(user_id, email=email, display_name=display_name),
         max_age=settings.auth_session_ttl_seconds,
         httponly=True,
         secure=settings.auth_cookie_secure,
@@ -141,7 +154,7 @@ def clear_session_cookie(response: Response) -> None:
     )
 
 
-def _session_user_id(request: Request) -> str:
+def _session_payload(request: Request) -> dict:
     settings = get_settings()
     cookie_name = settings.auth_cookie_name or SESSION_COOKIE_NAME
     raw_value = request.cookies.get(cookie_name)
@@ -171,7 +184,13 @@ def _session_user_id(request: Request) -> str:
             raise ValueError
         if expires_at <= int(time()):
             raise ValueError
-        return user_id
+        email = payload.get("email") if isinstance(payload.get("email"), str) else ""
+        display_name = payload.get("name") if isinstance(payload.get("name"), str) else ""
+        return {
+            "sub": user_id,
+            "email": email,
+            "name": display_name,
+        }
     except (
         ValueError,
         KeyError,
@@ -187,10 +206,14 @@ def _session_user_id(request: Request) -> str:
         ) from None
 
 
+def _session_user_id(request: Request) -> str:
+    return _session_payload(request)["sub"]
+
+
 async def require_user(request: Request):
     """Resolve the authenticated user from the signed session cookie."""
 
-    user_id = _session_user_id(request)
+    session = _session_payload(request)
     user_service = getattr(request.app.state, "user_service", None)
     if user_service is None:
         raise HTTPException(
@@ -198,10 +221,20 @@ async def require_user(request: Request):
             detail="Authentication service is unavailable.",
         )
     try:
-        return await user_service.get_by_id(user_id)
+        user = await user_service.get_by_id(session["sub"])
     except InvalidCredentialsError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required.",
             headers={"WWW-Authenticate": "Cookie"},
         ) from None
+    email = session["email"]
+    display_name = session["name"] or (email.split("@", 1)[0] if email else "")
+    if email:
+        user = user.model_copy(
+            update={
+                "email": email,
+                "display_name": display_name or user.display_name,
+            }
+        )
+    return user
