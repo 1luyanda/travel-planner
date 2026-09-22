@@ -17,6 +17,7 @@ import {
 import { formatOriginLabel } from '../utils/origins'
 import { backendScoreItems, uniqueExplanationView } from '../utils/plannerFlow'
 import TripDetailsActivities from './TripDetailsActivities'
+import TripDetailsHotels from './TripDetailsHotels'
 
 export const DETAILS_EMPTY_MESSAGE = 'Select a trip to view its details.'
 
@@ -101,6 +102,7 @@ export default function TripDetailsContent({
   titleId,
   moods,
   activitiesEnabled = false,
+  hotelSelection,
 }) {
   const flight = destination?.flight || {}
   const place = destination?.destination || {}
@@ -156,6 +158,15 @@ export default function TripDetailsContent({
           <ScoreBreakdown items={breakdown} total={destination.scores?.total} />
         </section>
       )}
+
+      <TripDetailsHotels
+        key={destination.hotelDestinationId || 'unavailable'}
+        destinationId={destination.hotelDestinationId}
+        titleId={titleId}
+        onHotelsChange={hotelSelection?.onHotelsChange}
+        selectedHotelId={hotelSelection?.selectedHotelId}
+        onSelectHotel={hotelSelection?.onSelectHotel}
+      />
 
       <TripDetailsActivities
         destination={destination}

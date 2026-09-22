@@ -10,6 +10,7 @@ import InspirationPanel from './components/InspirationPanel'
 import ConversationPane from './components/ConversationPane'
 import SavedPane from './components/SavedPane'
 import DestinationMap from './components/DestinationMap'
+import { useHotelSelection } from './utils/useHotelSelection'
 import FiltersPopover from './components/FiltersPopover'
 import TripDetailsDrawer from './components/TripDetailsDrawer'
 import LandingPage from './components/LandingPage'
@@ -164,6 +165,7 @@ export default function App() {
   const visibleDestinations = destinationsForView(view, { results, savedItems })
   const mapResults = visibleDestinations
   const detailsTrip = resolveSelectedTrip(mapResults, selectedTrip)
+  const hotelSelection = useHotelSelection(detailsTrip)
   const showMap = view === 'saved' || hasSearched
   const showInspiration = view === 'explore' && !hasSearched
   const dateError = dateRangeError(form)
@@ -923,6 +925,7 @@ export default function App() {
   }
 
   function handleMarkerSelect(resultId) {
+    hotelSelection.clearSelection()
     const pool = visibleDestinations
     const match = tripFromMarkerId(pool, resultId)
     if (!match) return
@@ -932,6 +935,7 @@ export default function App() {
   }
 
   function handleShowAll() {
+    hotelSelection.clearSelection()
     setViewportMode('bounds')
   }
 
@@ -1267,6 +1271,7 @@ export default function App() {
             onToggleSaved={handleToggleSaved}
             moods={parsedPreferences?.moods}
             activitiesEnabled={Boolean(detailsTrip)}
+            hotelSelection={hotelSelection}
           />
         </div>
 
@@ -1300,6 +1305,10 @@ export default function App() {
             viewportMode={viewportMode}
             onSelectMarker={handleMarkerSelect}
             onShowAll={handleShowAll}
+            hotels={hotelSelection.hotels}
+            selectedHotelId={hotelSelection.selectedHotelId}
+            hotelFocusVersion={hotelSelection.focusVersion}
+            onSelectHotel={hotelSelection.onSelectHotel}
           />
         )}
       </div>

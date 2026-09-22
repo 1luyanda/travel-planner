@@ -4,6 +4,7 @@ import {
   attachDestinationCityPhotos,
   enrichRecommendations,
 } from './adaptRecommendations'
+import { resolveSelectedTrip, selectTripFromResult } from './tripDetailsSelection'
 
 const rome = {
   destination_id: 'ZAG-ROM-2026-09-18',
@@ -53,6 +54,32 @@ const flight = {
 }
 
 describe('adaptRecommendations', () => {
+  it('retains the backend hotel ID through enrichment, selection and refinement', () => {
+    const adapted = adaptRecommendations({
+      recommendations: [{ ...rome, hotel_destination_id: 'stored-rome-id' }, lisbon],
+    })
+    const enriched = attachDestinationCityPhotos(
+      enrichRecommendations(adapted.results, { flights: [flight] }), [],
+    )
+    const { selectedTrip } = selectTripFromResult(enriched[0])
+    expect(selectedTrip.hotelDestinationId).toBe('stored-rome-id')
+    expect(selectedTrip.id).toBe(rome.destination_id)
+    expect(enriched[1].hotelDestinationId).toBeNull()
+    const refined = adaptRecommendations({
+      recommendations: [{ ...rome, hotel_destination_id: null }],
+    })
+    expect(resolveSelectedTrip(refined.results, selectedTrip).hotelDestinationId).toBeNull()
+  })
+
+  it('never reconstructs missing hotel IDs from city, country, IATA or flight IDs', () => {
+    for (const value of [null, undefined, '', '  ', 123]) {
+      const adapted = adaptRecommendations({
+        recommendations: [{ ...rome, hotel_destination_id: value }], flights: [flight],
+      })
+      expect(adapted.results[0].hotelDestinationId).toBeNull()
+    }
+  })
+
   it('preserves six scores, temperature direction, and date metadata without reordering', () => {
     const alternative = {
       ...rome,

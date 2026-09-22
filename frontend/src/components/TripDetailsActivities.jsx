@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { fetchActivities } from '../services/travelApi'
+import TripDetailsSection from './TripDetailsSection'
 import {
   activitiesPayloadFromDestination,
   activitiesRequestKey,
@@ -28,8 +29,7 @@ export function TripDetailsActivitiesView({
   if (status === 'idle') return null
 
   return (
-    <section className="trip-details-activities" aria-labelledby={headingId}>
-      <h3 id={headingId}>Activities</h3>
+    <TripDetailsSection title="Activities" headingId={headingId}>
       {status === 'loading' ? (
         <p className="trip-details-activities-status" aria-live="polite" aria-busy="true">
           Loading activities…
@@ -62,7 +62,7 @@ export function TripDetailsActivitiesView({
           ))}
         </ul>
       ) : null}
-    </section>
+    </TripDetailsSection>
   )
 }
 
