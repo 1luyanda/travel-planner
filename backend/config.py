@@ -30,6 +30,7 @@ class Settings:
     max_request_bytes: int = 64 * 1024
     users_container_name: str = "users"
     user_flights_container_name: str = "user-flights"
+    user_activities_container_name: str = "user-activities"
     auth_session_secret: str | None = None
     auth_cookie_name: str = "travel_planner_session"
     auth_session_ttl_seconds: int = 3600
@@ -101,6 +102,10 @@ def get_settings() -> Settings:
         _optional_environment("COSMOS_USER_FLIGHTS_CONTAINER")
         or "user-flights"
     )
+    user_activities_container_name = (
+        _optional_environment("COSMOS_USER_ACTIVITIES_CONTAINER")
+        or "user-activities"
+    )
 
     if app_environment == "production":
         if not api_auth_key:
@@ -166,6 +171,7 @@ def get_settings() -> Settings:
         max_request_bytes=max_request_bytes,
         users_container_name=users_container_name,
         user_flights_container_name=user_flights_container_name,
+        user_activities_container_name=user_activities_container_name,
         hotels_container_name=(
             _optional_environment("COSMOS_HOTELS_CONTAINER") or "hotels"
         ),

@@ -19,6 +19,11 @@ from .recommendations import (
     RecommendationResponse,
     RefineRequest,
 )
+from .saved_activities import (
+    SaveActivityRequest,
+    SavedActivitiesResponse,
+    SavedActivityItem,
+)
 from .saved_flights import SaveFlightRequest, SavedFlightItem, SavedFlightsResponse
 
 __all__ = [
@@ -42,6 +47,9 @@ __all__ = [
     "RegisterRequest",
     "RejectedCandidateItem",
     "RejectionItem",
+    "SaveActivityRequest",
+    "SavedActivitiesResponse",
+    "SavedActivityItem",
     "SaveFlightRequest",
     "SavedFlightItem",
     "SavedFlightsResponse",

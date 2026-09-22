@@ -18,6 +18,7 @@ from backend.services import (
     CandidateService,
     HotelService,
     RecommendationService,
+    SavedActivitiesService,
     SavedFlightsService,
     UserService,
 )
@@ -43,6 +44,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         identity_secret=settings.auth_session_secret or settings.api_auth_key or "",
     )
     app.state.saved_flights_service = SavedFlightsService(repository)
+    app.state.saved_activities_service = SavedActivitiesService(repository)
     try:
         yield
     finally:

@@ -54,3 +54,8 @@ export const workspaceImages = {
 export function getDestinationImage(city = '') {
   return byCity[city.trim().toLowerCase()] || null
 }
+
+/** Stable city keys that have bundled planner photos. */
+export function bundledInspirationCities() {
+  return Object.keys(byCity).sort((left, right) => left.localeCompare(right))
+}
