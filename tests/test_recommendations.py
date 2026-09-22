@@ -136,6 +136,55 @@ def _service(
 
 
 class RankingPreferencesApiTests(unittest.TestCase):
+    def test_filter_refreshes_preserve_weights_but_explicit_warmer_refines(self) -> None:
+        service, data = _service([
+            COMPLETE_EXTRACTION, _explain_payload(),
+            _explain_payload(), _explain_payload(), _explain_payload(),
+            _feedback_payload(prefer_warmer=True), _explain_payload(),
+        ])
+        app = FastAPI()
+        app.include_router(router)
+        app.state.recommendation_service = service
+        app.dependency_overrides[require_api_key] = lambda: None
+        with TestClient(app) as client:
+            result = client.post('/api/recommend', json={
+                'text': 'From ZAG, 21-25 September 2026, under EUR 400, somewhere warmer.',
+            }).json()
+            self.assertEqual(result['status'], 'ready')
+            self.assertAlmostEqual(result['ranking_preferences']['weather_weight'], 0.30)
+            initial_weights = result['ranking_preferences']
+            for changes in (
+                {'budget': 300},
+                {'direct_flights_only': True},
+                {'departure_date': '2026-09-22', 'return_date': '2026-09-26'},
+            ):
+                with self.subTest(changes=changes):
+                    form = {**result['request'], 'weather_preference': 'warmer', **changes}
+                    response = client.post('/api/recommend', json={
+                        'text': '', 'form_fields': form,
+                        'ranking_preferences': result['ranking_preferences'],
+                        'preserve_ranking_preferences': True,
+                    })
+                    self.assertEqual(response.status_code, 200)
+                    result = response.json()
+                    self.assertEqual(result['status'], 'ready')
+                    self.assertEqual(result['intents'], [])
+                    self.assertEqual(result['ranking_preferences'], initial_weights)
+                    for field, value in changes.items():
+                        self.assertEqual(result['request'][field], value)
+                    self.assertEqual(data.last_query.max_price_eur, result['request']['budget'])
+                    self.assertEqual(data.last_query.max_changeovers, 0 if result['request']['direct_flights_only'] else None)
+                    scores = [item['final_score'] for item in result['recommendations']]
+                    self.assertEqual(scores, sorted(scores, reverse=True))
+            response = client.post('/api/refine', json={
+                'text': 'Warmer', 'request': result['request'],
+                'ranking_preferences': result['ranking_preferences'],
+            })
+            self.assertEqual(response.status_code, 200)
+            result = response.json()
+            self.assertEqual(result['status'], 'ready')
+            self.assertAlmostEqual(result['ranking_preferences']['weather_weight'], 0.40)
+
     def test_all_six_weights_retain_main_validation(self) -> None:
         for field in (
             "price_weight", "weather_weight", "precipitation_weight",
@@ -168,6 +217,7 @@ class RankingPreferencesApiTests(unittest.TestCase):
             response = client.post("/api/recommend", json={
                 "form_fields": _trip().model_dump(mode="json"),
                 "ranking_preferences": supplied,
+                "preserve_ranking_preferences": True,
             })
             self.assertEqual(response.status_code, 200)
             result = response.json()
@@ -200,6 +250,30 @@ class RankingPreferencesApiTests(unittest.TestCase):
 
 
 class RecommendServiceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_preserve_mode_keeps_cool_direction_despite_repeated_warm_context(self) -> None:
+        service, _ = _service([COMPLETE_EXTRACTION, _explain_payload()])
+        weights = RankingPreferencesBody(**asdict(preferences_from_intents(['prefer_cooler'])))
+        result = await service.recommend(RecommendRequest(
+            text='Somewhere warm from ZAG', ranking_preferences=weights,
+            preserve_ranking_preferences=True,
+        ))
+        self.assertEqual(result.status, 'ready')
+        self.assertEqual(result.ranking_preferences, weights)
+        self.assertTrue(all(item.temperature_direction == 'lower_is_better' for item in result.recommendations))
+
+    async def test_legacy_recommend_still_applies_initial_intent_to_supplied_weights(self) -> None:
+        for preserve_without_weights in (False, True):
+            with self.subTest(preserve_without_weights=preserve_without_weights):
+                service, _ = _service([COMPLETE_EXTRACTION, _explain_payload()])
+                weights = RankingPreferencesBody(**asdict(preferences_from_intents(['prefer_warmer'])))
+                result = await service.recommend(RecommendRequest(
+                    text='Somewhere warmer from ZAG',
+                    ranking_preferences=None if preserve_without_weights else weights,
+                    preserve_ranking_preferences=preserve_without_weights,
+                ))
+                self.assertEqual(result.status, 'ready')
+                self.assertAlmostEqual(result.ranking_preferences.weather_weight, 0.30 if preserve_without_weights else 0.40)
+
     async def test_complete_request_ranks_and_explains(self) -> None:
         service, data = _service([COMPLETE_EXTRACTION, _explain_payload()])
         result = await service.recommend(
@@ -216,7 +290,12 @@ class RecommendServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.recommendations[0].city, "Rome")
         self.assertEqual(result.recommendations[0].rank, 1)
         self.assertTrue(result.recommendations[0].summary)
-        self.assertEqual(result.intents, [])
+        self.assertEqual([intent.code for intent in result.intents], ["prefer_warmer"])
+        self.assertAlmostEqual(result.ranking_preferences.weather_weight, 0.30)
+        self.assertEqual(
+            result.ranking_preferences.temperature_direction,
+            "higher_is_better",
+        )
         self.assertEqual(data.last_query.origin_id if data.last_query else None, "zagreb-hr")
         self.assertEqual(data.last_query.max_price_eur if data.last_query else None, 400)
         self.assertIsNone(data.last_query.max_changeovers if data.last_query else "missing")

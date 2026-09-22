@@ -1,5 +1,6 @@
 import { Heart } from 'lucide-react'
 import ScoreBreakdown from './ScoreBreakdown'
+import FlexibleDateNotice from './FlexibleDateNotice'
 import DestinationPhoto from './DestinationPhoto'
 import {
   displayValue,
@@ -91,6 +92,7 @@ export default function DestinationCard({
             ))}
           </ul>
         )}
+        <FlexibleDateNotice destination={destination} className={styles.reason} />
 
         {breakdown.length > 0 && (
           <details className={styles.why}>

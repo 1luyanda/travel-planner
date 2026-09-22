@@ -9,6 +9,7 @@ export default function ConversationPane({
   tripRequest = null,
   preferences = null,
   dataSource,
+  dateFallback = null,
   rejectedCount = 0,
   results,
   previousRanks,
@@ -70,6 +71,14 @@ export default function ConversationPane({
             </button>
           ))}
         </div>
+      )}
+
+      {showResults && results.length > 0 && dateFallback?.used && (
+        <p className={styles.panelHint}>
+          Nearby dates included.
+          {dateFallback.exactMatchCount != null && ` Exact-date matches: ${dateFallback.exactMatchCount}.`}
+          {dateFallback.fallbackCount != null && ` Alternative-date options: ${dateFallback.fallbackCount}.`}
+        </p>
       )}
 
       {showResults && (

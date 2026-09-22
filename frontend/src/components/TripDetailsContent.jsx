@@ -1,6 +1,7 @@
 import { Heart } from 'lucide-react'
 import DestinationPhoto from './DestinationPhoto'
 import ScoreBreakdown from './ScoreBreakdown'
+import FlexibleDateNotice from './FlexibleDateNotice'
 import {
   displayValue,
   formatAirline,
@@ -119,6 +120,8 @@ export default function TripDetailsContent({
         className="trip-details-photo"
         sizes="420px"
       />
+
+      <FlexibleDateNotice destination={destination} className="trip-details-notice" />
 
       {summary && <p className="trip-details-summary">{summary}</p>}
       {evidence.length > 0 && (

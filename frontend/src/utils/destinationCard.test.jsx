@@ -24,6 +24,19 @@ const destination = {
 }
 
 describe('DestinationCard explanations', () => {
+  it('shows all six score components and the unchanged backend total', () => {
+    const html = renderToStaticMarkup(<DestinationCard destination={{
+      ...destination, temperatureDirection: 'lower_is_better',
+      scores: { ...destination.scores, precipitation: 0, sunshine: 0.65 },
+    }} rank={1} />)
+    expect(html).toContain('Temperature (cooler is better)')
+    expect(html).toContain('Precipitation (less is better)')
+    expect(html).toContain('Sunshine (more is better)')
+    expect(html).toContain('0%')
+    expect(html).toContain('65%')
+    expect(html).toContain('82%')
+  })
+
   it('renders trip fact bullets and keeps the LLM summary off the card', () => {
     const html = renderToStaticMarkup(
       <DestinationCard destination={destination} rank={1} previousRank={null} />,

@@ -206,9 +206,50 @@ const readyRecommendation = {
   issues: [],
   clarification_questions: [],
   data_source: 'cosmos://TravelPlaner/flights',
+  ranking_preferences: {
+    price_weight: 0.225,
+    weather_weight: 0.3,
+    changeovers_weight: 0.175,
+    duration_weight: 0.125,
+    precipitation_weight: 0.0875,
+    sunshine_weight: 0.0875,
+    temperature_direction: 'higher_is_better',
+  },
 }
 
 describe('recommendTrip', () => {
+  it('sends the explicit preserve flag with effective filter preferences', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (_url, options) => {
+      expect(JSON.parse(options.body)).toMatchObject({
+        text: '', ranking_preferences: readyRecommendation.ranking_preferences,
+        preserve_ranking_preferences: true,
+      })
+      return { ok: true, json: async () => readyRecommendation }
+    }))
+    await recommendTrip({
+      ranking_preferences: readyRecommendation.ranking_preferences,
+      preserve_ranking_preferences: true,
+    })
+  })
+
+  it.each(['recommend', 'refine'])('preserves all fallback metadata from %s', async (kind) => {
+    const dates = {
+      is_flexible_date_option: true,
+      requested_departure_date: '2026-09-21', requested_return_date: '2026-09-25',
+      actual_departure_date: '2026-09-22', actual_return_date: '2026-09-26',
+    }
+    const summary = { flexible_date_fallback_used: true, exact_match_count: 0, fallback_count: 1 }
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({
+      ...readyRecommendation, ...summary,
+      recommendations: [{ ...readyRecommendation.recommendations[0], ...dates }],
+    }) })))
+    const response = kind === 'recommend'
+      ? await recommendTrip({})
+      : await refineTrip({ text: 'Warmer', request: tripRequest })
+    expect(response).toMatchObject(summary)
+    expect(response.recommendations[0]).toMatchObject(dates)
+  })
+
   it('POSTs JSON to /api/recommend using backend field names', async () => {
     vi.stubGlobal(
       'fetch',
@@ -232,6 +273,7 @@ describe('recommendTrip', () => {
     expect(payload.request).toEqual(tripRequest)
     expect(payload.recommendations[0].city).toBe('Rome')
     expect(payload.flights[0].id).toBe('ZAG-ROM-2026-09-18')
+    expect(payload.ranking_preferences.weather_weight).toBe(0.3)
   })
 
   it('keeps GET origin autocomplete working alongside POST', async () => {
@@ -285,13 +327,26 @@ describe('recommendTrip', () => {
 })
 
 describe('refineTrip', () => {
-  it('POSTs the saved TripRequest to /api/refine', async () => {
+  it('POSTs the saved TripRequest and current ranking preferences to /api/refine', async () => {
+    const rankingPreferences = {
+      price_weight: 0.225,
+      weather_weight: 0.3,
+      changeovers_weight: 0.175,
+      duration_weight: 0.125,
+      precipitation_weight: 0.0875,
+      sunshine_weight: 0.0875,
+      temperature_direction: 'higher_is_better',
+    }
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url, options) => {
         expect(url).toBe('/api/refine')
         expect(options.method).toBe('POST')
-        expect(JSON.parse(options.body)).toEqual({ text: 'Cheaper', request: tripRequest })
+        expect(JSON.parse(options.body)).toEqual({
+          text: 'Cheaper',
+          request: tripRequest,
+          ranking_preferences: rankingPreferences,
+        })
         return {
           ok: true,
           json: async () => ({
@@ -302,7 +357,11 @@ describe('refineTrip', () => {
         }
       }),
     )
-    const payload = await refineTrip({ text: 'Cheaper', request: tripRequest })
+    const payload = await refineTrip({
+      text: 'Cheaper',
+      request: tripRequest,
+      ranking_preferences: rankingPreferences,
+    })
     expect(payload.updated_request.origin).toBe('ZAG')
   })
 

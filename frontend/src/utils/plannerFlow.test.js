@@ -204,31 +204,38 @@ describe('buildRecommendPayload', () => {
     })
   })
 
-  it('persists ranking preferences on filter updates without resending weather as a ranking intent', () => {
-    const rankingPreferences = {
-      price_weight: 0.25,
-      weather_weight: 0.2,
-      precipitation_weight: 0.1,
-      sunshine_weight: 0.2,
-      changeovers_weight: 0.15,
-      duration_weight: 0.1,
-      temperature_direction: 'higher_is_better',
-    }
-    expect(
-      buildFilterRecommendPayload(
-        {
-          originIata: 'ZAG',
-          weatherPreference: 'warmer',
-          preferWarm: true,
-        },
-        null,
-        rankingPreferences,
-      ),
-    ).toEqual({
-      text: '',
-      form_fields: { origin: 'ZAG' },
-      ranking_preferences: rankingPreferences,
+  it.each([
+    { maxBudget: 300, budgetTouched: true },
+    { directOnly: true },
+    { departureDate: '2026-10-21', returnDate: '2026-10-30' },
+  ])('preserves effective preferences when filters change: %j', (change) => {
+    const weights = { weather_weight: 0.3, temperature_direction: 'higher_is_better' }
+    const payload = buildFilterRecommendPayload({ originIata: 'ZAG', preferWarm: true, ...change }, null, weights)
+    expect(payload.ranking_preferences).toEqual(weights)
+    expect(payload.preserve_ranking_preferences).toBe(true)
+    expect(payload.form_fields.weather_preference).toBe('warmer')
+    expect(payload.text).toBe('')
+  })
+
+  it('carries filter preferences through clarification without strengthening them', () => {
+    const weights = { weather_weight: 0.3, temperature_direction: 'lower_is_better' }
+    const context = createClarificationContext({ rankingPreferences: weights, questions: ['Which dates?'] })
+    const continued = recordClarificationAnswer(context, '2026-10-21 to 2026-10-30')
+    expect(buildClarificationRecommendPayload({ ...continued, answer: 'EUR 300' })).toMatchObject({
+      ranking_preferences: weights,
+      preserve_ranking_preferences: true,
     })
+    expect(buildRecommendPayload('Warmer', {}, null)).not.toHaveProperty('preserve_ranking_preferences')
+  })
+
+  it('lets an explicitly selected warmer preference apply to current weights', () => {
+    const weights = { weather_weight: 0.3 }
+    const payload = buildFilterRecommendPayload({ preferWarm: true }, null, weights, {
+      preserveRankingPreferences: false,
+    })
+    expect(payload.ranking_preferences).toEqual(weights)
+    expect(payload.form_fields.weather_preference).toBe('warmer')
+    expect(payload).not.toHaveProperty('preserve_ranking_preferences')
   })
 })
 
@@ -490,6 +497,20 @@ describe('explanations and scores', () => {
         scores: { precipitation: 0.6, sunshine: 0.9 },
       }).map((item) => item.key),
     ).toEqual(['precipitation', 'sunshine'])
+  })
+
+  it.each([
+    ['higher_is_better', 'warmer'],
+    ['lower_is_better', 'cooler'],
+  ])('shows all six backend components with %s temperature', (direction, label) => {
+    const items = backendScoreItems({
+      temperatureDirection: direction,
+      scores: { price: 0.8, weather: 0.2, precipitation: 0, sunshine: 1, stops: 0.3, duration: 0.4, total: 0.61 },
+    })
+    expect(items.map(({ key, score }) => [key, score])).toEqual([
+      ['price', 0.8], ['weather', 0.2], ['precipitation', 0], ['sunshine', 1], ['stops', 0.3], ['duration', 0.4],
+    ])
+    expect(items[1].label).toBe(`Temperature (${label} is better)`)
   })
 
   it('maps chip labels to backend feedback text', () => {

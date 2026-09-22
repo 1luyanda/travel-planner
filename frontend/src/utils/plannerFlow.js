@@ -189,9 +189,16 @@ export function buildRecommendPayload(text, form, origin, rankingPreferences = n
   return withRankingPreferences(payload, rankingPreferences)
 }
 
-/** Filter updates send form_fields only so the original prompt cannot fight the form. */
-export function buildFilterRecommendPayload(form, origin, rankingPreferences = null) {
-  return buildRecommendPayload('', form, origin, rankingPreferences)
+/** Filter updates reuse effective weights; an explicit temperature change can opt out. */
+export function buildFilterRecommendPayload(
+  form, origin, rankingPreferences = null, { preserveRankingPreferences = true } = {},
+) {
+  const payload = buildRecommendPayload('', form, origin)
+  if (rankingPreferences && typeof rankingPreferences === 'object') {
+    payload.ranking_preferences = rankingPreferences
+    if (preserveRankingPreferences) payload.preserve_ranking_preferences = true
+  }
+  return payload
 }
 
 const MONTH =
@@ -474,7 +481,9 @@ export function isClarificationQuestionText(text, questions = []) {
   return (questions || []).some((item) => trimText(item) === value)
 }
 
-export function createClarificationContext({ originalPrompt, formFields, preferences, questions = [] } = {}) {
+export function createClarificationContext({
+  originalPrompt, formFields, preferences, questions = [], rankingPreferences = null,
+} = {}) {
   const combined = {
     ...formFieldsFromPreferences(preferences),
     ...(formFields && typeof formFields === 'object' ? formFields : {}),
@@ -485,6 +494,7 @@ export function createClarificationContext({ originalPrompt, formFields, prefere
     preferences: preferences || null,
     questions: Array.isArray(questions) ? questions.filter(Boolean) : [],
     previousAnswers: [],
+    rankingPreferences,
   }
 }
 
@@ -513,6 +523,7 @@ export function buildClarificationRecommendPayload({
   answer,
   updatedFormDatesText,
   formFields,
+  rankingPreferences,
 } = {}) {
   const sections = []
   const prompt = trimText(originalPrompt)
@@ -542,6 +553,10 @@ export function buildClarificationRecommendPayload({
   }
 
   const payload = { text: sections.join('\n\n') }
+  if (rankingPreferences) {
+    payload.ranking_preferences = rankingPreferences
+    payload.preserve_ranking_preferences = true
+  }
   if (formFields && typeof formFields === 'object' && !Array.isArray(formFields) && Object.keys(formFields).length) {
     payload.form_fields = formFields
   }
@@ -625,9 +640,17 @@ export function backendScoreItems(destination) {
   const scores = destination?.scores || {}
   return [
     { key: 'price', label: 'Price (cheaper is better)', score: scores.price },
-    { key: 'weather', label: 'Weather (maximum temperature)', score: scores.weather },
-    { key: 'precipitation', label: 'Precipitation (less rain is better)', score: scores.precipitation },
-    { key: 'sunshine', label: 'Sunshine (more hours is better)', score: scores.sunshine },
+    {
+      key: 'weather',
+      label: destination?.temperatureDirection === 'lower_is_better'
+        ? 'Temperature (cooler is better)'
+        : destination?.temperatureDirection === 'higher_is_better'
+          ? 'Temperature (warmer is better)'
+          : 'Temperature',
+      score: scores.weather,
+    },
+    { key: 'precipitation', label: 'Precipitation (less is better)', score: scores.precipitation },
+    { key: 'sunshine', label: 'Sunshine (more is better)', score: scores.sunshine },
     { key: 'stops', label: 'Stops (fewer is better)', score: scores.stops },
     { key: 'duration', label: 'Duration (shorter is better)', score: scores.duration },
   ].filter((item) => item.score != null && Number.isFinite(Number(item.score)))
