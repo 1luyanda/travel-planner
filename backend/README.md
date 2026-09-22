@@ -201,14 +201,26 @@ Example refine body:
 cheaper/warmer/cooler intents adjust the current weights incrementally. If the
 feedback has no ranking intent, the supplied weights (or defaults) stay.
 
-## Integration placeholders
+For filter-only `/api/recommend` requests, React sends the current effective
+`ranking_preferences` with `preserve_ranking_preferences: true`. The backend
+applies the updated filters but does not reinterpret a repeated warm/cool form
+value as a new ranking intent. Initial warmer searches move temperature weight
+from 0.20 to 0.30; subsequent budget, direct-flight, or date filter updates keep
+it at 0.30. Explicit `Warmer` feedback through `/api/refine` raises it to 0.40.
+The optional flag defaults to false for existing API callers. Without supplied
+preferences, initial ranking intents still apply even if the flag is true.
+
+## Frontend and backend integration
 
 - `POST /api/recommend` and `POST /api/refine` now call the AI functions, Cosmos,
   and ranking in one backend path.
 - Origin IATA codes such as `ZAG` are resolved through Cosmos `city_iata` /
   `airports`. Unmatched or ambiguous codes return `needs_input`.
-- Refine calls Ivan's `preferences_from_intents` for cheaper/warmer. Luyanda
-  can still send `ranking_preferences` as the starting weights.
+- React calls `/api/recommend` for searches and filter updates and `/api/refine`
+  for explicit feedback. Candidate filtering and ranking run in the backend.
+- React carries returned `ranking_preferences` across refinements and filter
+  updates. Refine calls `preferences_from_intents` for cheaper/warmer/cooler;
+  filter updates reuse the effective preferences as described above.
 - Data, recommendation, and activities routes require the server-side `X-API-Key`
   configured through `API_AUTH_KEY`. The health endpoint remains public.
   The browser must not receive this key; local Vite and production gateways
@@ -315,9 +327,13 @@ temperature direction. Pass this object into the next refinement request to
 carry state forward; the backend remains stateless. Existing response fields
 remain available. Explanations use the actual temperature direction.
 
-React is unchanged and still uses its separate browser-ranking path. It must
-call the recommendation/refinement endpoints to consume these backend scores.
-Hard constraints and flexible-date retrieval run before scoring as before.
+React preserves the backend recommendation order, ranks, and `final_score`;
+it does not calculate scores or rerank results. Cards and trip details display
+all six component scores. The UI calls `weather_score` Temperature and uses
+`temperature_direction` to indicate whether warmer or cooler is preferred;
+the API field names remain compatible. Missing component scores in older
+responses are omitted from the display. Hard constraints and backend-owned
+flexible-date retrieval run before scoring.
 
 ## Flexible-date shortlist fallback
 
@@ -352,7 +368,13 @@ exact matches), `requested_departure_date`, `requested_return_date`,
 `actual_departure_date`, and `actual_return_date`. Dates are ISO calendar dates
 or null when unavailable. Responses also add `exact_match_count`, `fallback_count`,
 and `flexible_date_fallback_used`; the latter is true only if alternatives were
-actually added. Existing response fields and request models are unchanged.
+actually added. Existing response fields remain available; fallback needs no
+additional request fields.
+
+React preserves this summary in planner state and keeps each recommendation's
+date metadata through display enrichment. Alternative-date cards and details
+show both requested and actual calendar dates, including when an alternative
+is ranked first. The frontend does not select fallback flights or reorder them.
 
 # AI request parser and explanations
 
@@ -447,7 +469,9 @@ The ranking package is not imported by the AI functions. Any object with the
 `RankedDestination` fields from ranking is accepted
 (`destination_id`, `destination_iata`, `city`, `price_eur`, `changeover_count`,
 `flight_duration_minutes`, `trip_duration_days`, `average_max_temperature_c`,
-and the five scores). Wiring to Ivan's live ranking objects is still pending.
+and the six component scores plus `final_score` and `temperature_direction`).
+`RecommendationService` passes the ranking engine's objects directly into this
+explanation step; explanations retain their backend scores and order.
 
 ```python
 from backend.services.explanations import explain_ranked_trips

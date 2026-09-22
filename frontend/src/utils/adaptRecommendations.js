@@ -68,9 +68,17 @@ function mapRecommendation(item, { originId, originIata, originCity, originCount
     joinUnsafe: unsafe,
     tripDurationDays: numberOrNull(item?.trip_duration_days),
     rank: rank != null && rank >= 1 ? rank : null,
+    temperatureDirection: textOrNull(item?.temperature_direction),
+    isFlexibleDateOption: item?.is_flexible_date_option === true,
+    requestedDepartureDate: textOrNull(item?.requested_departure_date),
+    requestedReturnDate: textOrNull(item?.requested_return_date),
+    actualDepartureDate: textOrNull(item?.actual_departure_date),
+    actualReturnDate: textOrNull(item?.actual_return_date),
     scores: {
       price: numberOrNull(item?.price_score),
       weather: numberOrNull(item?.weather_score),
+      precipitation: numberOrNull(item?.precipitation_score),
+      sunshine: numberOrNull(item?.sunshine_score),
       stops: numberOrNull(item?.stops_score),
       duration: numberOrNull(item?.duration_score),
       total: numberOrNull(item?.final_score),
@@ -177,6 +185,11 @@ export function adaptRecommendations(response, { flightsResponse = null, selecte
   return {
     originId,
     dataSource,
+    dateFallback: {
+      used: response?.flexible_date_fallback_used === true,
+      exactMatchCount: numberOrNull(response?.exact_match_count),
+      fallbackCount: numberOrNull(response?.fallback_count),
+    },
     rejected: Array.isArray(response?.rejected) ? response.rejected : [],
     results: recommendations.map((item) =>
       mapRecommendation(item, {

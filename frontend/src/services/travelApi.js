@@ -120,6 +120,9 @@ function normalizeRecommendationResponse(data) {
     updated_request: asObject(data.updated_request),
     preferences: asObject(data.preferences),
     ranking_preferences: asObject(data.ranking_preferences),
+    flexible_date_fallback_used: data.flexible_date_fallback_used === true,
+    exact_match_count: Number.isInteger(data.exact_match_count) ? data.exact_match_count : null,
+    fallback_count: Number.isInteger(data.fallback_count) ? data.fallback_count : null,
     origin: asObject(data.origin),
     origin_id: typeof data.origin_id === 'string' ? data.origin_id : null,
     recommendations: asList(data.recommendations),
@@ -148,6 +151,9 @@ export async function recommendTrip(payload = {}, { signal } = {}) {
     !Array.isArray(payload.ranking_preferences)
   ) {
     body.ranking_preferences = payload.ranking_preferences
+  }
+  if (payload.preserve_ranking_preferences === true && body.ranking_preferences) {
+    body.preserve_ranking_preferences = true
   }
   const data = await requestJson('/api/recommend', { method: 'POST', body, signal })
   return normalizeRecommendationResponse(data)

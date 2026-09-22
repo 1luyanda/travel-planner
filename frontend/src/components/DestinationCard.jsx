@@ -1,5 +1,6 @@
 import { Heart } from 'lucide-react'
 import ScoreBreakdown from './ScoreBreakdown'
+import FlexibleDateNotice from './FlexibleDateNotice'
 import DestinationPhoto from './DestinationPhoto'
 import {
   displayValue,
@@ -89,6 +90,7 @@ export default function DestinationCard({
         {moved && <p className={styles.movement}>Moved from #{previousRank}</p>}
         {facts && <p className={styles.facts}>{facts}{airline ? ` · ${airline}` : ''}</p>}
         {!facts && <p className={styles.facts}>{displayValue(null)}</p>}
+        <FlexibleDateNotice destination={destination} className={styles.reason} />
         {summary && <p className={styles.reason}>{summary}</p>}
         {evidence.length > 0 && (
           <ul className={styles.evidence}>

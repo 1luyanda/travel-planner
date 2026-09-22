@@ -53,6 +53,49 @@ const flight = {
 }
 
 describe('adaptRecommendations', () => {
+  it('preserves six scores, temperature direction, and date metadata without reordering', () => {
+    const alternative = {
+      ...rome,
+      precipitation_score: 0,
+      sunshine_score: 0.6,
+      temperature_direction: 'lower_is_better',
+      is_flexible_date_option: true,
+      requested_departure_date: '2026-09-21',
+      requested_return_date: '2026-09-25',
+      actual_departure_date: '2026-09-22',
+      actual_return_date: '2026-09-26',
+    }
+    const adapted = adaptRecommendations({
+      recommendations: [alternative, lisbon],
+      flexible_date_fallback_used: true, exact_match_count: 1, fallback_count: 1,
+    })
+    expect(adapted.dateFallback).toEqual({ used: true, exactMatchCount: 1, fallbackCount: 1 })
+    const first = adapted.results[0]
+    expect(first).toMatchObject({
+      temperatureDirection: 'lower_is_better', isFlexibleDateOption: true,
+      requestedDepartureDate: '2026-09-21', requestedReturnDate: '2026-09-25',
+      actualDepartureDate: '2026-09-22', actualReturnDate: '2026-09-26',
+      scores: { price: rome.price_score, weather: rome.weather_score, precipitation: 0, sunshine: 0.6,
+        stops: rome.stops_score, duration: rome.duration_score, total: rome.final_score },
+    })
+    const enriched = enrichRecommendations(adapted.results, { flights: [flight] })
+    expect(enriched.map(item => item.id)).toEqual([rome.destination_id, lisbon.destination_id])
+    expect(enriched[0]).toMatchObject({
+      scores: first.scores, isFlexibleDateOption: true,
+      requestedDepartureDate: first.requestedDepartureDate, requestedReturnDate: first.requestedReturnDate,
+      actualDepartureDate: first.actualDepartureDate, actualReturnDate: first.actualReturnDate,
+    })
+  })
+
+  it('keeps legacy missing scores and dates unavailable without inventing fallback counts', () => {
+    const adapted = adaptRecommendations({ recommendations: [rome] })
+    expect(adapted.dateFallback).toEqual({ used: false, exactMatchCount: null, fallbackCount: null })
+    expect(adapted.results[0]).toMatchObject({
+      isFlexibleDateOption: false, requestedDepartureDate: null, requestedReturnDate: null,
+      actualDepartureDate: null, actualReturnDate: null, temperatureDirection: null,
+      scores: { precipitation: null, sunshine: null, total: rome.final_score },
+    })
+  })
   it('preserves server order, rank, summary and evidence', () => {
     const adapted = adaptRecommendations({
       status: 'ready',

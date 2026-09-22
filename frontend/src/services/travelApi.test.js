@@ -218,6 +218,38 @@ const readyRecommendation = {
 }
 
 describe('recommendTrip', () => {
+  it('sends the explicit preserve flag with effective filter preferences', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (_url, options) => {
+      expect(JSON.parse(options.body)).toMatchObject({
+        text: '', ranking_preferences: readyRecommendation.ranking_preferences,
+        preserve_ranking_preferences: true,
+      })
+      return { ok: true, json: async () => readyRecommendation }
+    }))
+    await recommendTrip({
+      ranking_preferences: readyRecommendation.ranking_preferences,
+      preserve_ranking_preferences: true,
+    })
+  })
+
+  it.each(['recommend', 'refine'])('preserves all fallback metadata from %s', async (kind) => {
+    const dates = {
+      is_flexible_date_option: true,
+      requested_departure_date: '2026-09-21', requested_return_date: '2026-09-25',
+      actual_departure_date: '2026-09-22', actual_return_date: '2026-09-26',
+    }
+    const summary = { flexible_date_fallback_used: true, exact_match_count: 0, fallback_count: 1 }
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({
+      ...readyRecommendation, ...summary,
+      recommendations: [{ ...readyRecommendation.recommendations[0], ...dates }],
+    }) })))
+    const response = kind === 'recommend'
+      ? await recommendTrip({})
+      : await refineTrip({ text: 'Warmer', request: tripRequest })
+    expect(response).toMatchObject(summary)
+    expect(response.recommendations[0]).toMatchObject(dates)
+  })
+
   it('POSTs JSON to /api/recommend using backend field names', async () => {
     vi.stubGlobal(
       'fetch',

@@ -33,11 +33,19 @@ class RankingPreferencesBody(BaseModel):
 
 
 class RecommendRequest(BaseModel):
-    """First-search body: free text plus optional form fields."""
+    """Search or filter-refresh body with optional effective ranking state."""
 
     text: str = Field(default="", max_length=4000)
     form_fields: dict[str, Any] | None = Field(default=None, max_length=20)
     ranking_preferences: RankingPreferencesBody | None = None
+    preserve_ranking_preferences: bool = Field(
+        default=False,
+        description=(
+            "Reuse supplied effective preferences on filter-only searches without "
+            "applying initial ranking intents again. Without supplied preferences, "
+            "initial intents still apply."
+        ),
+    )
 
 
 class RefineRequest(BaseModel):

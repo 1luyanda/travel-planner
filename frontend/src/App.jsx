@@ -107,6 +107,7 @@ export default function App() {
   const [parsedPreferences, setParsedPreferences] = useState(null)
   const [rejected, setRejected] = useState([])
   const [dataSource, setDataSource] = useState(null)
+  const [dateFallback, setDateFallback] = useState(null)
   const [results, setResults] = useState([])
   const [previousRanks, setPreviousRanks] = useState({})
   const [appliedFilters, setAppliedFilters] = useState(null)
@@ -213,6 +214,7 @@ export default function App() {
     setSearchSnapshot(initialForm)
     setRejected([])
     setDataSource(null)
+    setDateFallback(null)
     setResults([])
     setRankingPreferences(null)
     setPreviousRanks({})
@@ -298,6 +300,7 @@ export default function App() {
     setRejected([])
     setRankingPreferences(null)
     setDataSource(null)
+    setDateFallback(null)
     setAppliedFilters(null)
     setPreviousRanks({})
     setSelectedTrip(null)
@@ -371,6 +374,7 @@ export default function App() {
       origin = selectedOrigin,
       mode = 'fresh',
       userMessage = null,
+      preserveRankingPreferences = true,
     } = options
     const typed = (userText || '').trim()
     const apiText = mode === 'filters' ? '' : typed
@@ -426,11 +430,13 @@ export default function App() {
       setParsedPreferences(null)
       setTripRequest(null)
       setResults([])
+      setDateFallback(null)
       setRejected([])
       setPreviousRanks({})
       setActiveRefinement(null)
     } else if (mode === 'clarify') {
       setResults([])
+      setDateFallback(null)
     }
     if (userMessage || typed) {
       setMessages((current) => [
@@ -448,6 +454,7 @@ export default function App() {
               originalPrompt: mode === 'filters' ? pendingSearchText || typed : typed,
               formFields: formFieldsFromPlanner(nextForm, origin),
               questions: localQuestions,
+              rankingPreferences: mode === 'filters' && preserveRankingPreferences ? rankingPreferences : null,
             })
       setClarifyKind('recommend')
       setClarification(nextContext)
@@ -496,7 +503,7 @@ export default function App() {
               }),
             })
           : mode === 'filters'
-            ? buildFilterRecommendPayload(nextForm, origin, rankingPreferences)
+            ? buildFilterRecommendPayload(nextForm, origin, rankingPreferences, { preserveRankingPreferences })
             : buildRecommendPayload(apiText, nextForm, origin)
 
       const outcome = await runPlannerRequest({
@@ -544,6 +551,7 @@ export default function App() {
               formFields: formFieldsFromPlanner(nextForm, origin),
               preferences: response.preferences,
               questions: response.clarification_questions,
+              rankingPreferences: mode === 'filters' && preserveRankingPreferences ? rankingPreferences : null,
             })
       setClarifyKind('recommend')
       setClarification(nextContext)
@@ -551,6 +559,7 @@ export default function App() {
       setParsedPreferences(response.preferences || null)
       setResults([])
       setRejected(response.rejected)
+      setDateFallback(null)
       setDataSource(response.data_source)
       setAppliedFilters(nextForm)
       setMessages((current) => [
@@ -595,6 +604,7 @@ export default function App() {
     const adapted = adaptRecommendations(response, { selectedOrigin: origin })
     setRejected(adapted.rejected)
     setDataSource(adapted.dataSource)
+    setDateFallback(adapted.dateFallback)
     setAppliedFilters(nextForm)
     setResults(adapted.results)
     setRankingPreferences(response.ranking_preferences || null)
@@ -743,6 +753,7 @@ export default function App() {
       setResults(adapted.results)
       setRejected(adapted.rejected)
       setDataSource(adapted.dataSource)
+      setDateFallback(adapted.dateFallback)
       setMessages((current) => [
         ...current,
         {
@@ -838,6 +849,8 @@ export default function App() {
       nextForm: next,
       mode: 'filters',
       userMessage: 'Updated filters',
+      // Selecting Warmer is new intent; budget/direct/date changes are not.
+      preserveRankingPreferences: field !== 'preferWarm' || value !== true,
     })
   }
 
@@ -869,6 +882,7 @@ export default function App() {
     setRejected(cleared.rejected)
     setRankingPreferences(null)
     setDataSource(null)
+    setDateFallback(null)
     setAppliedFilters(cleared.appliedFilters)
     setTripRequest(cleared.tripRequest)
     setPendingSearchText(cleared.pendingSearchText)
@@ -1165,6 +1179,7 @@ export default function App() {
                 tripRequest={tripRequest}
                 preferences={parsedPreferences}
                 dataSource={dataSource}
+                dateFallback={dateFallback}
                 rejectedCount={rejected.length}
                 results={results}
                 previousRanks={previousRanks}

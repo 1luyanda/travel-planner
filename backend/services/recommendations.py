@@ -65,7 +65,12 @@ class RecommendationService:
                 issues=list(parsed.issues),
                 clarification_questions=list(parsed.clarification_questions),
             )
-        initial_intents = _initial_ranking_intents(parsed.request)
+        # A filter refresh carries already-adjusted effective weights. Its
+        # repeated weather form value is trip context, not new feedback.
+        preserve_preferences = (
+            body.preserve_ranking_preferences and body.ranking_preferences is not None
+        )
+        initial_intents = [] if preserve_preferences else _initial_ranking_intents(parsed.request)
         return await self._search(
             trip=parsed.request,
             preferences=parsed.preferences,
