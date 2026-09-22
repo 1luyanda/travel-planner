@@ -55,6 +55,8 @@ function mapRecommendation(item, { originId, originIata, originCity, originCount
   return {
     id: destinationId,
     destinationId,
+    hotelDestinationId: typeof item?.hotel_destination_id === 'string' && item.hotel_destination_id.trim()
+      ? item.hotel_destination_id : null,
     destinationIata: textOrNull(item?.destination_iata),
     originId: textOrNull(originId),
     originIata: joinedOriginIata,

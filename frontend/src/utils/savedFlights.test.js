@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { attachDestinationCityPhotos } from './adaptRecommendations'
 import {
   adaptSavedFlights,
+  canSaveFlights,
   destinationsForView,
   flightReferenceFromDestination,
   keepSavedFlightPhotos,
@@ -119,6 +120,11 @@ describe('saved view independence', () => {
     expect(showPlannerConversation('explore', true)).toBe(true)
     expect(showPlannerComposer('explore')).toBe(true)
     expect(showPlannerFilters('explore')).toBe(true)
+  })
+
+  it('lets guests use the planner without saving', () => {
+    expect(canSaveFlights(null)).toBe(false)
+    expect(canSaveFlights({ id: 'user-1' })).toBe(true)
   })
 })
 

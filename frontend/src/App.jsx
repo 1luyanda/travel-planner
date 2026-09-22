@@ -10,6 +10,7 @@ import InspirationPanel from './components/InspirationPanel'
 import ConversationPane from './components/ConversationPane'
 import SavedPane from './components/SavedPane'
 import DestinationMap from './components/DestinationMap'
+import { useHotelSelection } from './utils/useHotelSelection'
 import FiltersPopover from './components/FiltersPopover'
 import TripDetailsDrawer from './components/TripDetailsDrawer'
 import LandingPage from './components/LandingPage'
@@ -67,6 +68,7 @@ import {
 import {
   adaptSavedFlight,
   adaptSavedFlights,
+  canSaveFlights,
   destinationsForView,
   flightReferenceFromDestination,
   keepSavedFlightPhotos,
@@ -75,7 +77,7 @@ import {
   showPlannerConversation,
   showPlannerFilters,
 } from './utils/savedFlights'
-import { AppLink, ROUTES, isAppPath, isAuthPath, isPlannerPath, useRoute } from './utils/routes.jsx'
+import { AppLink, ROUTES, isAppPath, isPlannerPath, sessionRedirect, useRoute } from './utils/routes.jsx'
 import styles from './workspace.module.css'
 
 const initialForm = INITIAL_PLANNER_FORM
@@ -164,6 +166,7 @@ export default function App() {
   const visibleDestinations = destinationsForView(view, { results, savedItems })
   const mapResults = visibleDestinations
   const detailsTrip = resolveSelectedTrip(mapResults, selectedTrip)
+  const hotelSelection = useHotelSelection(detailsTrip)
   const showMap = view === 'saved' || hasSearched
   const showInspiration = view === 'explore' && !hasSearched
   const dateError = dateRangeError(form)
@@ -249,12 +252,8 @@ export default function App() {
 
   useEffect(() => {
     if (authLoading) return
-    if (isPlannerPath(path) && !user) {
-      navigate(ROUTES.home, { replace: true })
-    }
-    if (isAuthPath(path) && user) {
-      navigate(ROUTES.planner, { replace: true })
-    }
+    const next = sessionRedirect(path, user)
+    if (next) navigate(next, { replace: true })
   }, [authLoading, navigate, path, user])
 
   useEffect(() => {
@@ -264,6 +263,10 @@ export default function App() {
     media.addEventListener('change', sync)
     return () => media.removeEventListener('change', sync)
   }, [])
+
+  useEffect(() => {
+    if (!userId && view === 'saved') setView('explore')
+  }, [userId, view])
 
   useEffect(() => {
     if (!focusOrigin || !isPlannerPath(path)) return
@@ -367,7 +370,7 @@ export default function App() {
   }
 
   async function loadAdaptedSavedFlights(signal) {
-    const payload = await fetchSavedFlights({ signal })
+    const payload = await fetchSavedFlights({ signal, userId })
     return attachCityPhotos(adaptSavedFlights(payload), signal)
   }
 
@@ -923,6 +926,7 @@ export default function App() {
   }
 
   function handleMarkerSelect(resultId) {
+    hotelSelection.clearSelection()
     const pool = visibleDestinations
     const match = tripFromMarkerId(pool, resultId)
     if (!match) return
@@ -932,6 +936,7 @@ export default function App() {
   }
 
   function handleShowAll() {
+    hotelSelection.clearSelection()
     setViewportMode('bounds')
   }
 
@@ -980,6 +985,7 @@ export default function App() {
   }
 
   async function handleToggleSaved(destination) {
+    if (!canSaveFlights(user)) return
     const reference = flightReferenceFromDestination(destination)
     if (!reference.flight_id) return
     const alreadySaved = savedIds.includes(reference.flight_id) || savedIds.includes(destination.id)
@@ -990,7 +996,7 @@ export default function App() {
         current.filter((item) => item.id !== reference.flight_id && item.id !== destination.id),
       )
       try {
-        await deleteSavedFlight(reference.flight_id)
+        await deleteSavedFlight(reference.flight_id, { userId })
         setSavedError('')
       } catch (error) {
         setSavedItems(previous)
@@ -1001,6 +1007,7 @@ export default function App() {
 
     const optimistic = adaptSavedFlight({
       flight_id: reference.flight_id,
+      hotel_destination_id: destination.hotelDestinationId,
       origin_id: reference.origin_id,
       saved_at: new Date().toISOString(),
       last_checked_at: new Date().toISOString(),
@@ -1029,7 +1036,10 @@ export default function App() {
       ...current.filter((item) => item.id !== reference.flight_id),
     ])
     try {
-      const saved = await saveFlight(reference)
+      const saved = await saveFlight(
+        { ...reference, hotelDestinationId: destination.hotelDestinationId },
+        { userId },
+      )
       const adapted = keepSavedFlightPhotos(adaptSavedFlight(saved), destination)
       const withPhotos = await attachCityPhotos([adapted])
       setSavedItems((current) => [
@@ -1041,19 +1051,6 @@ export default function App() {
       setSavedItems(previous)
       setSavedError(error?.message || 'Could not save that flight.')
     }
-  }
-
-  function handlePreview(destination) {
-    const city = destination.destination?.city || 'this destination'
-    const price = Number(destination.flight?.price)
-    const nextForm = {
-      ...initialForm,
-      originId: selectedOrigin?.originId || '',
-      originIata: selectedOrigin?.iata || '',
-      maxBudget: Number.isFinite(price) ? Math.max(400, price) : 400,
-    }
-    setPendingSelectId(destination.id)
-    runRecommend(`A getaway to ${city}`, { nextForm, origin: selectedOrigin, mode: 'fresh' })
   }
 
   function handleExploreDestinations() {
@@ -1082,11 +1079,12 @@ export default function App() {
     return <LandingPage />
   }
 
-  if (authLoading || !user) {
-    return <div className={styles.workspace}>Loading your account…</div>
+  if (authLoading) {
+    return <div className={styles.workspace}>Loading…</div>
   }
 
   const composerPlaceholder = composerPlaceholderFor(clarifyKind)
+  const saveHandler = canSaveFlights(user) ? handleToggleSaved : undefined
 
   return (
     <div
@@ -1168,7 +1166,7 @@ export default function App() {
               selectedId={selectedDestinationId}
               savedIds={savedIds}
               onSelect={handleSelectDestination}
-              onToggleSaved={handleToggleSaved}
+              onToggleSaved={saveHandler}
               onViewDetails={handleViewDetails}
               onExplore={() => setView('explore')}
             />
@@ -1200,7 +1198,7 @@ export default function App() {
                 canRefine={Boolean(tripRequest)}
                 onRefine={handleRefine}
                 onSelect={handleSelectDestination}
-                onToggleSaved={handleToggleSaved}
+                onToggleSaved={saveHandler}
                 onViewDetails={handleViewDetails}
               />
             </>
@@ -1222,10 +1220,15 @@ export default function App() {
               <WelcomePane onPrompt={handleStarter} composerRef={composerRef} />
               {isNarrow && (
                 <InspirationPanel
-                  destinations={[]}
+                  origin={selectedOrigin}
+                  departureDate={form.departureDate}
+                  returnDate={form.returnDate}
+                  draft={draft}
+                  onDraftChange={setDraft}
+                  composerRef={composerRef}
                   onPlan={() => originInputRef.current?.focus()}
                   onExplore={handleExploreDestinations}
-                  onSelectDestination={handlePreview}
+                  onViewDetails={handleViewDetails}
                 />
               )}
             </>
@@ -1265,9 +1268,10 @@ export default function App() {
             destination={detailsTrip}
             onClose={handleCloseDetails}
             isSaved={Boolean(detailsTrip && savedIds.includes(detailsTrip.id))}
-            onToggleSaved={handleToggleSaved}
+            onToggleSaved={saveHandler}
             moods={parsedPreferences?.moods}
             activitiesEnabled={Boolean(detailsTrip)}
+            hotelSelection={hotelSelection}
           />
         </div>
 
@@ -1288,10 +1292,15 @@ export default function App() {
       <div className={styles.right}>
         {showInspiration && !isNarrow && (
           <InspirationPanel
-            destinations={[]}
+            origin={selectedOrigin}
+            departureDate={form.departureDate}
+            returnDate={form.returnDate}
+            draft={draft}
+            onDraftChange={setDraft}
+            composerRef={composerRef}
             onPlan={() => originInputRef.current?.focus()}
             onExplore={handleExploreDestinations}
-            onSelectDestination={handlePreview}
+            onViewDetails={handleViewDetails}
           />
         )}
         {showMap && (
@@ -1301,6 +1310,10 @@ export default function App() {
             viewportMode={viewportMode}
             onSelectMarker={handleMarkerSelect}
             onShowAll={handleShowAll}
+            hotels={hotelSelection.hotels}
+            selectedHotelId={hotelSelection.selectedHotelId}
+            hotelFocusVersion={hotelSelection.focusVersion}
+            onSelectHotel={hotelSelection.onSelectHotel}
           />
         )}
       </div>

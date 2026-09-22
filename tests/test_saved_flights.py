@@ -521,7 +521,10 @@ def _build_app(
     app = FastAPI()
     app.include_router(auth_router)
     app.include_router(router)
-    app.state.user_service = UserService(FakeUserRepository())
+    app.state.user_service = UserService(
+        FakeUserRepository(),
+        identity_secret="test-session-secret-value-32chars",
+    )
     app.state.saved_flights_service = SavedFlightsService(repository)
     monkeypatch.setattr(security, "get_settings", saved_settings)
     return app

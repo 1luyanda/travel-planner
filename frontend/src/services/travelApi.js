@@ -4,6 +4,10 @@
  */
 
 import { ACTIVITIES_LIMIT, normalizeActivitiesResponse } from '../utils/activities'
+import { normalizeHotelsResponse } from '../utils/hotels'
+import {
+  forgetSavedHotelId, hotelIdOrNull, readSavedHotelIds, rememberSavedHotelId, restoreSavedHotelId,
+} from '../utils/savedHotelMetadata'
 
 export class ApiError extends Error {
   constructor(message, { status = 0, body = null } = {}) {
@@ -228,17 +232,19 @@ export async function fetchCandidates(params, { signal } = {}) {
   }
 }
 
-export async function fetchSavedFlights({ signal } = {}) {
+export async function fetchSavedFlights({ signal, userId } = {}) {
   const data = await requestJson('/api/saved-flights', { signal })
   if (!data || typeof data !== 'object' || !Array.isArray(data.items)) {
     throw new ApiError('Saved flights returned an unexpected response.')
   }
+  const hotelIds = readSavedHotelIds(userId)
   return {
-    items: data.items.filter((item) => item && typeof item === 'object'),
+    items: data.items.filter((item) => item && typeof item === 'object')
+      .map((item) => restoreSavedHotelId(item, hotelIds)),
   }
 }
 
-export async function saveFlight(flight, { signal } = {}) {
+export async function saveFlight(flight, { signal, userId } = {}) {
   const flightId = typeof flight?.flight_id === 'string' ? flight.flight_id.trim() : ''
   if (!flightId) {
     throw new ApiError('A flight id is required to save this trip.')
@@ -251,10 +257,16 @@ export async function saveFlight(flight, { signal } = {}) {
   if (!data || typeof data !== 'object' || typeof data.flight_id !== 'string') {
     throw new ApiError('Saving that flight returned an unexpected response.')
   }
-  return data
+  const hotelId = hotelIdOrNull(flight.hotelDestinationId)
+  rememberSavedHotelId(userId, data.flight_id, hotelId)
+  // Keep the immediate saved view usable even when browser storage is disabled.
+  return restoreSavedHotelId(data, {
+    ...readSavedHotelIds(userId),
+    ...(hotelId ? { [data.flight_id]: hotelId } : {}),
+  })
 }
 
-export async function deleteSavedFlight(flightId, { signal } = {}) {
+export async function deleteSavedFlight(flightId, { signal, userId } = {}) {
   const id = typeof flightId === 'string' ? flightId.trim() : ''
   if (!id) {
     throw new ApiError('flight_id is required.')
@@ -263,6 +275,7 @@ export async function deleteSavedFlight(flightId, { signal } = {}) {
     method: 'DELETE',
     signal,
   })
+  forgetSavedHotelId(userId, id)
 }
 
 export async function fetchFlights(params, { signal } = {}) {
@@ -282,6 +295,21 @@ export async function fetchFlights(params, { signal } = {}) {
     count: Number.isFinite(Number(data.count)) ? Number(data.count) : data.flights.length,
     data_source: typeof data.data_source === 'string' ? data.data_source : null,
   }
+}
+
+export async function fetchHotels(destinationId, { signal } = {}) {
+  if (typeof destinationId !== 'string' || !destinationId.trim()) {
+    throw new ApiError('A hotel destination id is required to load hotels.')
+  }
+  const data = await requestJson(appendQuery('/api/hotels', {
+    destination_id: destinationId,
+    limit: 5,
+  }), { signal })
+  const normalized = normalizeHotelsResponse(data)
+  if (!normalized || normalized.destination_id !== destinationId) {
+    throw new ApiError('Hotel data returned an unexpected response.')
+  }
+  return normalized
 }
 
 export async function fetchActivities(payload, { signal } = {}) {
@@ -311,4 +339,54 @@ export async function fetchActivities(payload, { signal } = {}) {
     throw new ApiError('Activity data returned an unexpected response.')
   }
   return normalized
+}
+
+export async function fetchSavedActivities({ signal } = {}) {
+  const data = await requestJson('/api/saved-activities', { signal })
+  if (!data || typeof data !== 'object' || !Array.isArray(data.items)) {
+    throw new ApiError('Saved activities returned an unexpected response.')
+  }
+  return {
+    items: data.items.filter((item) => item && typeof item === 'object'),
+  }
+}
+
+// There is no activities container to re-read later, so the full activity
+// item plus its destination context is sent and stored as a snapshot at
+// like time.
+export async function saveActivity(
+  { activity, city, countryCode, destinationId },
+  { signal } = {},
+) {
+  const placeId = typeof activity?.place_id === 'string' ? activity.place_id.trim() : ''
+  if (!placeId) {
+    throw new ApiError('An activity place_id is required to save it.')
+  }
+  const cleanCity = typeof city === 'string' ? city.trim() : ''
+  if (!cleanCity) {
+    throw new ApiError('A destination city is required to save an activity.')
+  }
+  const body = { activity, city: cleanCity }
+  if (typeof countryCode === 'string' && countryCode.trim()) {
+    body.country_code = countryCode.trim()
+  }
+  if (typeof destinationId === 'string' && destinationId.trim()) {
+    body.destination_id = destinationId.trim()
+  }
+  const data = await requestJson('/api/saved-activities', { method: 'POST', body, signal })
+  if (!data || typeof data !== 'object' || typeof data.place_id !== 'string') {
+    throw new ApiError('Saving that activity returned an unexpected response.')
+  }
+  return data
+}
+
+export async function deleteSavedActivity(placeId, { signal } = {}) {
+  const id = typeof placeId === 'string' ? placeId.trim() : ''
+  if (!id) {
+    throw new ApiError('place_id is required.')
+  }
+  await requestJson(`/api/saved-activities/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    signal,
+  })
 }

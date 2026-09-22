@@ -35,10 +35,21 @@ export default function Sidebar({
         </div>
 
         <div className={styles.accountBox}>
-          <strong>{user.display_name}</strong>
-          <button type="button" className={styles.accountAction} onClick={onLogout}>
-            Log out
-          </button>
+          {user ? (
+            <>
+              <strong>{user.display_name}</strong>
+              <button type="button" className={styles.accountAction} onClick={onLogout}>
+                Log out
+              </button>
+            </>
+          ) : (
+            <>
+              <strong>Guest</strong>
+              <AppLink to={ROUTES.login} className={styles.accountAction}>
+                Log in to save trips
+              </AppLink>
+            </>
+          )}
         </div>
 
         <button type="button" className={styles.newTrip} onClick={onNewTrip} title="New trip">
@@ -57,6 +68,7 @@ export default function Sidebar({
             <Map size={18} strokeWidth={1.75} />
             Explore
           </button>
+          {user ? (
           <button
             type="button"
             className={view === 'saved' ? styles.navBtnActive : styles.navBtn}
@@ -67,6 +79,7 @@ export default function Sidebar({
             <Heart size={18} strokeWidth={1.75} />
             Saved{savedCount ? ` (${savedCount})` : ''}
           </button>
+          ) : null}
         </nav>
 
         {history.length > 0 && (

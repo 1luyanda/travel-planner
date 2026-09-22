@@ -1,5 +1,6 @@
 import BrandMark from './BrandMark'
 import AuthPanel from './AuthPanel'
+import { useAuth } from '../auth/AuthProvider'
 import { getDestinationImage } from '../data/destinationImages'
 import { AppLink, ROUTES } from '../utils/routes.jsx'
 import styles from '../landing.module.css'
@@ -12,51 +13,59 @@ const COLLAGE = [
 ]
 
 export default function LandingPage() {
+  const { user } = useAuth()
   const collagePhotos = COLLAGE.filter((item) => getDestinationImage(item.city))
+  const signedIn = Boolean(user)
 
   return (
     <div className={styles.page}>
       <header className={styles.header}>
-        <AppLink to={ROUTES.home} className={styles.brand} aria-label="Travel Planner home">
-          <BrandMark className={styles.brandMark} />
-          Travel <em>Planner</em>
-        </AppLink>
-        <nav className={styles.nav} aria-label="Landing">
-          <a className={styles.navText} href="#how-it-works">
-            How it works
-          </a>
-          <a className={styles.navText} href="#explore-destinations">
-            Explore destinations
-          </a>
-          <AppLink to={ROUTES.planner} className={styles.startBtn}>
-            Start planning
+        <div className={styles.headerInner}>
+          <AppLink to={ROUTES.home} className={styles.brand} aria-label="Travel Planner home">
+            <BrandMark className={styles.brandMark} />
+            Travel <em>Planner</em>
           </AppLink>
-          <AuthPanel />
-        </nav>
-      </header>
-
-      <section className={styles.hero} aria-labelledby="landing-title">
-        <div className={styles.heroCopy}>
-          <h1 id="landing-title">
-            Your mood. Your budget. <span className={styles.accent}>Your next trip.</span>
-          </h1>
-          <p className={styles.lede}>
-            Compare flights and weather for a departure city you choose.
-          </p>
-          <AppLink to={ROUTES.planner} className={styles.startBtnLarge}>
-            Start planning
-          </AppLink>
+          <nav className={styles.nav} aria-label="Landing">
+            <a className={styles.navText} href="#how-it-works">
+              How it works
+            </a>
+            <a className={styles.navText} href="#explore-destinations">
+              Explore destinations
+            </a>
+          </nav>
+          <div className={styles.headerActions}>
+            <AuthPanel />
+          </div>
         </div>
+      </header>
+      
+      <section className={styles.hero} aria-labelledby="landing-title">
+        <div className={styles.heroInner}>
+          <div className={styles.heroCopy}>
+            <h1 id="landing-title">
+              Your mood. Your budget. <span className={styles.accent}>Your next trip.</span>
+            </h1>
+            <p className={styles.lede}>
+              Tell us your budget, dates and travel preferences. Compare destinations by
+              flight price, stops and weather.
+            </p>
+            <AppLink to={ROUTES.planner} className={styles.startBtnLarge}>
+              {signedIn ? 'Open your planner' : 'Start planning'}
+            </AppLink>
+            <p className={styles.heroHint}>Choose your departure city and dates to get started.</p>
+          </div>
 
-        <div className={styles.collage}>
-          {collagePhotos.map(({ city, className }) => {
-            const image = getDestinationImage(city)
-            return (
-              <div key={city} className={className}>
-                <img src={image.src} alt={image.alt} title={image.attribution} />
-              </div>
-            )
-          })}
+          <div className={styles.collage}>
+            {collagePhotos.map(({ city, className }) => {
+              const image = getDestinationImage(city)
+              return (
+                <figure key={city} className={className}>
+                  <img src={image.src} alt={image.alt} title={image.attribution} />
+                  <figcaption className={styles.shotLabel}>{city}</figcaption>
+                </figure>
+              )
+            })}
+          </div>
         </div>
       </section>
 
@@ -66,22 +75,22 @@ export default function LandingPage() {
           <li>
             <span>1</span>
             <div>
-              <h3>Choose where you fly from</h3>
-              <p>Search origin cities or include an IATA code in your request. Dates, budget, and origin can also be clarified in chat.</p>
+              <h3>Tell us your plans</h3>
+              <p>Choose your departure city, dates and budget.</p>
             </div>
           </li>
           <li>
             <span>2</span>
             <div>
-              <h3>Compare matches</h3>
-              <p>Cards show prices, stops, duration, and weather. Missing fields stay blank.</p>
+              <h3>Compare destinations</h3>
+              <p>Explore recommendations, flight details and weather.</p>
             </div>
           </li>
           <li>
             <span>3</span>
             <div>
-              <h3>Refine your shortlist</h3>
-              <p>Ask for cheaper, warmer, direct, or shorter trips. The planner service updates the shortlist.</p>
+              <h3>Refine your choices</h3>
+              <p>Adjust your preferences and save your favourites.</p>
             </div>
           </li>
         </ol>

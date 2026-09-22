@@ -11,7 +11,7 @@ export default function AuthPanel() {
     return (
       <div className={styles.authSignedIn}>
         <span>Hi, {user.display_name}</span>
-        <AppLink to={ROUTES.planner} className={styles.authLink}>
+        <AppLink to={ROUTES.planner} className={styles.startBtn}>
           Open planner
         </AppLink>
         <button type="button" className={styles.authTextButton} onClick={logout}>
@@ -31,8 +31,11 @@ export default function AuthPanel() {
       <AppLink to={ROUTES.login} className={styles.authLoginLink}>
         Log in
       </AppLink>
+      <AppLink to={ROUTES.planner} className={styles.authLoginLink}>
+        Continue as guest
+      </AppLink>
       <AppLink to={ROUTES.signup} className={styles.authGetStarted}>
-        Get started
+        Sign up
       </AppLink>
     </div>
   )

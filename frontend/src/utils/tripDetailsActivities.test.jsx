@@ -32,6 +32,11 @@ describe('TripDetailsActivitiesView', () => {
     expect(html).not.toContain('€')
     expect(html).not.toContain('GOOGLE_PLACES_API_KEY')
     expect((html.match(/trip-details-activity-card/g) || []).length).toBe(2)
+    expect(html).toContain('aria-label="Like Colosseum"')
+    expect(html).toContain('aria-label="Like Villa Borghese"')
+    expect(html).toContain('type="button"')
+    expect(html).toContain('aria-pressed="false"')
+    expect(html).not.toMatch(/<a[\s>]/)
   })
 
   it('shows loading, empty, error with retry, and unavailable states', () => {
@@ -79,5 +84,25 @@ describe('TripDetailsActivitiesView', () => {
     )
     expect(html).toContain('Quiet Square')
     expect(html).toContain('0 · 0 reviews')
+  })
+
+  it('keeps duplicate activity cards in sync and uses unlike labels when liked', () => {
+    const html = renderToStaticMarkup(
+      <TripDetailsActivitiesView
+        titleId="details"
+        state={{
+          status: 'ready',
+          activities: [colosseum, { ...colosseum, address: 'Piazza del Colosseo' }],
+        }}
+        likedIds={new Set(['ChIJA'])}
+        persistenceNote="Likes are saved on this browser only."
+        likeError="Could not save that like."
+      />,
+    )
+    expect(html).toContain('Likes are saved on this browser only.')
+    expect(html).toContain('Could not save that like.')
+    expect((html.match(/aria-pressed="true"/g) || []).length).toBe(2)
+    expect(html).toContain('aria-label="Unlike Colosseum"')
+    expect(html).not.toContain('aria-label="Like Colosseum"')
   })
 })

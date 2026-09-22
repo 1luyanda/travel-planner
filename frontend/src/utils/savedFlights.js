@@ -1,7 +1,10 @@
 /**
- * Saved-flight helpers. Persistence lives on the backend; this file only
+ * Saved-flight helpers. Flights live on the backend; hotel lookup IDs can be
+ * restored from browser metadata by travelApi. This file only
  * adapts API payloads and decides Saved vs Explore chrome.
  */
+
+import { hotelIdOrNull } from './savedHotelMetadata'
 
 function textOrNull(value) {
   if (value == null) return null
@@ -24,6 +27,7 @@ export function adaptSavedFlight(item) {
   return {
     id: flightId,
     destinationId: flightId,
+    hotelDestinationId: hotelIdOrNull(item?.hotel_destination_id),
     destinationIata: textOrNull(flight?.destination_iata),
     originId: textOrNull(item?.origin_id) || textOrNull(flight?.origin_id),
     originIata: textOrNull(flight?.origin_iata),
@@ -107,6 +111,10 @@ export function showPlannerConversation(view, hasSearched) {
 
 export function showPlannerFilters(view) {
   return view === 'explore'
+}
+
+export function canSaveFlights(user) {
+  return Boolean(user?.id)
 }
 
 export function flightReferenceFromDestination(destination) {

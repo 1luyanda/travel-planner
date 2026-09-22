@@ -12,14 +12,18 @@ export default function TripDetailsDrawer({
   onToggleSaved,
   moods,
   activitiesEnabled = false,
+  hotelSelection,
 }) {
   const generatedTitleId = useId()
   const titleId = generatedTitleId
   const closeRef = useRef(null)
   const panelRef = useRef(null)
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
+  const tripId = destination?.id
 
   useEffect(() => {
-    if (!destination) return undefined
+    if (!tripId) return undefined
 
     closeRef.current?.focus()
 
@@ -27,14 +31,14 @@ export default function TripDetailsDrawer({
       const root = panelRef.current
       if (!root) return []
       return [...root.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter(
-        (node) => !node.hasAttribute('disabled'),
+        (node) => !node.hasAttribute('disabled') && !node.closest('[hidden]'),
       )
     }
 
     function onKeyDown(event) {
       if (event.key === 'Escape') {
         event.preventDefault()
-        onClose()
+        onCloseRef.current()
         return
       }
       if (event.key !== 'Tab') return
@@ -55,7 +59,7 @@ export default function TripDetailsDrawer({
     return () => {
       document.removeEventListener('keydown', onKeyDown)
     }
-  }, [destination, onClose])
+  }, [tripId])
 
   if (!destination) return null
 
@@ -89,6 +93,7 @@ export default function TripDetailsDrawer({
             titleId={titleId}
             moods={moods}
             activitiesEnabled={activitiesEnabled}
+            hotelSelection={hotelSelection}
           />
         </div>
       </aside>
