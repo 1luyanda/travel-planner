@@ -4,6 +4,7 @@
  */
 
 import { ACTIVITIES_LIMIT, normalizeActivitiesResponse } from '../utils/activities'
+import { normalizeHotelsResponse } from '../utils/hotels'
 
 export class ApiError extends Error {
   constructor(message, { status = 0, body = null } = {}) {
@@ -279,6 +280,21 @@ export async function fetchFlights(params, { signal } = {}) {
     count: Number.isFinite(Number(data.count)) ? Number(data.count) : data.flights.length,
     data_source: typeof data.data_source === 'string' ? data.data_source : null,
   }
+}
+
+export async function fetchHotels(destinationId, { signal } = {}) {
+  if (typeof destinationId !== 'string' || !destinationId.trim()) {
+    throw new ApiError('A hotel destination id is required to load hotels.')
+  }
+  const data = await requestJson(appendQuery('/api/hotels', {
+    destination_id: destinationId,
+    limit: 5,
+  }), { signal })
+  const normalized = normalizeHotelsResponse(data)
+  if (!normalized || normalized.destination_id !== destinationId) {
+    throw new ApiError('Hotel data returned an unexpected response.')
+  }
+  return normalized
 }
 
 export async function fetchActivities(payload, { signal } = {}) {

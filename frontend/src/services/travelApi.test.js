@@ -6,6 +6,7 @@ import {
   fetchActivities,
   fetchCandidates,
   fetchFlights,
+  fetchHotels,
   fetchOrigin,
   fetchSavedFlights,
   recommendTrip,
@@ -29,6 +30,59 @@ describe('appendQuery', () => {
         departure_date: undefined,
       }),
     ).toBe('/api/candidates?origin_id=zagreb-hr&max_price=400')
+  })
+})
+
+describe('hotels API', () => {
+  it('uses the shared credentialed GET helper, exact ID, limit 5 and abort signal', async () => {
+    const controller = new AbortController()
+    const id = 'stored/id&special'
+    const fetchMock = vi.fn(async () => ({
+      ok: true, json: async () => ({ destination_id: id, hotels: [] }),
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    await fetchHotels(id, { signal: controller.signal })
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/hotels?destination_id=stored%2Fid%26special&limit=5',
+      { method: 'GET', credentials: 'include', signal: controller.signal },
+    )
+  })
+
+  it.each([null, undefined, '', '   '])('does not request hotels for an absent ID: %s', async (id) => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(fetchHotels(id)).rejects.toBeInstanceOf(ApiError)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('uses existing error handling for failures and propagates cancellation', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: false, status: 503, json: async () => ({ detail: 'Hotel data is temporarily unavailable.' }),
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(fetchHotels('rome-it')).rejects.toMatchObject({ status: 503 })
+    fetchMock.mockRejectedValueOnce(Object.assign(new Error('Aborted'), { name: 'AbortError' }))
+    await expect(fetchHotels('rome-it')).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
+  it.each([{ hotels: [] }, { destination_id: 'other', hotels: [] }, { destination_id: 'rome-it' }])(
+    'rejects an unexpected response instead of showing hotels for the wrong destination', async (body) => {
+      vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => body })))
+      await expect(fetchHotels('rome-it')).rejects.toBeInstanceOf(ApiError)
+    },
+  )
+
+  it.each(['recommend', 'refine'])('preserves hotel IDs in /api/%s parsing', async (route) => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ status: 'ready', recommendations: [
+        { destination_id: 'offer-1', hotel_destination_id: 'rome-it' },
+        { destination_id: 'offer-2', hotel_destination_id: null },
+      ] }),
+    })))
+    const response = route === 'recommend' ? await recommendTrip({})
+      : await refineTrip({ text: 'Warmer', request: { origin: 'ZAG' } })
+    expect(response.recommendations.map((item) => item.hotel_destination_id)).toEqual(['rome-it', null])
   })
 })
 
