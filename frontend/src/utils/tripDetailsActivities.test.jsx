@@ -37,6 +37,33 @@ describe('TripDetailsActivitiesView', () => {
     expect(html).toContain('type="button"')
     expect(html).toContain('aria-pressed="false"')
     expect(html).not.toMatch(/<a[\s>]/)
+    expect(html).not.toContain('trip-details-activity-description')
+    expect(html).not.toContain('Place summaries from Google.')
+  })
+
+  it('renders a source editorial summary and omits missing ones', () => {
+    const html = renderToStaticMarkup(
+      <TripDetailsActivitiesView
+        titleId="details"
+        state={{
+          status: 'ready',
+          activities: [
+            {
+              ...colosseum,
+              description: 'Iconic amphitheatre in the centre of Rome.',
+              description_language_code: 'en',
+            },
+            { place_id: 'park', name: 'Villa Borghese' },
+          ],
+        }}
+      />,
+    )
+    expect(html).toContain('Iconic amphitheatre in the centre of Rome.')
+    expect(html).toContain('lang="en"')
+    expect(html).toContain('Place summaries from Google.')
+    expect(html).toContain('Villa Borghese')
+    expect(html).not.toContain('No description')
+    expect(html).not.toContain('Summary unavailable')
   })
 
   it('shows loading, empty, error with retry, and unavailable states', () => {

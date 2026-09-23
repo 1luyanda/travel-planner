@@ -91,7 +91,14 @@ export function normalizeActivityItem(item) {
     user_ratings_total: optionalInteger(item.user_ratings_total),
     business_status: optionalText(item.business_status),
     price_level: optionalText(item.price_level),
+    description: preserveEditorialText(item.description),
+    description_language_code: optionalText(item.description_language_code),
   }
+}
+
+export function preserveEditorialText(value) {
+  if (typeof value !== 'string' || !value.trim()) return null
+  return value
 }
 
 export function normalizeActivitiesResponse(data) {

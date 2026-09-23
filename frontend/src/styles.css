@@ -378,11 +378,29 @@ button:disabled {
   font-weight: 700;
 }
 
+.trip-details-activity-description {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--tp-text-muted);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+
 .trip-details-activity-meta {
   margin-top: 4px;
   font-size: 13px;
   color: var(--tp-text-muted);
   line-height: 1.4;
+}
+
+.trip-details-activities-attribution {
+  margin: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--tp-text-muted);
 }
 
 .trip-details-activities-like-note {

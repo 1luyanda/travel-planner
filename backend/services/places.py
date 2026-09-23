@@ -28,7 +28,8 @@ FIELD_MASK = (
     "places.businessStatus,"
     "places.rating,"
     "places.userRatingCount,"
-    "places.priceLevel"
+    "places.priceLevel,"
+    "places.editorialSummary"
 )
 CLOSED_PERMANENTLY = "CLOSED_PERMANENTLY"
 DEFAULT_TIMEOUT_SECONDS = 20.0
@@ -192,6 +193,7 @@ def normalize_place(place: Any) -> ActivityItem | None:
     business_status = _optional_str(place.get("businessStatus"))
     if business_status == CLOSED_PERMANENTLY:
         return None
+    description, language_code = editorial_description(place)
     return ActivityItem(
         place_id=place_id,
         name=name,
@@ -201,7 +203,20 @@ def normalize_place(place: Any) -> ActivityItem | None:
         user_ratings_total=_optional_int(place.get("userRatingCount")),
         business_status=business_status,
         price_level=_optional_str(place.get("priceLevel")),
+        description=description,
+        description_language_code=language_code,
     )
+
+
+def editorial_description(place: Mapping[str, Any]) -> tuple[str | None, str | None]:
+    """Copy Google's editorial text unchanged. Do not invent a substitute."""
+    summary = place.get("editorialSummary")
+    if not isinstance(summary, Mapping):
+        return None, None
+    text = summary.get("text")
+    if not isinstance(text, str) or not text.strip():
+        return None, None
+    return text, _optional_str(summary.get("languageCode"))
 
 
 def _ready_response(

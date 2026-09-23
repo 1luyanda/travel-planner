@@ -140,7 +140,13 @@ Offline checks: `python -m pytest tests/test_hotels.py`.
 - `POST /api/activities` — verified Google Places activities for a selected
   destination city. Requires `GOOGLE_PLACES_API_KEY` on the backend. The key
   stays server-side and is never sent from React. No itinerary, maps, or
-  booking.
+  booking. Optional `description` is Google `editorialSummary.text`, copied
+  unchanged, plus `description_language_code`. Google does not provide a
+  summary for every place; missing values are omitted and never invented.
+  Requesting `places.editorialSummary` uses the Text Search Enterprise +
+  Atmosphere SKU (higher than Basic fields alone; this repo does not set
+  prices). Liked activities store the snapshot, including any summary, so
+  Places is not re-queried later.
 - `GET /api/saved-flights` — the authenticated user's saved flights.
   If the current `flights` document still exists, the snapshot is updated
   when any allowlisted field changed (live data refreshes about every 24h).
