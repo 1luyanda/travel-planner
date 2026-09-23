@@ -12,6 +12,7 @@ Cases:
 
 from __future__ import annotations
 
+import asyncio
 import sys
 from datetime import date
 from pathlib import Path
@@ -43,7 +44,7 @@ def _snapshot() -> TripRequest:
     return BASE_REQUEST.model_copy(deep=True)
 
 
-def main() -> int:
+async def main() -> int:
     load_llm_environment()
     try:
         client = create_llm_client_from_env()
@@ -58,11 +59,18 @@ def main() -> int:
     print(f"azure_endpoint_configured={bool(getattr(client, '_azure_endpoint', None))}")
     print(f"api_version_configured={bool(getattr(client, '_api_version', None))}")
 
+    try:
+        return await _run_live_cases(client)
+    finally:
+        await client.aclose()
+
+
+async def _run_live_cases(client) -> int:
     failures: list[str] = []
     original = _snapshot()
 
     print("\nCASE D: cheaper")
-    cheaper = interpret_feedback("Cheaper", original, llm_client=client)
+    cheaper = await interpret_feedback("Cheaper", original, llm_client=client)
     cheaper_checks = {
         "status_ready": cheaper.status == "ready",
         "budget_unchanged": cheaper.updated_request is not None
@@ -96,7 +104,7 @@ def main() -> int:
 
     print("\nCASE E: warmer")
     warmer_original = _snapshot()
-    warmer = interpret_feedback("Warmer", warmer_original, llm_client=client)
+    warmer = await interpret_feedback("Warmer", warmer_original, llm_client=client)
     weather = (
         warmer.updated_request.weather_preference if warmer.updated_request else None
     )
@@ -119,7 +127,7 @@ def main() -> int:
 
     print("\nCASE F: explicit budget update")
     budget_original = _snapshot()
-    budgeted = interpret_feedback(
+    budgeted = await interpret_feedback(
         "My budget is now EUR 300",
         budget_original,
         llm_client=client,
@@ -161,4 +169,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(asyncio.run(main()))

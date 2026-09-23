@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import date
 from pathlib import Path
@@ -23,11 +24,13 @@ COMPLETE_EXTRACTION = {
 
 
 def _parse(text: str, responses: list, form_fields=None):
-    return parse_request(
-        text,
-        form_fields=form_fields,
-        reference_date=REFERENCE_DATE,
-        llm_client=FakeLLMClient(responses),
+    return asyncio.run(
+        parse_request(
+            text,
+            form_fields=form_fields,
+            reference_date=REFERENCE_DATE,
+            llm_client=FakeLLMClient(responses),
+        )
     )
 
 
@@ -181,10 +184,12 @@ def test_invalid_model_output_is_repaired_on_second_attempt():
 
 def test_repeated_invalid_output_stops_at_retry_limit():
     client = FakeLLMClient(["not-json", "{still invalid"])
-    result = parse_request(
-        COMPLETE_TEXT,
-        reference_date=REFERENCE_DATE,
-        llm_client=client,
+    result = asyncio.run(
+        parse_request(
+            COMPLETE_TEXT,
+            reference_date=REFERENCE_DATE,
+            llm_client=client,
+        )
     )
 
     assert result.status == "error"
@@ -275,24 +280,26 @@ def test_bare_amount_without_currency_cue_still_asks():
 
 
 def test_currency_clarification_keeps_origin_dates_budget_and_weather():
-    result = parse_request(
-        "\n\n".join(
-            [
-                "Original request:\nA warm escape under €400",
-                "Initial form selections:\norigin: ZAG\ndeparture date: 2026-10-08\nreturn date: 2026-10-15\nbudget: 400\nweather preference: warm",
-                "The planner asked:\nWhat currency is the budget in (for example EUR)?",
-                "Authoritative answer (this overrides any conflicting initial form values):\nEUR",
-            ]
-        ),
-        form_fields={
-            "origin": "ZAG",
-            "departure_date": "2026-10-08",
-            "return_date": "2026-10-15",
-            "budget": 400,
-            "weather_preference": "warm",
-        },
-        reference_date=REFERENCE_DATE,
-        llm_client=FakeLLMClient([{"currency": "EUR"}]),
+    result = asyncio.run(
+        parse_request(
+            "\n\n".join(
+                [
+                    "Original request:\nA warm escape under €400",
+                    "Initial form selections:\norigin: ZAG\ndeparture date: 2026-10-08\nreturn date: 2026-10-15\nbudget: 400\nweather preference: warm",
+                    "The planner asked:\nWhat currency is the budget in (for example EUR)?",
+                    "Authoritative answer (this overrides any conflicting initial form values):\nEUR",
+                ]
+            ),
+            form_fields={
+                "origin": "ZAG",
+                "departure_date": "2026-10-08",
+                "return_date": "2026-10-15",
+                "budget": 400,
+                "weather_preference": "warm",
+            },
+            reference_date=REFERENCE_DATE,
+            llm_client=FakeLLMClient([{"currency": "EUR"}]),
+        )
     )
 
     assert result.status == "ready"
@@ -342,21 +349,23 @@ def test_conflicting_currencies_are_not_silently_resolved():
 
 
 def test_clarification_answer_can_replace_dates_and_budget():
-    result = parse_request(
-        "\n\n".join(
-            [
-                "Original request:\nA warm escape under €400",
-                "Initial form selections:\norigin: ZAG\ndeparture date: 2026-10-08\nreturn date: 2026-10-15\nbudget: 400\nweather preference: warm",
-                "The planner asked:\nWhat currency is the budget in (for example EUR)?",
-                "Authoritative answer (this overrides any conflicting initial form values):\nEUR 95 from 2026-09-24 to 2026-10-01",
-            ]
-        ),
-        form_fields={
-            "origin": "ZAG",
-            "weather_preference": "warm",
-        },
-        reference_date=REFERENCE_DATE,
-        llm_client=FakeLLMClient([{"currency": "EUR"}]),
+    result = asyncio.run(
+        parse_request(
+            "\n\n".join(
+                [
+                    "Original request:\nA warm escape under €400",
+                    "Initial form selections:\norigin: ZAG\ndeparture date: 2026-10-08\nreturn date: 2026-10-15\nbudget: 400\nweather preference: warm",
+                    "The planner asked:\nWhat currency is the budget in (for example EUR)?",
+                    "Authoritative answer (this overrides any conflicting initial form values):\nEUR 95 from 2026-09-24 to 2026-10-01",
+                ]
+            ),
+            form_fields={
+                "origin": "ZAG",
+                "weather_preference": "warm",
+            },
+            reference_date=REFERENCE_DATE,
+            llm_client=FakeLLMClient([{"currency": "EUR"}]),
+        )
     )
 
     assert result.status == "ready"
@@ -370,23 +379,25 @@ def test_clarification_answer_can_replace_dates_and_budget():
 
 
 def test_clarification_usd_answer_is_not_overridden_by_earlier_euro_symbol():
-    result = parse_request(
-        "\n\n".join(
-            [
-                "Original request:\nA warm escape under €95",
-                "Initial form selections:\norigin: ZAG\ndeparture date: 2026-09-24\nreturn date: 2026-10-01\nbudget: 95",
-                "The planner asked:\nWhat currency is the budget in (for example EUR)?",
-                "Authoritative answer (this overrides any conflicting initial form values):\nUSD",
-            ]
-        ),
-        form_fields={
-            "origin": "ZAG",
-            "departure_date": "2026-09-24",
-            "return_date": "2026-10-01",
-            "budget": 95,
-        },
-        reference_date=REFERENCE_DATE,
-        llm_client=FakeLLMClient([{}]),
+    result = asyncio.run(
+        parse_request(
+            "\n\n".join(
+                [
+                    "Original request:\nA warm escape under €95",
+                    "Initial form selections:\norigin: ZAG\ndeparture date: 2026-09-24\nreturn date: 2026-10-01\nbudget: 95",
+                    "The planner asked:\nWhat currency is the budget in (for example EUR)?",
+                    "Authoritative answer (this overrides any conflicting initial form values):\nUSD",
+                ]
+            ),
+            form_fields={
+                "origin": "ZAG",
+                "departure_date": "2026-09-24",
+                "return_date": "2026-10-01",
+                "budget": 95,
+            },
+            reference_date=REFERENCE_DATE,
+            llm_client=FakeLLMClient([{}]),
+        )
     )
 
     assert result.preferences is not None
@@ -431,18 +442,20 @@ def test_unresolved_place_name_does_not_become_an_iata_code():
 
 def test_form_only_complete_request_skips_model():
     client = FakeLLMClient([{"should_not": "be_called"}])
-    result = parse_request(
-        "",
-        form_fields={
-            "origin": "ZAG",
-            "departure_date": "2026-09-21",
-            "return_date": "2026-09-25",
-            "budget": 400,
-            "currency": "EUR",
-            "moods": ["relaxing"],
-        },
-        reference_date=REFERENCE_DATE,
-        llm_client=client,
+    result = asyncio.run(
+        parse_request(
+            "",
+            form_fields={
+                "origin": "ZAG",
+                "departure_date": "2026-09-21",
+                "return_date": "2026-09-25",
+                "budget": 400,
+                "currency": "EUR",
+                "moods": ["relaxing"],
+            },
+            reference_date=REFERENCE_DATE,
+            llm_client=client,
+        )
     )
 
     assert result.status == "ready"

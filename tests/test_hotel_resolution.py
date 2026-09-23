@@ -160,7 +160,10 @@ def test_recommend_and_refine_expose_id_and_preserve_ranked_results(refine, reso
     app.state.recommendation_service = service
     app.dependency_overrides[require_api_key] = lambda: None
     # Use the real deterministic fallback explanations; no AI-generated hotel fields.
-    with patch("backend.services.recommendations.explain_ranked_trips") as explain:
+    with patch(
+        "backend.services.recommendations.explain_ranked_trips",
+        new_callable=AsyncMock,
+    ) as explain:
         explain.return_value.status = "error"
         explain.return_value.issues = []
         with TestClient(app) as client:

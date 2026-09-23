@@ -10,6 +10,7 @@ Exits 0 if all live cases pass, 2 if configuration is missing (NOT RUN),
 
 from __future__ import annotations
 
+import asyncio
 import sys
 from datetime import date
 from pathlib import Path
@@ -57,7 +58,7 @@ def _ranked(destination_id: str, city: str, **overrides) -> SimpleNamespace:
     return SimpleNamespace(**values)
 
 
-def main() -> int:
+async def main() -> int:
     load_llm_environment()
     try:
         client = create_llm_client_from_env()
@@ -75,9 +76,16 @@ def main() -> int:
     print(f"azure_endpoint_configured={bool(getattr(client, '_azure_endpoint', None))}")
     print(f"api_version_configured={bool(getattr(client, '_api_version', None))}")
 
+    try:
+        return await _run_live_cases(client)
+    finally:
+        await client.aclose()
+
+
+async def _run_live_cases(client) -> int:
     failures: list[str] = []
 
-    complete = parse_request(
+    complete = await parse_request(
         COMPLETE_TEXT,
         reference_date=REFERENCE_DATE,
         llm_client=client,
@@ -111,7 +119,7 @@ def main() -> int:
             print("-", item)
         return 1
 
-    incomplete = parse_request(
+    incomplete = await parse_request(
         INCOMPLETE_TEXT,
         reference_date=REFERENCE_DATE,
         llm_client=client,
@@ -151,7 +159,7 @@ def main() -> int:
         _ranked(ROME_ID, "Rome", price_eur=65, final_score=0.92),
         _ranked(LISBON_ID, "Lisbon", price_eur=189, final_score=0.70),
     ]
-    explained = explain_ranked_trips(request, ranked, llm_client=client)
+    explained = await explain_ranked_trips(request, ranked, llm_client=client)
     print("\nCASE C: grounded explanation (sample ranked objects, not Cosmos)")
     print(f"status={explained.status}")
     ids = [item.destination_id for item in explained.explanations]
@@ -201,4 +209,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(asyncio.run(main()))

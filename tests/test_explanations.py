@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import date
 from types import SimpleNamespace
 
@@ -48,7 +49,7 @@ def _ranked(destination_id: str, city: str, **overrides) -> SimpleNamespace:
 
 def _explain(request, ranked, responses):
     client = FakeLLMClient(responses)
-    result = explain_ranked_trips(request, ranked, llm_client=client)
+    result = asyncio.run(explain_ranked_trips(request, ranked, llm_client=client))
     return result, client
 
 
@@ -96,7 +97,7 @@ def test_supported_explanations_keep_destination_ids_and_order():
 
 def test_empty_ranked_input_does_not_call_the_model():
     client = FakeLLMClient([{"should_not": "be_called"}])
-    result = explain_ranked_trips(_request(), [], llm_client=client)
+    result = asyncio.run(explain_ranked_trips(_request(), [], llm_client=client))
 
     assert result.status == "ok"
     assert result.explanations == []

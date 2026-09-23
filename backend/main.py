@@ -22,6 +22,7 @@ from backend.services import (
     SavedFlightsService,
     UserService,
 )
+from backend.services.llm import LLMConfigurationError, create_llm_client_from_env
 
 
 @asynccontextmanager
@@ -31,6 +32,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     repository = CosmosDestinationRepository(settings)
     await repository.connect()
+    llm_client = None
+    try:
+        llm_client = create_llm_client_from_env()
+    except LLMConfigurationError:
+        llm_client = None
+    app.state.llm_client = llm_client
     app.state.candidate_service = CandidateService(
         data_service=DestinationDataService(repository)
     )
@@ -38,6 +45,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.recommendation_service = RecommendationService(
         candidate_service=app.state.candidate_service,
         hotel_service=app.state.hotel_service,
+        llm_client=llm_client,
     )
     app.state.user_service = UserService(
         repository,
@@ -48,7 +56,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
-        await repository.close()
+        try:
+            if llm_client is not None:
+                await llm_client.aclose()
+        finally:
+            await repository.close()
 
 
 def create_app() -> FastAPI:
