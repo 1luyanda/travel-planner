@@ -14,6 +14,7 @@ export default function TripDetailsPanel({
   moods,
   activitiesEnabled = false,
   hotelSelection,
+  activitySelection,
 }) {
   const titleId = useId()
 
@@ -41,6 +42,7 @@ export default function TripDetailsPanel({
           moods={moods}
           activitiesEnabled={activitiesEnabled}
           hotelSelection={hotelSelection}
+          activitySelection={activitySelection}
         />
       </div>
     </section>

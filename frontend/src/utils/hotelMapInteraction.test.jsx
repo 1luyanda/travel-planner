@@ -6,6 +6,7 @@ import TripDetailsContent from '../components/TripDetailsContent'
 import TripDetailsDrawer from '../components/TripDetailsDrawer'
 import DestinationMap from '../components/DestinationMap'
 import { useHotelSelection } from './useHotelSelection'
+import { useActivitySelection } from './useActivitySelection'
 import { fetchActivities, fetchHotels } from '../services/travelApi'
 
 vi.mock('../services/travelApi', async (importOriginal) => {
@@ -52,12 +53,16 @@ const hotels = [
 
 function Harness({ destination = trip, drawer = false }) {
   const selection = useHotelSelection(destination)
+  const activitySelection = useActivitySelection(destination)
   const Details = drawer ? TripDetailsDrawer : TripDetailsContent
   return <>
-    <Details destination={destination} titleId="details" activitiesEnabled hotelSelection={selection} onClose={() => {}} />
+    <Details destination={destination} titleId="details" activitiesEnabled hotelSelection={selection}
+      activitySelection={activitySelection} onClose={() => {}} />
     <DestinationMap results={results} selectedId={destination?.id} viewportMode="selected"
       hotels={selection.hotels} selectedHotelId={selection.selectedHotelId}
-      hotelFocusVersion={selection.focusVersion} onSelectHotel={selection.onSelectHotel} />
+      hotelFocusVersion={selection.focusVersion} onSelectHotel={selection.onSelectHotel}
+      activities={activitySelection.activities} selectedActivityId={activitySelection.selectedActivityId}
+      activityFocusVersion={activitySelection.focusVersion} onSelectActivity={activitySelection.onSelectActivity} />
   </>
 }
 
@@ -84,6 +89,7 @@ beforeEach(() => {
   fake.map = Object.fromEntries(['on', 'off', 'once', 'flyTo', 'setView', 'fitBounds', 'panTo', 'stop', 'invalidateSize']
     .map((key) => [key, vi.fn()]))
   fake.map.getContainer = () => container
+  fake.map.getZoom = () => 10
   fetchHotels.mockReset().mockResolvedValue({ hotels, attribution: null })
   fetchActivities.mockReset().mockResolvedValue({ status: 'ready', activities: [{ place_id: 'activity', name: 'Museum' }] })
 })
@@ -134,7 +140,7 @@ describe('Trip Details accordion and hotel map integration', () => {
     expect(fetchActivities).toHaveBeenCalledTimes(1)
   })
 
-  it('selects cards, pans without zooming, opens popups and preserves primary markers', async () => {
+  it('selects cards, zooms in to street level, opens popups and preserves primary markers', async () => {
     await render()
     expect(container.querySelectorAll('[data-icon="primary"]')).toHaveLength(2)
     expect(container.querySelector('[data-marker="Unmapped hotel"]')).toBeNull()
@@ -142,17 +148,35 @@ describe('Trip Details accordion and hotel map integration', () => {
     await click(card('Hotel One'))
     expect(card('Hotel One').getAttribute('aria-pressed')).toBe('true')
     expect(card('Hotel One').closest('li').classList.contains('is-selected')).toBe(true)
-    expect(fake.map.panTo).toHaveBeenLastCalledWith([41.9, 12.5], { animate: false })
-    expect(fake.map.setView).toHaveBeenCalledTimes(destinationFocusCount)
+    expect(fake.map.setView).toHaveBeenLastCalledWith([41.9, 12.5], 16, { animate: false })
     expect(fake.popups.get('Hotel One').openPopup).toHaveBeenCalled()
     expect(container.querySelector('[data-marker="Hotel One"]').dataset.icon).toContain('is-selected')
     await click(card('Hotel Two'))
     expect(card('Hotel One').getAttribute('aria-pressed')).toBe('false')
     expect(card('Hotel Two').getAttribute('aria-pressed')).toBe('true')
-    expect(fake.map.panTo).toHaveBeenLastCalledWith([41.91, 12.51], { animate: false })
+    expect(fake.map.setView).toHaveBeenLastCalledWith([41.91, 12.51], 16, { animate: false })
     await click(card('Hotel Two'))
-    expect(fake.map.panTo).toHaveBeenCalledTimes(3)
+    expect(fake.map.setView).toHaveBeenCalledTimes(destinationFocusCount + 3)
     expect(fetchHotels).toHaveBeenCalledTimes(1)
+  })
+
+  it('zooms to an activity location and marks it selected', async () => {
+    fetchActivities.mockResolvedValue({ status: 'ready', activities: [
+      { place_id: 'colosseum', name: 'Colosseum', address: 'Piazza del Colosseo, Rome', latitude: 41.89, longitude: 12.49 },
+      { place_id: 'nowhere', name: 'Unmapped museum' },
+    ] })
+    await render()
+    expect(container.querySelector('[data-marker="Colosseum"]').dataset.icon).toBe('activity-map-marker')
+    expect(container.querySelector('[data-marker="Unmapped museum"]')).toBeNull()
+    await click(container.querySelector('#details-activities button'))
+    const activityCard = [...container.querySelectorAll('#details-activities-content .trip-details-hotel-select')]
+      .find((node) => node.textContent.includes('Colosseum'))
+    await click(activityCard)
+    expect(activityCard.getAttribute('aria-pressed')).toBe('true')
+    expect(fake.map.setView).toHaveBeenLastCalledWith([41.89, 12.49], 16, { animate: false })
+    expect(fake.popups.get('Colosseum').openPopup).toHaveBeenCalled()
+    expect(container.querySelector('[data-marker="Colosseum"]').dataset.icon).toContain('is-selected')
+    expect(container.textContent).toContain('Map location unavailable')
   })
 
   it('selects the matching card from a marker, including while Hotels is collapsed', async () => {
@@ -164,11 +188,43 @@ describe('Trip Details accordion and hotel map integration', () => {
     expect(card('Hotel Two').closest('li').classList.contains('is-selected')).toBe(true)
   })
 
-  it('selects an unmapped hotel without trying to pan', async () => {
+  it('focuses the map on the card under the reading line when scrolling settles', async () => {
+    vi.useFakeTimers()
+    try {
+      await render()
+      const scroller = document.createElement('div')
+      container.parentElement.insertBefore(scroller, container)
+      scroller.append(container)
+      scroller.getBoundingClientRect = () => ({ top: 0, bottom: 500, height: 500 })
+      const rects = { 'Hotel One': 100, 'Hotel Two': 230, 'Unmapped hotel': 200 }
+      for (const [name, top] of Object.entries(rects)) {
+        card(name).closest('li').getBoundingClientRect = () => ({ top, bottom: top + 60, height: 60 })
+      }
+      const destinationFocusCount = fake.map.setView.mock.calls.length
+      await act(async () => {
+        scroller.dispatchEvent(new Event('scroll'))
+        vi.advanceTimersByTime(250)
+      })
+      // Hotel Two's centre (260) is nearest the 40% line (200); the unmapped card is skipped.
+      expect(card('Hotel Two').getAttribute('aria-pressed')).toBe('true')
+      expect(fake.map.setView).toHaveBeenLastCalledWith([41.91, 12.51], 16, { animate: false })
+      await act(async () => {
+        scroller.dispatchEvent(new Event('scroll'))
+        vi.advanceTimersByTime(250)
+      })
+      // Settling on the already-selected card does not re-fly the map.
+      expect(fake.map.setView).toHaveBeenCalledTimes(destinationFocusCount + 1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('selects an unmapped hotel without trying to move the map', async () => {
     await render()
+    const destinationFocusCount = fake.map.setView.mock.calls.length
     await click(card('Unmapped hotel'))
     expect(card('Unmapped hotel').getAttribute('aria-pressed')).toBe('true')
-    expect(fake.map.panTo).not.toHaveBeenCalled()
+    expect(fake.map.setView).toHaveBeenCalledTimes(destinationFocusCount)
     expect(container.textContent).toContain('65 EUR')
   })
 

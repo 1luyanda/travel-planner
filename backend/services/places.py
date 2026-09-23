@@ -40,7 +40,8 @@ FIELD_MASK = (
     "places.rating,"
     "places.userRatingCount,"
     "places.priceLevel,"
-    "places.editorialSummary"
+    "places.editorialSummary,"
+    "places.location"
 )
 NEARBY_FIELD_MASK = (
     "places.id,"
@@ -383,6 +384,7 @@ def normalize_place(place: Any) -> ActivityItem | None:
     if business_status == CLOSED_PERMANENTLY:
         return None
     description, language_code = editorial_description(place)
+    latitude, longitude = _coordinates(place.get("location"))
     return ActivityItem(
         place_id=place_id,
         name=name,
@@ -394,6 +396,8 @@ def normalize_place(place: Any) -> ActivityItem | None:
         price_level=_optional_str(place.get("priceLevel")),
         description=description,
         description_language_code=language_code,
+        latitude=latitude,
+        longitude=longitude,
     )
 
 

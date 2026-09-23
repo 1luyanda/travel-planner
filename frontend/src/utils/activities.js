@@ -93,6 +93,8 @@ export function normalizeActivityItem(item) {
     price_level: optionalText(item.price_level),
     description: preserveEditorialText(item.description),
     description_language_code: optionalText(item.description_language_code),
+    latitude: optionalNumber(item.latitude),
+    longitude: optionalNumber(item.longitude),
   }
 }
 

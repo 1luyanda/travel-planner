@@ -38,7 +38,8 @@ export function TripDetailsHotelsView({ titleId, state, onRetry, selectedHotelId
               const id = hotelKey(hotel)
               const selected = selectedHotelId === id
               return (
-                <li className={`trip-details-activity-card trip-details-hotel-card${selected ? ' is-selected' : ''}`} key={id}>
+                <li className={`trip-details-activity-card trip-details-hotel-card${selected ? ' is-selected' : ''}`} key={id}
+                  {...(hotelPosition(hotel) ? { 'data-map-kind': 'hotel', 'data-map-key': id } : {})}>
                   <button type="button" className="trip-details-hotel-select"
                     aria-pressed={selected} onClick={() => onSelectHotel?.(id)}>
                     <span className="trip-details-activity-name">{hotel.name}</span>

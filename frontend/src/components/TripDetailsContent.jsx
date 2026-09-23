@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { Heart } from 'lucide-react'
 import DestinationPhoto from './DestinationPhoto'
 import ScoreBreakdown from './ScoreBreakdown'
@@ -18,6 +19,7 @@ import { formatOriginLabel } from '../utils/origins'
 import { backendScoreItems, uniqueExplanationView } from '../utils/plannerFlow'
 import TripDetailsActivities from './TripDetailsActivities'
 import TripDetailsHotels from './TripDetailsHotels'
+import { useScrollMapFocus } from '../utils/useScrollMapFocus'
 
 export const DETAILS_EMPTY_MESSAGE = 'Select a trip to view its details.'
 
@@ -103,6 +105,7 @@ export default function TripDetailsContent({
   moods,
   activitiesEnabled = false,
   hotelSelection,
+  activitySelection,
 }) {
   const flight = destination?.flight || {}
   const place = destination?.destination || {}
@@ -111,6 +114,14 @@ export default function TripDetailsContent({
   const airline = formatAirline(flight)
   const breakdown = destination ? backendScoreItems(destination) : []
   const { summary, evidence } = uniqueExplanationView(destination)
+  const placesRef = useRef(null)
+  // Scrolling the hotel/activity lists moves the map to the card being read.
+  useScrollMapFocus(placesRef, (kind, key) => {
+    if (kind === 'hotel' && key !== hotelSelection?.selectedHotelId) hotelSelection?.onSelectHotel?.(key)
+    if (kind === 'activity' && key !== activitySelection?.selectedActivityId) {
+      activitySelection?.onSelectActivity?.(key)
+    }
+  })
 
   if (!destination) return null
 
@@ -159,21 +170,26 @@ export default function TripDetailsContent({
         </section>
       )}
 
-      <TripDetailsHotels
-        key={destination.hotelDestinationId || 'unavailable'}
-        destinationId={destination.hotelDestinationId}
-        titleId={titleId}
-        onHotelsChange={hotelSelection?.onHotelsChange}
-        selectedHotelId={hotelSelection?.selectedHotelId}
-        onSelectHotel={hotelSelection?.onSelectHotel}
-      />
+      <div ref={placesRef} className="trip-details-places">
+        <TripDetailsHotels
+          key={destination.hotelDestinationId || 'unavailable'}
+          destinationId={destination.hotelDestinationId}
+          titleId={titleId}
+          onHotelsChange={hotelSelection?.onHotelsChange}
+          selectedHotelId={hotelSelection?.selectedHotelId}
+          onSelectHotel={hotelSelection?.onSelectHotel}
+        />
 
-      <TripDetailsActivities
-        destination={destination}
-        moods={moods}
-        enabled={activitiesEnabled}
-        titleId={titleId}
-      />
+        <TripDetailsActivities
+          destination={destination}
+          moods={moods}
+          enabled={activitiesEnabled}
+          titleId={titleId}
+          onActivitiesChange={activitySelection?.onActivitiesChange}
+          selectedActivityId={activitySelection?.selectedActivityId}
+          onSelectActivity={activitySelection?.onSelectActivity}
+        />
+      </div>
     </>
   )
 }

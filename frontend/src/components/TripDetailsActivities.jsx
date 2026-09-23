@@ -12,6 +12,7 @@ import {
   formatActivityRating,
 } from '../utils/activities'
 import { useActivityLikes } from '../utils/useActivityLikes'
+import { activityPosition } from '../utils/activityMarkers'
 
 const INITIAL_STATE = { status: 'idle', activities: [], error: '' }
 
@@ -30,6 +31,8 @@ export function TripDetailsActivitiesView({
   likeError = '',
   persistenceNote = '',
   onToggleLike,
+  selectedActivityId,
+  onSelectActivity,
 }) {
   const headingId = `${titleId}-activities`
   const status = state?.status || 'idle'
@@ -82,6 +85,8 @@ export function TripDetailsActivitiesView({
                 liked={liked.has(item.place_id)}
                 pending={pending.has(item.place_id)}
                 onToggleLike={onToggleLike}
+                selected={selectedActivityId === item.place_id}
+                onSelect={onSelectActivity}
               />
             ))}
           </ul>
@@ -94,7 +99,7 @@ export function TripDetailsActivitiesView({
   )
 }
 
-function ActivityCard({ item, liked = false, pending = false, onToggleLike }) {
+function ActivityCard({ item, liked = false, pending = false, onToggleLike, selected = false, onSelect }) {
   const rating = formatActivityRating(item.rating, item.user_ratings_total)
   const status = formatActivityBusinessStatus(item.business_status)
   const priceLevel = formatActivityPriceLevel(item.price_level)
@@ -103,22 +108,31 @@ function ActivityCard({ item, liked = false, pending = false, onToggleLike }) {
   const label = liked ? `Unlike ${name}` : `Like ${name}`
 
   return (
-    <li className="trip-details-activity-card">
-      <div className="trip-details-activity-body">
-        <p className="trip-details-activity-name">{item.name}</p>
+    <li
+      className={`trip-details-activity-card trip-details-hotel-card${selected ? ' is-selected' : ''}`}
+      {...(placeId && activityPosition(item) ? { 'data-map-kind': 'activity', 'data-map-key': placeId } : {})}
+    >
+      <button
+        type="button"
+        className="trip-details-activity-body trip-details-hotel-select"
+        aria-pressed={selected}
+        onClick={() => onSelect?.(placeId)}
+      >
+        <span className="trip-details-activity-name">{item.name}</span>
         {item.description ? (
-          <p
+          <span
             className="trip-details-activity-description"
             lang={item.description_language_code || undefined}
           >
             {item.description}
-          </p>
+          </span>
         ) : null}
-        {item.address ? <p className="trip-details-activity-meta">{item.address}</p> : null}
-        {rating ? <p className="trip-details-activity-meta">{rating}</p> : null}
-        {status ? <p className="trip-details-activity-meta">{status}</p> : null}
-        {priceLevel ? <p className="trip-details-activity-meta">Price level: {priceLevel}</p> : null}
-      </div>
+        {item.address ? <span className="trip-details-activity-meta">{item.address}</span> : null}
+        {rating ? <span className="trip-details-activity-meta">{rating}</span> : null}
+        {status ? <span className="trip-details-activity-meta">{status}</span> : null}
+        {priceLevel ? <span className="trip-details-activity-meta">Price level: {priceLevel}</span> : null}
+        {!activityPosition(item) ? <span className="trip-details-activity-meta">Map location unavailable</span> : null}
+      </button>
       {placeId ? (
         <button
           type="button"
@@ -146,6 +160,9 @@ export default function TripDetailsActivities({
   moods,
   enabled = false,
   titleId,
+  onActivitiesChange,
+  selectedActivityId,
+  onSelectActivity,
 }) {
   const city = destination?.destination?.city
   const countryCode = destination?.destination?.country_code
@@ -189,6 +206,10 @@ export default function TripDetailsActivities({
   }
 
   useEffect(() => {
+    onActivitiesChange?.(state)
+  }, [state, onActivitiesChange])
+
+  useEffect(() => {
     const loader = loaderRef.current
     loader.run({
       payload,
@@ -208,6 +229,8 @@ export default function TripDetailsActivities({
       likeError={likeError}
       persistenceNote={visible ? persistenceNote : ''}
       onToggleLike={handleToggleLike}
+      selectedActivityId={selectedActivityId}
+      onSelectActivity={onSelectActivity}
     />
   )
 }

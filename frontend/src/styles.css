@@ -314,7 +314,12 @@ button:disabled {
   display: block;
 }
 
-.hotel-map-marker {
+.trip-details-hotel-select > .trip-details-activity-description {
+  display: -webkit-box;
+}
+
+.hotel-map-marker,
+.activity-map-marker {
   display: grid;
   place-items: center;
   border: 1px solid var(--tp-accent);
@@ -324,10 +329,19 @@ button:disabled {
   box-shadow: var(--tp-shadow);
 }
 
-.hotel-map-marker.is-selected {
+.hotel-map-marker.is-selected,
+.activity-map-marker.is-selected {
   background: var(--tp-selected);
   outline: 2px solid var(--tp-accent);
   outline-offset: 2px;
+}
+
+.activity-map-marker {
+  border-radius: 6px;
+}
+
+.trip-details-places {
+  display: contents;
 }
 
 .trip-details-activities-error {

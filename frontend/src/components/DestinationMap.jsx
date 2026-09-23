@@ -7,7 +7,9 @@ import markerShadow from 'leaflet/dist/images/marker-shadow.png'
 import 'leaflet/dist/leaflet.css'
 import { buildMapMarkers, findMarkerForSelection } from '../utils/mapMarkers'
 import { buildHotelMarkers } from '../utils/hotelMarkers'
+import { buildActivityMarkers } from '../utils/activityMarkers'
 import HotelMapLayer from './HotelMapLayer'
+import ActivityMapLayer from './ActivityMapLayer'
 import styles from '../workspace.module.css'
 
 delete L.Icon.Default.prototype._getIconUrl
@@ -63,7 +65,7 @@ function MapViewChangeWatcher({ onViewChange, ignoreViewChangeRef }) {
   return null
 }
 
-function MapViewport({ markers, selectedId, viewportMode, markerRefs, fitNonce, beforeFitAll, onCityFocus, hotelSelectedRef }) {
+function MapViewport({ markers, selectedId, viewportMode, markerRefs, fitNonce, beforeFitAll, onCityFocus, placeSelectedRef }) {
   const map = useMap()
   const markerSignature = markers.map((item) => `${item.key}:${item.position.join(',')}`).join('|')
 
@@ -77,7 +79,7 @@ function MapViewport({ markers, selectedId, viewportMode, markerRefs, fitNonce, 
       if (reduced) map.setView(selected.position, CITY_ZOOM, { animate: false })
       else map.flyTo(selected.position, CITY_ZOOM)
       const openPopup = () => {
-        if (!hotelSelectedRef.current) markerRefs.current.get(selected.key)?.openPopup()
+        if (!placeSelectedRef.current) markerRefs.current.get(selected.key)?.openPopup()
       }
       map.once('moveend', openPopup)
       const timer = window.setTimeout(openPopup, reduced ? 0 : 400)
@@ -98,7 +100,7 @@ function MapViewport({ markers, selectedId, viewportMode, markerRefs, fitNonce, 
       { padding: [36, 36], maxZoom: 12, animate: !reduced },
     )
     return undefined
-  }, [map, markerSignature, markers, selectedId, viewportMode, markerRefs, fitNonce, beforeFitAll, onCityFocus, hotelSelectedRef])
+  }, [map, markerSignature, markers, selectedId, viewportMode, markerRefs, fitNonce, beforeFitAll, onCityFocus, placeSelectedRef])
 
   return null
 }
@@ -113,11 +115,17 @@ export default function DestinationMap({
   selectedHotelId,
   hotelFocusVersion,
   onSelectHotel,
+  activities = [],
+  selectedActivityId,
+  activityFocusVersion,
+  onSelectActivity,
 }) {
   const markers = useMemo(() => buildMapMarkers(results), [results])
   const hotelMarkers = useMemo(() => buildHotelMarkers(hotels), [hotels])
-  const hotelSelectedRef = useRef(null)
-  hotelSelectedRef.current = hotelMarkers.some((marker) => marker.key === selectedHotelId)
+  const activityMarkers = useMemo(() => buildActivityMarkers(activities), [activities])
+  const placeSelectedRef = useRef(null)
+  placeSelectedRef.current = hotelMarkers.some((marker) => marker.key === selectedHotelId)
+    || activityMarkers.some((marker) => marker.key === selectedActivityId)
   const markerRefs = useRef(new Map())
   const ignoreViewChangeRef = useRef(0)
   const [viewChanged, setViewChanged] = useState(false)
@@ -177,7 +185,7 @@ export default function DestinationMap({
           fitNonce={fitNonce}
           beforeFitAll={handleBeforeFitAll}
           onCityFocus={handleCityFocus}
-          hotelSelectedRef={hotelSelectedRef}
+          placeSelectedRef={placeSelectedRef}
         />
         {markers.map((marker) => {
           const isSelected = marker.resultIds.includes(selectedId)
@@ -208,6 +216,8 @@ export default function DestinationMap({
         })}
         <HotelMapLayer markers={hotelMarkers} selectedHotelId={selectedHotelId}
           focusVersion={hotelFocusVersion} onSelectHotel={onSelectHotel} onFocus={handleCityFocus} />
+        <ActivityMapLayer markers={activityMarkers} selectedActivityId={selectedActivityId}
+          focusVersion={activityFocusVersion} onSelectActivity={onSelectActivity} onFocus={handleCityFocus} />
       </MapContainer>
       {viewChanged ? (
         <button type="button" className={styles.showAll} onClick={handleShowAllClick}>

@@ -81,6 +81,8 @@ describe('normalizeActivitiesResponse', () => {
         price_level: 'PRICE_LEVEL_MODERATE',
         description: null,
         description_language_code: null,
+        latitude: null,
+        longitude: null,
       },
     ])
   })

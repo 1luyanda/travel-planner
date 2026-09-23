@@ -13,6 +13,6 @@ export function hotelPosition(hotel) {
 export function buildHotelMarkers(hotels = []) {
   return hotels.flatMap((hotel) => {
     const position = hotelPosition(hotel)
-    return position ? [{ key: hotelKey(hotel), position, hotel }] : []
+    return position ? [{ key: hotelKey(hotel), position, label: hotel.name, hotel }] : []
   })
 }

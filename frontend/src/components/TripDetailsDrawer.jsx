@@ -13,6 +13,7 @@ export default function TripDetailsDrawer({
   moods,
   activitiesEnabled = false,
   hotelSelection,
+  activitySelection,
 }) {
   const generatedTitleId = useId()
   const titleId = generatedTitleId
@@ -94,6 +95,7 @@ export default function TripDetailsDrawer({
             moods={moods}
             activitiesEnabled={activitiesEnabled}
             hotelSelection={hotelSelection}
+            activitySelection={activitySelection}
           />
         </div>
       </aside>

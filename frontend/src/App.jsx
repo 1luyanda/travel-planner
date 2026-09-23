@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { List, Map as MapIcon, Menu, SlidersHorizontal } from 'lucide-react'
 import { useAuth } from './auth/AuthProvider'
 import Sidebar from './components/Sidebar'
@@ -11,6 +11,7 @@ import ConversationPane from './components/ConversationPane'
 import SavedPane from './components/SavedPane'
 import DestinationMap from './components/DestinationMap'
 import { useHotelSelection } from './utils/useHotelSelection'
+import { useActivitySelection } from './utils/useActivitySelection'
 import FiltersPopover from './components/FiltersPopover'
 import TripDetailsDrawer from './components/TripDetailsDrawer'
 import ExplorePane from './components/ExplorePane'
@@ -168,6 +169,20 @@ export default function App() {
   const mapResults = visibleDestinations
   const detailsTrip = resolveSelectedTrip(mapResults, selectedTrip)
   const hotelSelection = useHotelSelection(detailsTrip)
+  const activitySelection = useActivitySelection(detailsTrip)
+  // Only one hotel or activity is focused on the map at a time.
+  const { onSelectHotel: selectHotel, clearSelection: clearHotel } = hotelSelection
+  const { onSelectActivity: selectActivity, clearSelection: clearActivity } = activitySelection
+  const handleSelectHotel = useCallback((id) => {
+    clearActivity()
+    selectHotel(id)
+  }, [clearActivity, selectHotel])
+  const handleSelectActivity = useCallback((id) => {
+    clearHotel()
+    selectActivity(id)
+  }, [clearHotel, selectActivity])
+  const hotelSelectionView = { ...hotelSelection, onSelectHotel: handleSelectHotel }
+  const activitySelectionView = { ...activitySelection, onSelectActivity: handleSelectActivity }
   const showMap = view === 'saved' || hasSearched
   const showInspiration = view === 'explore' && !hasSearched
   const dateError = dateRangeError(form)
@@ -929,6 +944,7 @@ export default function App() {
 
   function handleMarkerSelect(resultId) {
     hotelSelection.clearSelection()
+    activitySelection.clearSelection()
     const pool = visibleDestinations
     const match = tripFromMarkerId(pool, resultId)
     if (!match) return
@@ -939,6 +955,7 @@ export default function App() {
 
   function handleShowAll() {
     hotelSelection.clearSelection()
+    activitySelection.clearSelection()
     setViewportMode('bounds')
   }
 
@@ -1279,7 +1296,8 @@ export default function App() {
             onToggleSaved={saveHandler}
             moods={parsedPreferences?.moods}
             activitiesEnabled={Boolean(detailsTrip)}
-            hotelSelection={hotelSelection}
+            hotelSelection={hotelSelectionView}
+            activitySelection={activitySelectionView}
           />
           ) : null}
         </div>
@@ -1315,7 +1333,11 @@ export default function App() {
             hotels={hotelSelection.hotels}
             selectedHotelId={hotelSelection.selectedHotelId}
             hotelFocusVersion={hotelSelection.focusVersion}
-            onSelectHotel={hotelSelection.onSelectHotel}
+            onSelectHotel={handleSelectHotel}
+            activities={activitySelection.activities}
+            selectedActivityId={activitySelection.selectedActivityId}
+            activityFocusVersion={activitySelection.focusVersion}
+            onSelectActivity={handleSelectActivity}
           />
         )}
       </div>

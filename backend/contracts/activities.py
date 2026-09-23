@@ -48,6 +48,8 @@ class ActivityItem(BaseModel):
     price_level: str | None = None
     description: str | None = None
     description_language_code: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
 
 
 class ActivitiesResponse(BaseModel):
