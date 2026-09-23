@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ROUTES, isAppPath, isAuthPath, isPlannerPath, sessionRedirect } from './routes.jsx'
+import { ROUTES, isAppPath, isAuthPath, isExplorePath, isPlannerPath, isWorkspacePath, sessionRedirect } from './routes.jsx'
 
 describe('routes', () => {
   it('sends the planner and docs compatibility path to the workspace', () => {
@@ -7,6 +7,11 @@ describe('routes', () => {
     expect(isPlannerPath(ROUTES.docs)).toBe(true)
     expect(isPlannerPath(ROUTES.home)).toBe(false)
     expect(isPlannerPath(ROUTES.login)).toBe(false)
+    expect(isPlannerPath(ROUTES.explore)).toBe(false)
+    expect(isExplorePath(ROUTES.explore)).toBe(true)
+    expect(isWorkspacePath(ROUTES.planner)).toBe(true)
+    expect(isWorkspacePath(ROUTES.explore)).toBe(true)
+    expect(isAppPath(ROUTES.explore)).toBe(true)
   })
 
   it('keeps login and signup as dedicated public auth routes', () => {
@@ -26,6 +31,8 @@ describe('routes', () => {
     expect(sessionRedirect(ROUTES.login, { id: 'user-1' })).toBe(ROUTES.planner)
     expect(sessionRedirect(ROUTES.signup, { id: 'user-1' })).toBe(ROUTES.planner)
     expect(sessionRedirect(ROUTES.planner, { id: 'user-1' })).toBeNull()
+    expect(sessionRedirect(ROUTES.explore, null)).toBe(ROUTES.login)
+    expect(sessionRedirect(ROUTES.explore, { id: 'user-1' })).toBeNull()
     expect(sessionRedirect(ROUTES.login, null)).toBeNull()
     expect(sessionRedirect(ROUTES.home, null)).toBeNull()
     expect(sessionRedirect('https://evil.example/phish', null)).toBeNull()

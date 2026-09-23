@@ -13,6 +13,7 @@ import DestinationMap from './components/DestinationMap'
 import { useHotelSelection } from './utils/useHotelSelection'
 import FiltersPopover from './components/FiltersPopover'
 import TripDetailsDrawer from './components/TripDetailsDrawer'
+import ExplorePane from './components/ExplorePane'
 import LandingPage from './components/LandingPage'
 import LoginPage from './components/LoginPage'
 import SignupPage from './components/SignupPage'
@@ -77,7 +78,7 @@ import {
   showPlannerConversation,
   showPlannerFilters,
 } from './utils/savedFlights'
-import { AppLink, ROUTES, isAppPath, isPlannerPath, sessionRedirect, useRoute } from './utils/routes.jsx'
+import { AppLink, ROUTES, isAppPath, isPlannerPath, isWorkspacePath, sessionRedirect, useRoute } from './utils/routes.jsx'
 import styles from './workspace.module.css'
 
 const initialForm = INITIAL_PLANNER_FORM
@@ -911,6 +912,7 @@ export default function App() {
     setViewportMode('bounds')
     setLoading(false)
     setRefining(false)
+    if (path !== ROUTES.planner) navigate(ROUTES.planner)
   }
 
   function handleSelectDestination(destination) {
@@ -1053,8 +1055,8 @@ export default function App() {
     }
   }
 
-  function handleExploreDestinations() {
-    document.getElementById('destination-previews')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  function handleExploreActivities() {
+    if (path !== ROUTES.explore) navigate(ROUTES.explore)
   }
 
   function handleHistory(item) {
@@ -1075,9 +1077,12 @@ export default function App() {
     return <SignupPage />
   }
 
-  if (!isPlannerPath(path)) {
+  if (!isWorkspacePath(path)) {
     return <LandingPage />
   }
+
+  const onExplorePage = path === ROUTES.explore
+  const showPlanner = isPlannerPath(path)
 
   if (authLoading) {
     return <div className={styles.workspace}>Loading…</div>
@@ -1089,11 +1094,12 @@ export default function App() {
   return (
     <div
       className={styles.workspace}
-      data-mode={showMap ? 'results' : 'welcome'}
+      data-mode={onExplorePage ? 'explore' : showMap ? 'results' : 'welcome'}
       data-pane={mobilePane}
     >
       <Sidebar
         view={view}
+        path={path}
         history={history}
         savedCount={savedIds.length}
         user={user}
@@ -1101,15 +1107,21 @@ export default function App() {
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         onNewTrip={handleNewTrip}
-        onExplore={() => {
+        onPlanTrip={() => {
           setView('explore')
           setSidebarOpen(false)
+          if (path !== ROUTES.planner) navigate(ROUTES.planner)
+        }}
+        onExplore={() => {
+          setSidebarOpen(false)
+          if (path !== ROUTES.explore) navigate(ROUTES.explore)
         }}
         onSaved={() => {
           setView('saved')
           setFiltersOpen(false)
           setSidebarOpen(false)
           setMobilePane('list')
+          if (path !== ROUTES.planner) navigate(ROUTES.planner)
           refreshSavedFlights()
         }}
         onHistory={handleHistory}
@@ -1123,7 +1135,7 @@ export default function App() {
           <AppLink to={ROUTES.home} className={styles.mobileTitle}>
             Travel Planner
           </AppLink>
-          {showMap && (
+          {showPlanner && showMap && (
             <div className={styles.paneToggle} role="group" aria-label="List or map">
               <button
                 type="button"
@@ -1145,7 +1157,7 @@ export default function App() {
               </button>
             </div>
           )}
-          {hasSearched && showPlannerFilters(view) && (
+          {showPlanner && hasSearched && showPlannerFilters(view) && (
             <button type="button" className={styles.iconBtn} aria-label="Open filters" onClick={() => setFiltersOpen(true)}>
               <SlidersHorizontal size={18} />
             </button>
@@ -1154,11 +1166,13 @@ export default function App() {
 
         <div className={styles.centerMain}>
           <div className={styles.centerScroll}>
-          {error && showPlannerConversation(view, hasSearched) && <p className={styles.noticeError}>{error}</p>}
-          {flightWarning && showPlannerConversation(view, hasSearched) && <p className={styles.notice}>{flightWarning}</p>}
-          {savedError && view === 'explore' && <p className={styles.noticeError}>{savedError}</p>}
+          {showPlanner && error && showPlannerConversation(view, hasSearched) && <p className={styles.noticeError}>{error}</p>}
+          {showPlanner && flightWarning && showPlannerConversation(view, hasSearched) && <p className={styles.notice}>{flightWarning}</p>}
+          {showPlanner && savedError && view === 'explore' && <p className={styles.noticeError}>{savedError}</p>}
 
-          {view === 'saved' ? (
+          {onExplorePage ? (
+            <ExplorePane selectedTrip={selectedTrip} />
+          ) : view === 'saved' ? (
             <SavedPane
               destinations={savedItems}
               loading={savedLoading}
@@ -1220,22 +1234,15 @@ export default function App() {
               <WelcomePane onPrompt={handleStarter} composerRef={composerRef} />
               {isNarrow && (
                 <InspirationPanel
-                  origin={selectedOrigin}
-                  departureDate={form.departureDate}
-                  returnDate={form.returnDate}
-                  draft={draft}
-                  onDraftChange={setDraft}
-                  composerRef={composerRef}
                   onPlan={() => originInputRef.current?.focus()}
-                  onExplore={handleExploreDestinations}
-                  onViewDetails={handleViewDetails}
+                  onExplore={handleExploreActivities}
                 />
               )}
             </>
           )}
         </div>
 
-          {showPlannerComposer(view) && (
+          {showPlanner && showPlannerComposer(view) && (
             <div className={styles.composerFields}>
               <div className={styles.tripFields}>
                 <OriginSelect
@@ -1264,6 +1271,7 @@ export default function App() {
             </div>
           )}
 
+          {showPlanner ? (
           <TripDetailsDrawer
             destination={detailsTrip}
             onClose={handleCloseDetails}
@@ -1273,9 +1281,10 @@ export default function App() {
             activitiesEnabled={Boolean(detailsTrip)}
             hotelSelection={hotelSelection}
           />
+          ) : null}
         </div>
 
-        {showPlannerComposer(view) && (
+        {showPlanner && showPlannerComposer(view) && (
           <div className={styles.composerDock}>
             <Composer
               inputRef={composerRef}
@@ -1290,20 +1299,13 @@ export default function App() {
       </div>
 
       <div className={styles.right}>
-        {showInspiration && !isNarrow && (
+        {showPlanner && showInspiration && !isNarrow && (
           <InspirationPanel
-            origin={selectedOrigin}
-            departureDate={form.departureDate}
-            returnDate={form.returnDate}
-            draft={draft}
-            onDraftChange={setDraft}
-            composerRef={composerRef}
             onPlan={() => originInputRef.current?.focus()}
-            onExplore={handleExploreDestinations}
-            onViewDetails={handleViewDetails}
+            onExplore={handleExploreActivities}
           />
         )}
-        {showMap && (
+        {showPlanner && showMap && (
           <DestinationMap
             results={mapResults}
             selectedId={selectedDestinationId}
@@ -1318,7 +1320,7 @@ export default function App() {
         )}
       </div>
 
-      {showPlannerFilters(view) && (
+      {showPlanner && showPlannerFilters(view) && (
         <FiltersPopover
           open={filtersOpen}
           form={form}

@@ -5,10 +5,13 @@ from __future__ import annotations
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import Response
 
 from backend.contracts import (
     ActivitiesRequest,
     ActivitiesResponse,
+    NearbyActivitiesRequest,
+    NearbyActivitiesResponse,
     CandidateResponse,
     FlightListResponse,
     FlightQuery,
@@ -36,6 +39,7 @@ from backend.services import (
     SavedFlightsService,
 )
 from backend.services.places import (
+    PHOTO_NAME_RE,
     PlacesConfigurationError,
     PlacesService,
     PlacesUnavailableError,
@@ -269,6 +273,55 @@ async def list_activities(body: ActivitiesRequest) -> ActivitiesResponse:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Activity data is temporarily unavailable.",
         ) from error
+
+
+@router.post(
+    "/activities/nearby",
+    response_model=NearbyActivitiesResponse,
+    dependencies=[Depends(require_api_key)],
+)
+async def list_nearby_activities(body: NearbyActivitiesRequest) -> NearbyActivitiesResponse:
+    """Return nearby activities around a city or an explicit coordinate."""
+
+    try:
+        return await PlacesService.from_env().search_nearby(body)
+    except (PlacesConfigurationError, PlacesUnavailableError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Activity data is temporarily unavailable.",
+        ) from error
+
+
+@router.get(
+    "/activities/photo",
+    dependencies=[Depends(require_api_key)],
+)
+async def activity_photo(
+    name: str = Query(min_length=1, max_length=1200),
+    max_height_px: int = Query(default=400, ge=1, le=480),
+) -> Response:
+    """Stream one Places photo. The image is not stored."""
+
+    if PHOTO_NAME_RE.fullmatch(name) is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Activity photo is unavailable.",
+        )
+    try:
+        content, media_type = await PlacesService.from_env().fetch_photo(
+            name,
+            max_height_px=max_height_px,
+        )
+    except (PlacesConfigurationError, PlacesUnavailableError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Activity photo is unavailable.",
+        ) from error
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+    )
 
 
 @router.get(

@@ -4,6 +4,7 @@ import {
   appendQuery,
   deleteSavedFlight,
   fetchActivities,
+  fetchNearbyActivities,
   fetchCandidates,
   fetchFlights,
   fetchHotels,
@@ -639,6 +640,79 @@ describe('activities API', () => {
     await expect(fetchActivities({ city: 'Rome' }, { signal: controller.signal })).rejects.toMatchObject({
       name: 'AbortError',
     })
+  })
+})
+
+describe('nearby activities API', () => {
+  it('posts an explicit nearby search and keeps place ids for likes', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url, options) => {
+        expect(url).toBe('/api/activities/nearby')
+        expect(options.method).toBe('POST')
+        expect(options.credentials).toBe('include')
+        expect(JSON.parse(options.body)).toEqual({
+          latitude: 41.9,
+          longitude: 12.5,
+          radius_meters: 5000,
+          limit: 10,
+          included_types: ['museum'],
+        })
+        expect(options.body).not.toContain('api_key')
+        return {
+          ok: true,
+          json: async () => ({
+            status: 'ready',
+            city: null,
+            radius_meters: 5000,
+            search_center: { latitude: 41.9, longitude: 12.5 },
+            attribution: 'Google Maps',
+            issues: [],
+            activities: [
+              {
+                place_id: 'ChIJA',
+                name: 'Colosseum',
+                rating: 4.7,
+                user_ratings_total: 10,
+                google_maps_uri: 'https://maps.google.com/?cid=1',
+              },
+            ],
+          }),
+        }
+      }),
+    )
+    const payload = await fetchNearbyActivities({
+      city: 'Rome',
+      latitude: 41.9,
+      longitude: 12.5,
+      radius_meters: 5000,
+      limit: 10,
+      included_types: ['museum'],
+    })
+    expect(payload.activities[0].place_id).toBe('ChIJA')
+    expect(payload.activities[0].name).toBe('Colosseum')
+    expect(payload.attribution).toBe('Google Maps')
+  })
+
+  it('does not invent ratings when the nearby payload omits them', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          status: 'ready',
+          radius_meters: 5000,
+          search_center: null,
+          attribution: 'Google Maps',
+          issues: ['No matching city location was found.'],
+          activities: [{ place_id: 'ChIJA', name: 'Colosseum' }],
+        }),
+      })),
+    )
+    const payload = await fetchNearbyActivities({ city: 'Rome' })
+    expect(payload.activities[0].rating).toBeNull()
+    expect(payload.activities[0].user_ratings_total).toBeNull()
+    expect(payload.issues).toEqual(['No matching city location was found.'])
   })
 })
 

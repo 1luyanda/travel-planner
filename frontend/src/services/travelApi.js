@@ -4,6 +4,7 @@
  */
 
 import { ACTIVITIES_LIMIT, normalizeActivitiesResponse } from '../utils/activities'
+import { EXPLORE_RESULT_LIMIT, normalizeNearbyResponse } from '../utils/explore'
 import { normalizeHotelsResponse } from '../utils/hotels'
 import {
   forgetSavedHotelId, hotelIdOrNull, readSavedHotelIds, rememberSavedHotelId, restoreSavedHotelId,
@@ -389,4 +390,37 @@ export async function deleteSavedActivity(placeId, { signal } = {}) {
     method: 'DELETE',
     signal,
   })
+}
+
+export async function fetchNearbyActivities(payload, { signal } = {}) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new ApiError('Choose a city or use your location, then search.')
+  }
+  const hasCity = typeof payload.city === 'string' && payload.city.trim()
+  const hasLatitude = Number.isFinite(payload.latitude)
+  const hasLongitude = Number.isFinite(payload.longitude)
+  if ((hasLatitude && !hasLongitude) || (!hasLatitude && hasLongitude) || (!hasCity && !hasLatitude)) {
+    throw new ApiError('Choose a city or use your location, then search.')
+  }
+
+  const body = {
+    radius_meters: Number.isInteger(payload.radius_meters) ? payload.radius_meters : 5000,
+    limit: Number.isInteger(payload.limit) ? payload.limit : EXPLORE_RESULT_LIMIT,
+    included_types: Array.isArray(payload.included_types) ? payload.included_types : [],
+  }
+  if (hasCity && !hasLatitude) body.city = payload.city.trim()
+  if (typeof payload.country_code === 'string' && payload.country_code.trim() && !hasLatitude) {
+    body.country_code = payload.country_code.trim()
+  }
+  if (hasLatitude && hasLongitude) {
+    body.latitude = payload.latitude
+    body.longitude = payload.longitude
+  }
+
+  const data = await requestJson('/api/activities/nearby', { method: 'POST', body, signal })
+  const normalized = normalizeNearbyResponse(data)
+  if (!normalized) {
+    throw new ApiError('Activity data returned an unexpected response.')
+  }
+  return normalized
 }

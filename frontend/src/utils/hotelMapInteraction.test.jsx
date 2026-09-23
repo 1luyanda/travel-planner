@@ -8,7 +8,14 @@ import DestinationMap from '../components/DestinationMap'
 import { useHotelSelection } from './useHotelSelection'
 import { fetchActivities, fetchHotels } from '../services/travelApi'
 
-vi.mock('../services/travelApi', () => ({ fetchHotels: vi.fn(), fetchActivities: vi.fn() }))
+vi.mock('../services/travelApi', async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    fetchHotels: vi.fn(),
+    fetchActivities: vi.fn(),
+  }
+})
 const fake = vi.hoisted(() => ({ map: null, popups: new Map() }))
 vi.mock('react-leaflet', async () => {
   const { forwardRef, useImperativeHandle, useRef } = await import('react')

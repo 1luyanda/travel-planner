@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 export const ROUTES = {
   home: '/',
   planner: '/planner',
+  explore: '/explore',
   docs: '/docs',
   login: '/login',
   signup: '/signup',
@@ -12,19 +13,29 @@ export function isPlannerPath(pathname) {
   return pathname === ROUTES.planner || pathname === ROUTES.docs
 }
 
+export function isExplorePath(pathname) {
+  return pathname === ROUTES.explore
+}
+
+export function isWorkspacePath(pathname) {
+  return isPlannerPath(pathname) || isExplorePath(pathname)
+}
+
 export function isAuthPath(pathname) {
   return pathname === ROUTES.login || pathname === ROUTES.signup
 }
 
 export function isAppPath(pathname) {
-  return pathname === ROUTES.home || isPlannerPath(pathname) || isAuthPath(pathname)
+  return pathname === ROUTES.home || isWorkspacePath(pathname) || isAuthPath(pathname)
 }
 
 /**
- * Session-aware in-app redirect. Guests may use the planner;
- * signed-in auth pages go to the planner. Never follows query-string URLs.
+ * Session-aware in-app redirect. Guests may use the planner.
+ * Unsigned Explore access goes to login. Signed-in auth pages
+ * go to the planner. Never follows query-string URLs.
  */
 export function sessionRedirect(pathname, user) {
+  if (isExplorePath(pathname) && !user) return ROUTES.login
   if (isAuthPath(pathname) && user) return ROUTES.planner
   return null
 }

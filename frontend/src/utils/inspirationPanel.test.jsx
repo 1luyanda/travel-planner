@@ -1,33 +1,26 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import InspirationPanel from '../components/InspirationPanel'
-import { INSPIRATION_GENERIC_HEADING } from './inspiration'
 
 describe('InspirationPanel', () => {
-  it('keeps Get started and shows generic travel inspiration without prices', () => {
-    const html = renderToStaticMarkup(<InspirationPanel />)
+  it('keeps Get started and opens Explore activities instead of destination cards', () => {
+    const onPlan = vi.fn()
+    const onExplore = vi.fn()
+    const html = renderToStaticMarkup(
+      <InspirationPanel onPlan={onPlan} onExplore={onExplore} />,
+    )
+
     expect(html).toContain('Get started')
     expect(html).toContain('Plan a getaway')
-    expect(html).toContain('Explore destinations')
-    expect(html).toContain(INSPIRATION_GENERIC_HEADING)
-    expect(html).toContain('Athens')
-    expect(html).toContain('Lisbon')
-    expect(html).toContain('Malta')
-    expect(html).toContain('Rome')
-    expect(html).not.toMatch(/For you/i)
-    expect(html).not.toMatch(/\d+ EUR/)
-    expect(html).not.toMatch(/live fare|bookable|confirmed match/i)
-    expect(html.match(/type="button"/g)?.length).toBeGreaterThanOrEqual(6)
-  })
-
-  it('uses the selected origin heading and a loading state before flights arrive', () => {
-    const html = renderToStaticMarkup(
-      <InspirationPanel origin={{ originId: 'zagreb-hr', city: 'Zagreb' }} />,
-    )
-    expect(html).toContain('Explore from Zagreb')
-    expect(html).toContain('Loading destinations…')
-    expect(html).toContain('Get started')
-    expect(html).not.toContain(INSPIRATION_GENERIC_HEADING)
-    expect(html).not.toMatch(/For you/i)
+    expect(html).toContain('Explore activities')
+    expect(html).not.toContain('Explore destinations')
+    expect(html).not.toContain('Travel inspiration')
+    expect(html).not.toContain('Explore from Zagreb')
+    expect(html).not.toContain('Athens')
+    expect(html).not.toContain('Lisbon')
+    expect(html).not.toContain('Malta')
+    expect(html).not.toContain('Rome')
+    expect(html).not.toContain('Loading destinations')
+    expect(html.match(/type="button"/g)).toHaveLength(2)
   })
 })
