@@ -124,9 +124,50 @@ def test_coordinates_search_uses_nearby_field_mask_and_radius() -> None:
     assert call["json"]["maxResultCount"] == 10
     assert "tourist_attraction" in call["json"]["includedTypes"]
     assert "places.photos.name" in call["headers"]["X-Goog-FieldMask"]
+    assert "places.editorialSummary" in call["headers"]["X-Goog-FieldMask"]
     assert "places.priceLevel" not in call["headers"]["X-Goog-FieldMask"]
+    assert result.activities[0].description is None
+    assert result.activities[0].description_language_code is None
     assert SECRET_KEY not in result.model_dump_json()
     assert SECRET_KEY not in json.dumps(call["json"])
+
+
+def test_editorial_summary_is_copied_and_missing_summaries_are_omitted() -> None:
+    source = "Iconic amphitheatre in the centre of Rome."
+    result = _run_nearby(
+        [
+            _place(
+                "ChIJA",
+                "Colosseum",
+                editorialSummary={"text": source, "languageCode": "en"},
+            ),
+            _place("ChIJB", "Quiet Square"),
+        ]
+    )
+    described = result.activities[0]
+    assert described.description == source
+    assert described.description_language_code == "en"
+    assert described.name == "Colosseum"
+    omitted = result.activities[1]
+    assert omitted.description is None
+    assert omitted.description_language_code is None
+    assert omitted.name == "Quiet Square"
+    assert omitted.address == "Piazza del Colosseo, Rome"
+
+
+def test_blank_editorial_summary_is_omitted() -> None:
+    result = _run_nearby(
+        [
+            _place(
+                "ChIJA",
+                "Colosseum",
+                editorialSummary={"text": "   ", "languageCode": "en"},
+            )
+        ]
+    )
+    assert result.activities[0].description is None
+    assert result.activities[0].description_language_code is None
+    assert result.activities[0].name == "Colosseum"
 
 
 def test_missing_rating_photo_and_coordinates_are_omitted() -> None:

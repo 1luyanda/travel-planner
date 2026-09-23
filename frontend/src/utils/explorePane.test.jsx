@@ -3,14 +3,19 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { AuthContext } from '../auth/AuthProvider'
 import ExplorePane, { ExploreView } from '../components/ExplorePane'
-import { fetchNearbyActivities } from '../services/travelApi'
+import { fetchNearbyActivities, fetchSavedActivities, saveActivity } from '../services/travelApi'
+import { ACTIVITY_LIKES_SAVE_ERROR, activityLikesStore } from './activityLikes'
 
 vi.mock('../services/travelApi', async (importOriginal) => {
   const actual = await importOriginal()
   return {
     ...actual,
     fetchNearbyActivities: vi.fn(),
+    fetchSavedActivities: vi.fn().mockResolvedValue({ items: [] }),
+    saveActivity: vi.fn().mockResolvedValue({ place_id: 'ChIJA' }),
+    deleteSavedActivity: vi.fn().mockResolvedValue(undefined),
   }
 })
 
@@ -82,6 +87,39 @@ describe('Explore view', () => {
     expect(html).toContain('Search within 5 km')
     expect(html).toContain('Quiet Square')
     expect(html).not.toContain('Quiet Square</h2><p>0')
+    expect(html).not.toContain('Place summaries from Google.')
+  })
+
+  it('shows an editorial summary under the name and omits a missing one', () => {
+    const source = 'Iconic amphitheatre in the centre of Rome.'
+    const html = renderView({
+      status: 'ready',
+      activities: [
+        {
+          ...colosseum,
+          description: source,
+          description_language_code: 'en',
+        },
+        { place_id: 'quiet', name: 'Quiet Square' },
+      ],
+      attribution: 'Google Maps',
+      searchCenter: { latitude: 41.9, longitude: 12.5 },
+    })
+    const nameAt = html.indexOf('>Colosseum<')
+    const descriptionAt = html.indexOf(source)
+    const addressAt = html.indexOf('Piazza del Colosseo, Rome')
+    expect(nameAt).toBeGreaterThan(-1)
+    expect(descriptionAt).toBeGreaterThan(nameAt)
+    expect(addressAt).toBeGreaterThan(descriptionAt)
+    expect(html).toContain('lang="en"')
+    expect(html).toContain('Place summaries from Google.')
+    expect(html).toContain('Google Maps')
+    expect(html).toContain('Photo: Ada Lovelace')
+    const quietHeading = html.slice(html.indexOf('>Quiet Square</h2>'))
+    expect(quietHeading.replace(/^\s*>Quiet Square<\/h2>\s*/, '').startsWith('</div>')).toBe(true)
+    expect(html).not.toContain('No description')
+    expect(html).not.toContain('Summary unavailable')
+    expect(html).not.toContain('line-clamp')
   })
 
   it('uses the placeholder when a photo or coordinates are missing', () => {
@@ -108,6 +146,27 @@ describe('Explore view', () => {
       'Location permission was denied',
     )
   })
+
+  it('hides the save-failure banner and the account-saved note', () => {
+    const html = renderView(
+      { status: 'ready', activities: [colosseum], attribution: 'Google Maps' },
+      {
+        likeError: 'Could not save that like.',
+        persistenceNote: 'Likes are saved to your account.',
+      },
+    )
+    expect(html).not.toContain('Could not save that like.')
+    expect(html).not.toContain('Likes are saved to your account.')
+    expect(html).toContain('Colosseum')
+  })
+
+  it('still shows like errors that are not a failed save', () => {
+    const html = renderView(
+      { status: 'ready', activities: [colosseum], attribution: 'Google Maps' },
+      { likeError: 'Could not load your liked activities.' },
+    )
+    expect(html).toContain('Could not load your liked activities.')
+  })
 })
 
 describe('Explore interactions', () => {
@@ -115,17 +174,24 @@ describe('Explore interactions', () => {
   let root
 
   afterEach(() => {
-    act(() => root?.unmount())
+    act(() => {
+      root?.unmount()
+      activityLikesStore.loadUser(null)
+    })
     container?.remove()
     vi.clearAllMocks()
   })
 
-  async function mount(props = {}) {
+  async function mount({ authUser = null, ...props } = {}) {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
     await act(async () => {
-      root.render(<ExplorePane {...props} />)
+      root.render(
+        <AuthContext.Provider value={{ user: authUser }}>
+          <ExplorePane {...props} />
+        </AuthContext.Provider>,
+      )
     })
   }
 
@@ -176,5 +242,40 @@ describe('Explore interactions', () => {
     expect(container.textContent).toContain('Choose a city')
     expect(fetchNearbyActivities).not.toHaveBeenCalled()
     expect(container.querySelector('#explore-city')).toBeTruthy()
+  })
+
+  it('restores the heart when saving a like fails and does not show the banner', async () => {
+    fetchSavedActivities.mockResolvedValue({ items: [] })
+    saveActivity.mockRejectedValueOnce(new Error('save failed'))
+    await mount({
+      authUser: { id: 'user-a' },
+      selectedTrip: { destination: { city: 'Rome', country_code: 'IT', latitude: 41.9, longitude: 12.5 } },
+    })
+    fetchNearbyActivities.mockResolvedValue({
+      status: 'ready',
+      city: null,
+      radius_meters: 5000,
+      search_center: { latitude: 41.9, longitude: 12.5 },
+      activities: [colosseum],
+      issues: [],
+      attribution: 'Google Maps',
+    })
+    await act(async () => {
+      container.querySelector('form').requestSubmit()
+    })
+
+    const like = () => container.querySelector('button[aria-label="Like Colosseum"]')
+    expect(like().getAttribute('aria-pressed')).toBe('false')
+    await act(async () => {
+      like().click()
+    })
+
+    expect(like().getAttribute('aria-pressed')).toBe('false')
+    expect(like().getAttribute('aria-label')).toBe('Like Colosseum')
+    expect(container.textContent).not.toContain('Could not save that like.')
+    expect(container.textContent).not.toContain('Likes are saved to your account.')
+    expect(activityLikesStore.getSnapshot().likedIds.has('ChIJA')).toBe(false)
+    expect(activityLikesStore.getSnapshot().error).toBe(ACTIVITY_LIKES_SAVE_ERROR)
+    expect(activityLikesStore.getSnapshot().pendingIds.size).toBe(0)
   })
 })

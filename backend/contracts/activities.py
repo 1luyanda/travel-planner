@@ -157,6 +157,8 @@ class NearbyActivityItem(BaseModel):
     longitude: float | None = None
     google_maps_uri: str | None = None
     photo: ActivityPhoto | None = None
+    description: str | None = None
+    description_language_code: str | None = None
 
 
 class SearchCenter(BaseModel):

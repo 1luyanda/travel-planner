@@ -1446,6 +1446,11 @@
   font-size: 16px;
 }
 
+.exploreDescription {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 .exploreCardBody a {
   color: var(--tp-accent);
   font-weight: 600;

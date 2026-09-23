@@ -55,7 +55,8 @@ NEARBY_FIELD_MASK = (
     "places.googleMapsUri,"
     "places.photos.name,"
     "places.photos.authorAttributions,"
-    "places.photos.googleMapsUri"
+    "places.photos.googleMapsUri,"
+    "places.editorialSummary"
 )
 LOCALITY_FIELD_MASK = "places.location,places.displayName"
 PHOTO_NAME_RE = re.compile(r"^places/[A-Za-z0-9_-]{1,255}/photos/[A-Za-z0-9_-]{1,900}$")
@@ -423,6 +424,7 @@ def normalize_nearby_place(place: Any) -> NearbyActivityItem | None:
     if business_status == CLOSED_PERMANENTLY:
         return None
     latitude, longitude = _coordinates(place.get("location"))
+    description, language_code = editorial_description(place)
     return NearbyActivityItem(
         place_id=place_id,
         name=name,
@@ -435,6 +437,8 @@ def normalize_nearby_place(place: Any) -> NearbyActivityItem | None:
         longitude=longitude,
         google_maps_uri=_safe_maps_uri(place.get("googleMapsUri")),
         photo=_first_photo(place.get("photos")),
+        description=description,
+        description_language_code=language_code,
     )
 
 
