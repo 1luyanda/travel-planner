@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Heart, LocateFixed } from 'lucide-react'
 import { fetchNearbyActivities } from '../services/travelApi'
+import { ACTIVITY_LIKES_SAVE_ERROR } from '../utils/activityLikes'
 import { useActivityLikes } from '../utils/useActivityLikes'
 import { cityTone } from '../utils/format'
 import { formatActivityBusinessStatus, formatActivityRating } from '../utils/activities'
@@ -84,7 +85,6 @@ export function ExploreView({
   likedIds,
   pendingIds,
   likeError = '',
-  persistenceNote = '',
   onToggleLike,
 }) {
   const status = results?.status || 'idle'
@@ -152,8 +152,7 @@ export function ExploreView({
         </p>
       </form>
 
-      {persistenceNote ? <p className={styles.exploreNote}>{persistenceNote}</p> : null}
-      {likeError ? (
+      {likeError && likeError !== ACTIVITY_LIKES_SAVE_ERROR ? (
         <p className={styles.noticeError} role="alert">
           {likeError}
         </p>
@@ -194,6 +193,9 @@ export function ExploreView({
           ))}
         </ul>
       ) : null}
+      {status === 'ready' && activities.some((item) => item.description) ? (
+        <p className={styles.exploreNote}>Place summaries from Google.</p>
+      ) : null}
       {status === 'ready' && results?.attribution ? (
         <p className={styles.mapsAttribution} translate="no">
           {results.attribution}
@@ -217,6 +219,11 @@ function ExploreCard({ item, searchCenter, liked = false, pending = false, onTog
       <ActivityPhoto name={item.photo?.name} label={item.name} />
       <div className={styles.exploreCardBody}>
         <h2>{item.name}</h2>
+        {item.description ? (
+          <p className={styles.exploreDescription} lang={item.description_language_code || undefined}>
+            {item.description}
+          </p>
+        ) : null}
         {categories.length ? <p>{categories.join(' · ')}</p> : null}
         {item.address ? <p>{item.address}</p> : null}
         {rating ? <p>{rating}</p> : null}
@@ -291,7 +298,9 @@ export default function ExplorePane({ selectedTrip = null }) {
   const searchRef = useRef(null)
   const payloadRef = useRef(null)
   const mountedRef = useRef(true)
-  const { likedIds, pendingIds, likeError, persistenceNote, toggleLike } = useActivityLikes()
+  // Save failures stay on the likes store so they can be inspected later.
+  // Explore does not show that banner or the account-saved note.
+  const { likedIds, pendingIds, likeError, toggleLike } = useActivityLikes()
 
   if (!searchRef.current) {
     searchRef.current = createExploreSearch({ fetchNearby: fetchNearbyActivities })
@@ -409,7 +418,6 @@ export default function ExplorePane({ selectedTrip = null }) {
       likedIds={likedIds}
       pendingIds={pendingIds}
       likeError={likeError}
-      persistenceNote={persistenceNote}
       onToggleLike={handleToggleLike}
     />
   )

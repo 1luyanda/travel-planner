@@ -147,6 +147,13 @@ Offline checks: `python -m pytest tests/test_hotels.py`.
   Atmosphere SKU (higher than Basic fields alone; this repo does not set
   prices). Liked activities store the snapshot, including any summary, so
   Places is not re-queried later.
+- `POST /api/activities/nearby` — nearby activities for Explore. Optional
+  `description` is the same Google `editorialSummary.text`, copied unchanged,
+  plus `description_language_code`. Missing summaries are omitted. The nearby
+  mask already requests rating fields (Nearby Search Enterprise). Adding
+  `places.editorialSummary` bills the whole request as Nearby Search
+  Enterprise + Atmosphere, the next SKU up. This repo does not set prices.
+  Summaries come from that one Nearby Search response, not Place Details.
 - `GET /api/saved-flights` — the authenticated user's saved flights.
   If the current `flights` document still exists, the snapshot is updated
   when any allowlisted field changed (live data refreshes about every 24h).

@@ -98,6 +98,31 @@ describe('explore search helpers', () => {
     expect(normalizeNearbyActivity({ ...colosseum, rating: null, user_ratings_total: null }).rating).toBeNull()
   })
 
+  it('keeps a provider editorial summary and drops a blank one', () => {
+    const source = 'Iconic  amphitheatre in the centre of Rome.'
+    expect(
+      normalizeNearbyActivity({
+        ...colosseum,
+        description: source,
+        description_language_code: 'en',
+      }),
+    ).toMatchObject({
+      description: source,
+      description_language_code: 'en',
+    })
+    expect(
+      normalizeNearbyActivity({
+        ...colosseum,
+        description: '   ',
+        description_language_code: 'en',
+      }).description,
+    ).toBeNull()
+    expect(normalizeNearbyActivity(colosseum)).toMatchObject({
+      description: null,
+      description_language_code: null,
+    })
+  })
+
   it('shows straight-line distance only for valid coordinates', () => {
     const km = straightLineKm({ latitude: 41.9, longitude: 12.5 }, { latitude: 41.8902, longitude: 12.4922 })
     expect(formatStraightLineDistance(km)).toMatch(/straight line/)

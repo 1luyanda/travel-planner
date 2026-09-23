@@ -5,6 +5,7 @@
  */
 
 import { activityLikeId } from './activityLikes'
+import { preserveEditorialText } from './activities'
 
 export const EXPLORE_RADIUS_METERS = 5000
 export const EXPLORE_RESULT_LIMIT = 10
@@ -254,6 +255,8 @@ export function normalizeNearbyActivity(item) {
     longitude: centre?.longitude ?? null,
     google_maps_uri: mapsUrl(item.google_maps_uri),
     photo: normalizePhoto(item.photo),
+    description: preserveEditorialText(item.description),
+    description_language_code: optionalText(item.description_language_code),
   }
 }
 
