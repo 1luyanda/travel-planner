@@ -1,6 +1,16 @@
 """FastAPI request and response contracts."""
 
-from .activities import ActivitiesRequest, ActivitiesResponse, ActivityItem
+from .activities import (
+    ActivitiesRequest,
+    ActivitiesResponse,
+    ActivityItem,
+    ActivityPhoto,
+    NearbyActivitiesRequest,
+    NearbyActivitiesResponse,
+    NearbyActivityItem,
+    PhotoAttribution,
+    SearchCenter,
+)
 from .auth import AuthResponse, LoginRequest, RegisterRequest
 from .hotels import HotelItem, HotelsResponse
 from .candidates import (
@@ -36,6 +46,12 @@ __all__ = [
     "ActivitiesRequest",
     "ActivitiesResponse",
     "ActivityItem",
+    "ActivityPhoto",
+    "NearbyActivitiesRequest",
+    "NearbyActivitiesResponse",
+    "NearbyActivityItem",
+    "PhotoAttribution",
+    "SearchCenter",
     "AuthResponse",
     "CandidateItem",
     "CandidateResponse",

@@ -1,10 +1,11 @@
-import { Compass, Heart, Map, Plus, X } from 'lucide-react'
+import { Compass, Heart, Map, MapPinned, Plus, X } from 'lucide-react'
 import BrandMark from './BrandMark'
 import { AppLink, ROUTES } from '../utils/routes.jsx'
 import styles from '../workspace.module.css'
 
 export default function Sidebar({
   view,
+  path,
   history,
   savedCount,
   user,
@@ -12,10 +13,20 @@ export default function Sidebar({
   open,
   onClose,
   onNewTrip,
+  onPlanTrip,
   onExplore,
   onSaved,
   onHistory,
 }) {
+  const planActive = (view === 'explore' || view == null) && path !== ROUTES.explore
+  const exploreActive = path === ROUTES.explore
+  const savedActive = view === 'saved' && path !== ROUTES.explore
+
+  function followClick(event, action) {
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return
+    event.preventDefault()
+    action()
+  }
   return (
     <>
       {open && (
@@ -58,27 +69,37 @@ export default function Sidebar({
         </button>
 
         <nav className={styles.nav} aria-label="Workspace">
-          <button
-            type="button"
-            className={view === 'explore' ? styles.navBtnActive : styles.navBtn}
-            aria-current={view === 'explore' ? 'page' : undefined}
-            title="Explore"
-            onClick={onExplore}
+          <a
+            href={ROUTES.planner}
+            className={planActive ? styles.navBtnActive : styles.navBtn}
+            aria-current={planActive ? 'page' : undefined}
+            title="Plan a trip"
+            onClick={(event) => followClick(event, onPlanTrip)}
           >
             <Map size={18} strokeWidth={1.75} />
-            Explore
-          </button>
-          {user ? (
-          <button
-            type="button"
-            className={view === 'saved' ? styles.navBtnActive : styles.navBtn}
-            aria-current={view === 'saved' ? 'page' : undefined}
-            title="Saved"
-            onClick={onSaved}
+            Plan a trip
+          </a>
+          <a
+            href={ROUTES.explore}
+            className={exploreActive ? styles.navBtnActive : styles.navBtn}
+            aria-current={exploreActive ? 'page' : undefined}
+            title="Explore"
+            onClick={(event) => followClick(event, onExplore)}
           >
-            <Heart size={18} strokeWidth={1.75} />
-            Saved{savedCount ? ` (${savedCount})` : ''}
-          </button>
+            <MapPinned size={18} strokeWidth={1.75} />
+            Explore
+          </a>
+          {user ? (
+            <button
+              type="button"
+              className={savedActive ? styles.navBtnActive : styles.navBtn}
+              aria-current={savedActive ? 'page' : undefined}
+              title="Saved"
+              onClick={onSaved}
+            >
+              <Heart size={18} strokeWidth={1.75} />
+              Saved{savedCount ? ` (${savedCount})` : ''}
+            </button>
           ) : null}
         </nav>
 

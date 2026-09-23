@@ -28,7 +28,7 @@ export default function SavedPane({
         <div className={styles.emptySaved}>
           <p>No saved flights yet.</p>
           <button type="button" className={styles.secondaryBtn} onClick={onExplore}>
-            Back to explore
+            Plan a trip
           </button>
         </div>
       ) : destinations.length > 0 ? (
