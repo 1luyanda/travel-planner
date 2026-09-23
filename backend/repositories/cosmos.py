@@ -66,15 +66,10 @@ def _flight_select(limit: int | None = None) -> str:
     return f"SELECT TOP {int(limit)} {fields} FROM c"
 
 
-def _replace_saved_snapshot(
-    current: SavedFlightSnapshot,
-    snapshot: SavedFlightSnapshot,
-) -> SavedFlightSnapshot:
-    """Overwrite the stored snapshot. Keep the old summary if the new save has none."""
+def _json_pointer_segment(value: str) -> str:
+    """Escape a Cosmos patch path segment per RFC 6901 (``~`` then ``/``)."""
 
-    if snapshot.explanation is None and current.explanation is not None:
-        return snapshot.model_copy(update={"explanation": current.explanation})
-    return snapshot
+    return value.replace("~", "~0").replace("/", "~1")
 
 
 class RepositoryError(RuntimeError):
@@ -508,56 +503,58 @@ class CosmosDestinationRepository:
         self,
         user_id: str,
         snapshot: SavedFlightSnapshot,
-    ) -> UserSavedFlightsDocument:
-        """Add a flight snapshot to the user's list. Idempotent by flight_id."""
+    ) -> None:
+        """Save/like a flight with one targeted patch (two if it carries a
+        new explanation). Idempotent by flight_id. When the new save has no
+        explanation, the ``/explanations/<flight_id>`` path is simply left
+        out of the patch, so any existing explanation survives untouched —
+        with no document read required to know it was there.
+        """
 
         container = self._require_user_flights()
-        document = await self._read_user_saved_flights(user_id)
-        if document is None:
-            created = UserSavedFlightsDocument(
-                id=user_id,
-                flights=[snapshot],
-                flight_ids=[snapshot.flight_id],
-            )
-            try:
-                item = await container.create_item(body=created.model_dump(mode="json"))
-            except CosmosHttpResponseError as error:
-                if error.status_code == 409:
-                    return await self.add_user_saved_flight(user_id, snapshot)
-                raise RepositoryError("Saved flight create failed.") from error
-            return UserSavedFlightsDocument.model_validate(item)
-
-        if any(item.flight_id == snapshot.flight_id for item in document.flights):
-            flights = [
-                _replace_saved_snapshot(item, snapshot)
-                if item.flight_id == snapshot.flight_id
-                else item
-                for item in document.flights
-            ]
-        else:
-            flights = [snapshot, *document.flights]
-        leftover = [
-            flight_id
-            for flight_id in document.flight_ids
-            if flight_id != snapshot.flight_id
-            and flight_id not in {item.flight_id for item in flights}
-        ]
-        updated = document.model_copy(
-            update={
-                "flights": flights,
-                "flight_ids": [item.flight_id for item in flights] + leftover,
+        key = _json_pointer_segment(snapshot.flight_id)
+        stored_snapshot = snapshot.without_explanation()
+        patch_operations: list[dict[str, Any]] = [
+            {
+                "op": "add",
+                "path": f"/flights/{key}",
+                "value": stored_snapshot.model_dump(mode="json"),
             }
-        )
+        ]
+        if snapshot.explanation is not None:
+            patch_operations.append(
+                {
+                    "op": "add",
+                    "path": f"/explanations/{key}",
+                    "value": snapshot.explanation.model_dump(mode="json"),
+                }
+            )
         try:
-            item = await container.replace_item(
-                item=updated.id,
-                body=updated.model_dump(mode="json"),
+            await container.patch_item(
+                item=user_id,
+                partition_key=user_id,
+                patch_operations=patch_operations,
             )
         except CosmosHttpResponseError as error:
-            if error.status_code == 404:
-                return await self.add_user_saved_flight(user_id, snapshot)
-            raise RepositoryError("Saved flight update failed.") from error
-        return UserSavedFlightsDocument.model_validate(item)
+            if error.status_code != 404:
+                raise RepositoryError("Saved flight update failed.") from error
+            created = UserSavedFlightsDocument(
+                id=user_id,
+                flights={snapshot.flight_id: stored_snapshot},
+                explanations=(
+                    {snapshot.flight_id: snapshot.explanation}
+                    if snapshot.explanation is not None
+                    else {}
+                ),
+            )
+            try:
+                await container.create_item(body=created.model_dump(mode="json"))
+            except CosmosHttpResponseError as create_error:
+                if create_error.status_code == 409:
+                    return await self.add_user_saved_flight(user_id, snapshot)
+                raise RepositoryError(
+                    "Saved flight create failed."
+                ) from create_error
 
     async def replace_user_saved_flights(
         self,
@@ -578,33 +575,36 @@ class CosmosDestinationRepository:
         return UserSavedFlightsDocument.model_validate(item)
 
     async def remove_user_saved_flight(self, user_id: str, flight_id: str) -> None:
-        """Remove a saved snapshot from the authenticated user's list only."""
+        """Unlike a flight with a targeted patch, touching only that key.
+
+        A second patch clears its explanation, if any. That's a separate
+        call rather than one combined request: Cosmos patch operations are
+        applied atomically, and a "remove" of a path that doesn't exist
+        fails the whole request, so a flight saved without an explanation
+        can't share a request with an explanation removal that would 400.
+        """
 
         container = self._require_user_flights()
-        document = await self._read_user_saved_flights(user_id)
-        if document is None:
-            return
-        remaining = [
-            item for item in document.flights if item.flight_id != flight_id
-        ]
-        leftover = [
-            item for item in document.all_flight_ids() if item != flight_id
-        ]
-        if remaining == document.flights and leftover == document.all_flight_ids():
-            return
-        updated = document.model_copy(
-            update={
-                "flights": remaining,
-                "flight_ids": leftover,
-            }
-        )
+        key = _json_pointer_segment(flight_id)
         try:
-            await container.replace_item(
-                item=updated.id,
-                body=updated.model_dump(mode="json"),
+            await container.patch_item(
+                item=user_id,
+                partition_key=user_id,
+                patch_operations=[{"op": "remove", "path": f"/flights/{key}"}],
             )
         except CosmosHttpResponseError as error:
-            if error.status_code == 404:
+            if error.status_code in (404, 400):
+                return
+            raise RepositoryError("Saved flight delete failed.") from error
+
+        try:
+            await container.patch_item(
+                item=user_id,
+                partition_key=user_id,
+                patch_operations=[{"op": "remove", "path": f"/explanations/{key}"}],
+            )
+        except CosmosHttpResponseError as error:
+            if error.status_code in (404, 400):
                 return
             raise RepositoryError("Saved flight delete failed.") from error
 
@@ -638,60 +638,57 @@ class CosmosDestinationRepository:
         self,
         user_id: str,
         snapshot: SavedActivitySnapshot,
-    ) -> UserSavedActivitiesDocument:
-        """Add a liked activity to the user's list. Idempotent by place_id."""
+    ) -> None:
+        """Like an activity with one targeted patch. Idempotent by place_id.
+
+        Only the ``/activities/<place_id>`` key is written; every other
+        activity the user has saved is left untouched, and the document is
+        never read first.
+        """
 
         container = self._require_user_activities()
-        document = await self._read_user_saved_activities(user_id)
-        if document is None:
+        key = _json_pointer_segment(snapshot.place_id)
+        try:
+            await container.patch_item(
+                item=user_id,
+                partition_key=user_id,
+                patch_operations=[
+                    {
+                        "op": "add",
+                        "path": f"/activities/{key}",
+                        "value": snapshot.model_dump(mode="json"),
+                    }
+                ],
+            )
+        except CosmosHttpResponseError as error:
+            if error.status_code != 404:
+                raise RepositoryError("Saved activity update failed.") from error
             created = UserSavedActivitiesDocument(
                 id=user_id,
-                activities=[snapshot],
+                activities={snapshot.place_id: snapshot},
             )
             try:
-                item = await container.create_item(body=created.model_dump(mode="json"))
-            except CosmosHttpResponseError as error:
-                if error.status_code == 409:
+                await container.create_item(body=created.model_dump(mode="json"))
+            except CosmosHttpResponseError as create_error:
+                if create_error.status_code == 409:
                     return await self.add_user_saved_activity(user_id, snapshot)
-                raise RepositoryError("Saved activity create failed.") from error
-            return UserSavedActivitiesDocument.model_validate(item)
-
-        if any(item.place_id == snapshot.place_id for item in document.activities):
-            return document
-
-        activities = [snapshot, *document.activities]
-        updated = document.model_copy(update={"activities": activities})
-        try:
-            item = await container.replace_item(
-                item=updated.id,
-                body=updated.model_dump(mode="json"),
-            )
-        except CosmosHttpResponseError as error:
-            if error.status_code == 404:
-                return await self.add_user_saved_activity(user_id, snapshot)
-            raise RepositoryError("Saved activity update failed.") from error
-        return UserSavedActivitiesDocument.model_validate(item)
+                raise RepositoryError("Saved activity create failed.") from create_error
 
     async def remove_user_saved_activity(self, user_id: str, place_id: str) -> None:
-        """Remove a liked activity from the authenticated user's list only."""
+        """Unlike an activity with one targeted patch, touching only that key."""
 
         container = self._require_user_activities()
-        document = await self._read_user_saved_activities(user_id)
-        if document is None:
-            return
-        remaining = [
-            item for item in document.activities if item.place_id != place_id
-        ]
-        if remaining == document.activities:
-            return
-        updated = document.model_copy(update={"activities": remaining})
+        key = _json_pointer_segment(place_id)
         try:
-            await container.replace_item(
-                item=updated.id,
-                body=updated.model_dump(mode="json"),
+            await container.patch_item(
+                item=user_id,
+                partition_key=user_id,
+                patch_operations=[{"op": "remove", "path": f"/activities/{key}"}],
             )
         except CosmosHttpResponseError as error:
-            if error.status_code == 404:
+            # 404: no document for this user yet. 400: Cosmos rejects a
+            # remove of a path that doesn't exist (already not liked).
+            if error.status_code in (404, 400):
                 return
             raise RepositoryError("Saved activity delete failed.") from error
 

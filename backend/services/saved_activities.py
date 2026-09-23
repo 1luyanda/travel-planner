@@ -39,7 +39,7 @@ class SavedActivitiesService:
         document = await self._repository.list_user_saved_activities(user_id)
         if document is None:
             return []
-        return [_to_item(snapshot) for snapshot in document.activities]
+        return [_to_item(snapshot) for snapshot in document.activities.values()]
 
 
 def _to_item(snapshot: SavedActivitySnapshot) -> SavedActivityItem:

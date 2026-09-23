@@ -33,16 +33,22 @@ class SavedFlightsService:
             raw_flight,
             explanation=_normalize_explanation(body.explanation),
         )
-        document = await self._repository.add_user_saved_flight(user_id, snapshot)
-        stored = next(
-            (item for item in document.flights if item.flight_id == snapshot.flight_id),
-            snapshot,
-        )
+        await self._repository.add_user_saved_flight(user_id, snapshot)
+
+        explanation = snapshot.explanation
+        if explanation is None:
+            # The save itself never reads the document (see
+            # add_user_saved_flight), so a resave that omits an explanation
+            # doesn't know whether an older one survives underneath it.
+            # One read here, only in that case, reports it back accurately.
+            document = await self._repository.list_user_saved_flights(user_id)
+            if document is not None:
+                explanation = document.explanations.get(snapshot.flight_id)
         return SavedFlightItem(
-            flight_id=stored.flight_id,
+            flight_id=snapshot.flight_id,
             availability="available",
-            flight=stored.to_flight_item(),
-            explanation=stored.explanation,
+            flight=snapshot.to_flight_item(),
+            explanation=explanation,
         )
 
     async def delete(self, user_id: str, flight_id: str) -> None:
@@ -59,19 +65,21 @@ class SavedFlightsService:
             for item in await self._repository.get_flights_by_ids(flight_ids)
             if item.get("id")
         }
-        snapshots = {item.flight_id: item for item in document.flights}
+        snapshots = document.combined_snapshots()
         refreshed, items = _hydrate_saved_flights(flight_ids, current_flights, snapshots)
-        if refreshed != document.flights:
-            leftover = [
-                flight_id
-                for flight_id in flight_ids
-                if flight_id not in {item.flight_id for item in refreshed}
-            ]
+        if refreshed != snapshots:
             await self._repository.replace_user_saved_flights(
                 document.model_copy(
                     update={
-                        "flights": refreshed,
-                        "flight_ids": [item.flight_id for item in refreshed] + leftover,
+                        "flights": {
+                            flight_id: snapshot.without_explanation()
+                            for flight_id, snapshot in refreshed.items()
+                        },
+                        "explanations": {
+                            flight_id: snapshot.explanation
+                            for flight_id, snapshot in refreshed.items()
+                            if snapshot.explanation is not None
+                        },
                     }
                 )
             )
@@ -82,20 +90,20 @@ def _hydrate_saved_flights(
     flight_ids: list[str],
     current_flights: dict[str, dict],
     snapshots: dict[str, SavedFlightSnapshot],
-) -> tuple[list[SavedFlightSnapshot], list[SavedFlightItem]]:
-    refreshed: list[SavedFlightSnapshot] = []
+) -> tuple[dict[str, SavedFlightSnapshot], list[SavedFlightItem]]:
+    refreshed: dict[str, SavedFlightSnapshot] = {}
     items: list[SavedFlightItem] = []
     for flight_id in flight_ids:
         current = current_flights.get(flight_id)
-        snapshot = snapshots.get(flight_id)
+        snapshot = snapshots[flight_id]
         if current is not None:
             if _should_refresh_snapshot(snapshot, current):
                 snapshot = SavedFlightSnapshot.from_flight(
                     current,
-                    saved_at=snapshot.saved_at if snapshot else None,
-                    explanation=snapshot.explanation if snapshot else None,
+                    saved_at=snapshot.saved_at,
+                    explanation=snapshot.explanation,
                 )
-            refreshed.append(snapshot)
+            refreshed[flight_id] = snapshot
             items.append(
                 SavedFlightItem(
                     flight_id=flight_id,
@@ -105,22 +113,13 @@ def _hydrate_saved_flights(
                 )
             )
             continue
-        if snapshot is not None:
-            refreshed.append(snapshot)
-            items.append(
-                SavedFlightItem(
-                    flight_id=flight_id,
-                    availability="unavailable",
-                    flight=snapshot.to_flight_item(),
-                    explanation=snapshot.explanation,
-                )
-            )
-            continue
+        refreshed[flight_id] = snapshot
         items.append(
             SavedFlightItem(
                 flight_id=flight_id,
                 availability="unavailable",
-                flight=None,
+                flight=snapshot.to_flight_item(),
+                explanation=snapshot.explanation,
             )
         )
     return refreshed, items

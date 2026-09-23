@@ -102,6 +102,10 @@ class FakeFlightsStore:
         return rows()
 
 
+def _json_pointer_unescape(segment: str) -> str:
+    return segment.replace("~1", "/").replace("~0", "~")
+
+
 class FakeUserFlightsStore:
     def __init__(self) -> None:
         self.items: dict[str, dict[str, Any]] = {}
@@ -125,6 +129,28 @@ class FakeUserFlightsStore:
             raise cosmos_error(404, "not found")
         self.items[item] = dict(body)
         return dict(body)
+
+    async def patch_item(
+        self,
+        item: str,
+        partition_key: str,
+        patch_operations: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        if item not in self.items:
+            raise cosmos_error(404, "not found")
+        document = self.items[item]
+        for op in patch_operations:
+            parts = op["path"].lstrip("/").split("/")
+            assert len(parts) == 2
+            top_level, key = parts[0], _json_pointer_unescape(parts[1])
+            bucket = document.setdefault(top_level, {})
+            if op["op"] == "add":
+                bucket[key] = op["value"]
+            elif op["op"] == "remove":
+                if key not in bucket:
+                    raise cosmos_error(400, "path not found")
+                del bucket[key]
+        return dict(document)
 
 
 class FakeUserRepository:
@@ -193,23 +219,22 @@ def test_user_flights_container_defaults_and_env_override(
         get_settings.cache_clear()
 
 
-def test_user_document_stores_snapshots_and_keeps_legacy_ids() -> None:
-    document = UserSavedFlightsDocument(
-        id="user-1",
-        flight_ids=["ZAG-ROM-2026-09-18", "ZAG-ROM-2026-09-18", "ZAG-LIS-2026-09-18"],
-    )
+def test_user_document_stores_snapshots_keyed_by_flight_id() -> None:
+    document = UserSavedFlightsDocument(id="user-1")
     dumped = document.model_dump()
     assert dumped["id"] == "user-1"
-    assert dumped["flight_ids"] == ["ZAG-ROM-2026-09-18", "ZAG-LIS-2026-09-18"]
-    assert dumped["flights"] == []
+    assert dumped["flights"] == {}
+    assert dumped["explanations"] == {}
 
     snapshot = SavedFlightSnapshot.from_flight(ROME_FLIGHT)
-    stored = UserSavedFlightsDocument(id="user-1", flights=[snapshot])
+    stored = UserSavedFlightsDocument(
+        id="user-1", flights={snapshot.flight_id: snapshot}
+    )
     stored_dump = stored.model_dump(mode="json")
-    assert stored_dump["flights"][0]["flight_id"] == "ZAG-ROM-2026-09-18"
-    assert stored_dump["flights"][0]["price_eur"] == 65
-    assert stored_dump["flights"][0]["destination_city"] == "Rome"
-    assert stored_dump["flight_ids"] == ["ZAG-ROM-2026-09-18"]
+    assert stored_dump["flights"]["ZAG-ROM-2026-09-18"]["flight_id"] == "ZAG-ROM-2026-09-18"
+    assert stored_dump["flights"]["ZAG-ROM-2026-09-18"]["price_eur"] == 65
+    assert stored_dump["flights"]["ZAG-ROM-2026-09-18"]["destination_city"] == "Rome"
+    assert stored.all_flight_ids() == ["ZAG-ROM-2026-09-18"]
 
 
 @pytest.mark.anyio
@@ -223,7 +248,7 @@ async def test_save_stores_a_complete_snapshot_not_only_an_id() -> None:
     )
 
     stored = user_flights.items["user-1"]
-    snapshot = stored["flights"][0]
+    snapshot = stored["flights"]["ZAG-ROM-2026-09-18"]
     assert saved.flight is not None
     assert saved.flight.price_eur == 65
     assert snapshot["flight_id"] == ROME_FLIGHT["id"]
@@ -246,7 +271,7 @@ async def test_save_stores_a_complete_snapshot_not_only_an_id() -> None:
     assert snapshot["latitude"] == 41.79
     assert snapshot["temp_max_c"] == 27.8
     assert snapshot["photo_url"] == "https://example.com/rome.jpg"
-    assert stored["flight_ids"] == ["ZAG-ROM-2026-09-18"]
+    assert list(stored["flights"].keys()) == ["ZAG-ROM-2026-09-18"]
 
 
 @pytest.mark.anyio
@@ -283,9 +308,12 @@ async def test_save_stores_the_llm_summary_and_overwrites_on_resave() -> None:
     assert overwritten.explanation.summary == "Rome is cheaper after the fare drop."
     assert listed_again[0].explanation is not None
     assert listed_again[0].explanation.summary == "Rome is cheaper after the fare drop."
-    assert user_flights.items["user-1"]["flights"][0]["explanation"]["summary"] == (
+    assert user_flights.items["user-1"]["explanations"]["ZAG-ROM-2026-09-18"]["summary"] == (
         "Rome is cheaper after the fare drop."
     )
+    # The flight's own fields never carry the explanation; it's a sibling map
+    # so it can be patched independently.
+    assert user_flights.items["user-1"]["flights"]["ZAG-ROM-2026-09-18"]["explanation"] is None
 
 
 @pytest.mark.anyio
@@ -325,7 +353,9 @@ async def test_price_refresh_keeps_the_stored_llm_summary() -> None:
     flights.flights["ZAG-ROM-2026-09-18"] = {**ROME_FLIGHT, "price_eur": 81}
 
     items = await service.list_for_user("user-1")
-    stored = (await repository.list_user_saved_flights("user-1")).flights[0]
+    document = await repository.list_user_saved_flights("user-1")
+    assert document is not None
+    stored = document.combined_snapshots()["ZAG-ROM-2026-09-18"]
 
     assert items[0].flight is not None
     assert items[0].flight.price_eur == 81
@@ -348,7 +378,7 @@ async def test_snapshot_flight_id_is_the_exact_cosmos_document_id() -> None:
         SaveFlightRequest(flight_id=stable_id),
     )
 
-    snapshot = user_flights.items["user-1"]["flights"][0]
+    snapshot = user_flights.items["user-1"]["flights"][stable_id]
     assert saved.flight_id == stable_id
     assert snapshot["flight_id"] == stable_id
     assert snapshot["id"] == stable_id
@@ -358,7 +388,29 @@ async def test_snapshot_flight_id_is_the_exact_cosmos_document_id() -> None:
 
 
 @pytest.mark.anyio
-async def test_save_is_idempotent_and_prepends_newest_ids() -> None:
+async def test_list_queries_flights_by_id_with_allowlisted_fields() -> None:
+    flights = FakeFlightsStore([ROME_FLIGHT])
+    repository = connected_repository(flights=flights)
+    service = SavedFlightsService(repository)
+    await service.save("user-1", SaveFlightRequest(flight_id="ZAG-ROM-2026-09-18"))
+
+    await service.list_for_user("user-1")
+
+    assert "ARRAY_CONTAINS(@ids, c.id)" in flights.query_arguments["query"]
+    assert "SELECT * FROM" not in flights.query_arguments["query"]
+    assert "c.price_eur" in flights.query_arguments["query"]
+    assert flights.query_arguments.get("partition_key") is None
+
+
+@pytest.mark.anyio
+async def test_save_is_idempotent_and_orders_by_most_recent_activity() -> None:
+    """Order is derived from each snapshot's own saved_at, not a separate
+    ordered list, so a like/unlike never has to touch any other saved
+    flight. One consequence: resaving an already-saved flight refreshes its
+    saved_at and moves it back to the front, rather than keeping its
+    original position.
+    """
+
     flights = FakeFlightsStore([ROME_FLIGHT, LISBON_FLIGHT])
     repository = connected_repository(flights=flights)
     service = SavedFlightsService(repository)
@@ -371,14 +423,14 @@ async def test_save_is_idempotent_and_prepends_newest_ids() -> None:
     assert later.flight.destination_city == "Lisbon"
     assert again.flight_id == "ZAG-ROM-2026-09-18"
     assert await repository.list_user_saved_flight_ids("user-1") == [
-        "ZAG-LIS-2026-09-18",
         "ZAG-ROM-2026-09-18",
+        "ZAG-LIS-2026-09-18",
     ]
     document = await repository.list_user_saved_flights("user-1")
     assert document is not None
-    assert [item.flight_id for item in document.flights] == [
-        "ZAG-LIS-2026-09-18",
+    assert document.all_flight_ids() == [
         "ZAG-ROM-2026-09-18",
+        "ZAG-LIS-2026-09-18",
     ]
 
 
@@ -424,7 +476,9 @@ async def test_list_updates_snapshot_when_current_flight_changed() -> None:
     }
 
     items = await service.list_for_user("user-1")
-    stored = (await repository.list_user_saved_flights("user-1")).flights[0]
+    document = await repository.list_user_saved_flights("user-1")
+    assert document is not None
+    stored = document.flights["ZAG-ROM-2026-09-18"]
 
     assert items[0].availability == "available"
     assert items[0].flight is not None
@@ -443,43 +497,12 @@ async def test_list_does_not_rewrite_snapshot_when_current_matches() -> None:
     repository = connected_repository(flights=flights, user_flights=user_flights)
     service = SavedFlightsService(repository)
     await service.save("user-1", SaveFlightRequest(flight_id="ZAG-ROM-2026-09-18"))
-    saved_at = user_flights.items["user-1"]["flights"][0]["saved_at"]
+    saved_at = user_flights.items["user-1"]["flights"]["ZAG-ROM-2026-09-18"]["saved_at"]
 
     await service.list_for_user("user-1")
 
-    assert user_flights.items["user-1"]["flights"][0]["saved_at"] == saved_at
-    assert user_flights.items["user-1"]["flights"][0]["price_eur"] == 65
-
-
-@pytest.mark.anyio
-async def test_list_hydrates_legacy_ids_and_keeps_unavailable_ids() -> None:
-    flights = FakeFlightsStore([ROME_FLIGHT])
-    user_flights = FakeUserFlightsStore()
-    user_flights.items["user-1"] = {
-        "id": "user-1",
-        "flight_ids": ["ZAG-ROM-2026-09-18", "ZAG-LIS-2026-09-18"],
-    }
-    repository = connected_repository(flights=flights, user_flights=user_flights)
-
-    items = await SavedFlightsService(repository).list_for_user("user-1")
-
-    assert [item.flight_id for item in items] == [
-        "ZAG-ROM-2026-09-18",
-        "ZAG-LIS-2026-09-18",
-    ]
-    assert items[0].availability == "available"
-    assert items[0].flight is not None
-    assert items[0].flight.destination_city == "Rome"
-    assert items[1].availability == "unavailable"
-    assert items[1].flight is None
-    stored = user_flights.items["user-1"]
-    assert stored["flights"][0]["flight_id"] == "ZAG-ROM-2026-09-18"
-    assert stored["flights"][0]["price_eur"] == 65
-    assert stored["flight_ids"] == ["ZAG-ROM-2026-09-18", "ZAG-LIS-2026-09-18"]
-    assert "ARRAY_CONTAINS(@ids, c.id)" in flights.query_arguments["query"]
-    assert "SELECT * FROM" not in flights.query_arguments["query"]
-    assert "c.price_eur" in flights.query_arguments["query"]
-    assert flights.query_arguments.get("partition_key") is None
+    assert user_flights.items["user-1"]["flights"]["ZAG-ROM-2026-09-18"]["saved_at"] == saved_at
+    assert user_flights.items["user-1"]["flights"]["ZAG-ROM-2026-09-18"]["price_eur"] == 65
 
 
 @pytest.mark.anyio
@@ -496,7 +519,7 @@ async def test_delete_is_scoped_to_the_authenticated_user() -> None:
     assert await repository.list_user_saved_flight_ids("user-b") == ["ZAG-ROM-2026-09-18"]
     remaining = await repository.list_user_saved_flights("user-b")
     assert remaining is not None
-    assert remaining.flights[0].price_eur == 65
+    assert remaining.flights["ZAG-ROM-2026-09-18"].price_eur == 65
 
 
 @pytest.mark.anyio

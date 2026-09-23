@@ -46,12 +46,18 @@ class SavedActivitySnapshot(ActivityItem):
 
 class UserSavedActivitiesDocument(BaseModel):
     """One user-activities item. Every entry is a permanent snapshot: there is
-    no activities container to re-read, unlike saved flights."""
+    no activities container to re-read, unlike saved flights.
+
+    Activities are keyed by ``place_id`` (rather than held in a list) so a
+    single like or unlike can be written as one targeted Cosmos patch
+    operation against that key, without reading or rewriting every other
+    activity the user has saved.
+    """
 
     model_config = ConfigDict(extra="ignore")
 
     id: str = Field(min_length=1, max_length=200)
-    activities: list[SavedActivitySnapshot] = Field(default_factory=list)
+    activities: dict[str, SavedActivitySnapshot] = Field(default_factory=dict)
 
     @field_validator("id")
     @classmethod
@@ -62,4 +68,4 @@ class UserSavedActivitiesDocument(BaseModel):
         return cleaned
 
     def all_place_ids(self) -> list[str]:
-        return [item.place_id for item in self.activities]
+        return list(self.activities.keys())

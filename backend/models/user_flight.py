@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from backend.contracts.candidates import FlightItem
 from backend.contracts.saved_flights import SavedExplanationBody
 
 
 class SavedFlightSnapshot(FlightItem):
-    """Allowlisted flight fields captured at save time."""
+    """Allowlisted flight fields captured at save time, plus its AI explanation."""
 
     flight_id: str = Field(min_length=1, max_length=200)
     saved_at: datetime
@@ -47,15 +47,30 @@ class SavedFlightSnapshot(FlightItem):
         current = FlightItem.model_validate(raw)
         return self.to_flight_item().model_dump() != current.model_dump()
 
+    def without_explanation(self) -> "SavedFlightSnapshot":
+        """The stored form of this snapshot in the ``flights`` map, where
+        the explanation is deliberately absent (it lives in its own map)."""
+
+        if self.explanation is None:
+            return self
+        return self.model_copy(update={"explanation": None})
+
 
 class UserSavedFlightsDocument(BaseModel):
-    """One user-flights item. Snapshots keep a copy of the flight at save time."""
+    """One user-flights item. Flight fields and their AI explanation are
+    stored in two separate top-level maps, both keyed by ``flight_id``, so
+    that liking, unliking, or resaving-with-an-explanation can each be
+    written as a single targeted Cosmos patch operation — without reading
+    or rewriting any of the user's other saved flights, and without ever
+    clobbering an existing explanation when a resave doesn't include a new
+    one.
+    """
 
     model_config = ConfigDict(extra="ignore")
 
     id: str = Field(min_length=1, max_length=200)
-    flights: list[SavedFlightSnapshot] = Field(default_factory=list)
-    flight_ids: list[str] = Field(default_factory=list)
+    flights: dict[str, SavedFlightSnapshot] = Field(default_factory=dict)
+    explanations: dict[str, SavedExplanationBody] = Field(default_factory=dict)
 
     @field_validator("id")
     @classmethod
@@ -65,28 +80,28 @@ class UserSavedFlightsDocument(BaseModel):
             raise ValueError("id cannot be empty")
         return cleaned
 
-    @field_validator("flight_ids")
-    @classmethod
-    def keep_exact_flight_ids(cls, values: list[str]) -> list[str]:
-        seen: set[str] = set()
-        kept: list[str] = []
-        for value in values:
-            if not isinstance(value, str) or value == "" or value in seen:
-                continue
-            seen.add(value)
-            kept.append(value)
-        return kept
-
-    @model_validator(mode="after")
-    def keep_legacy_ids(self) -> "UserSavedFlightsDocument":
-        snapshot_ids = [item.flight_id for item in self.flights]
-        leftover = [
-            flight_id
-            for flight_id in self.flight_ids
-            if flight_id not in set(snapshot_ids)
-        ]
-        self.flight_ids = [*snapshot_ids, *leftover]
-        return self
-
     def all_flight_ids(self) -> list[str]:
-        return list(self.flight_ids)
+        """Most-recently saved or resaved first."""
+
+        return [
+            flight_id
+            for flight_id, _ in sorted(
+                self.flights.items(),
+                key=lambda pair: pair[1].saved_at,
+                reverse=True,
+            )
+        ]
+
+    def combined_snapshots(self) -> dict[str, SavedFlightSnapshot]:
+        """Flight fields merged with their explanation, keyed by flight_id."""
+
+        return {
+            flight_id: (
+                snapshot.model_copy(
+                    update={"explanation": self.explanations[flight_id]}
+                )
+                if flight_id in self.explanations
+                else snapshot
+            )
+            for flight_id, snapshot in self.flights.items()
+        }
