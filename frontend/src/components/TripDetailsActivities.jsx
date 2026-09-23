@@ -73,17 +73,22 @@ export function TripDetailsActivitiesView({
         <p className="trip-details-activities-status">No activities found for this destination.</p>
       ) : null}
       {status === 'ready' && state.activities.length ? (
-        <ul className="trip-details-activity-list">
-          {state.activities.map((item) => (
-            <ActivityCard
-              key={item.place_id}
-              item={item}
-              liked={liked.has(item.place_id)}
-              pending={pending.has(item.place_id)}
-              onToggleLike={onToggleLike}
-            />
-          ))}
-        </ul>
+        <>
+          <ul className="trip-details-activity-list">
+            {state.activities.map((item) => (
+              <ActivityCard
+                key={item.place_id}
+                item={item}
+                liked={liked.has(item.place_id)}
+                pending={pending.has(item.place_id)}
+                onToggleLike={onToggleLike}
+              />
+            ))}
+          </ul>
+          {state.activities.some((item) => item.description) ? (
+            <p className="trip-details-activities-attribution">Place summaries from Google.</p>
+          ) : null}
+        </>
       ) : null}
     </TripDetailsSection>
   )
@@ -101,6 +106,14 @@ function ActivityCard({ item, liked = false, pending = false, onToggleLike }) {
     <li className="trip-details-activity-card">
       <div className="trip-details-activity-body">
         <p className="trip-details-activity-name">{item.name}</p>
+        {item.description ? (
+          <p
+            className="trip-details-activity-description"
+            lang={item.description_language_code || undefined}
+          >
+            {item.description}
+          </p>
+        ) : null}
         {item.address ? <p className="trip-details-activity-meta">{item.address}</p> : null}
         {rating ? <p className="trip-details-activity-meta">{rating}</p> : null}
         {status ? <p className="trip-details-activity-meta">{status}</p> : null}

@@ -1,5 +1,6 @@
 """Offline policy and real-ranking checks for incremental semantic feedback."""
 
+import asyncio
 from dataclasses import asdict, replace
 from datetime import date
 
@@ -104,7 +105,9 @@ def test_existing_feedback_contract_flows_into_policy_without_live_services(text
         origin="ZAG", departure_date=date(2026, 9, 21),
         return_date=date(2026, 9, 25), budget=400, currency="EUR",
     )
-    feedback = interpret_feedback(text, request, llm_client=FakeLLMClient([payload]))
+    feedback = asyncio.run(
+        interpret_feedback(text, request, llm_client=FakeLLMClient([payload]))
+    )
     assert feedback.status == "ready"
     before = feedback.model_dump()
     assert _weights(preferences_from_intents(feedback.intents)) == pytest.approx(_weights(expected))

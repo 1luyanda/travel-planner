@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import fields
 
 from backend.config import MAX_RECOMMENDATION_RESULTS
@@ -25,8 +26,6 @@ from backend.services.feedback import interpret_feedback
 from backend.services.hotels import HotelService
 from backend.services.llm import (
     LLMClient,
-    LLMConfigurationError,
-    create_llm_client_from_env,
     parse_request,
 )
 from ranking import (
@@ -52,9 +51,10 @@ class RecommendationService:
         self._llm_client = llm_client
         self._hotels = hotel_service
         self._explanation_cache: dict[tuple, tuple[str, list]] = {}
+        self._explanation_cache_lock: asyncio.Lock | None = None
 
     async def recommend(self, body: RecommendRequest) -> RecommendationResponse:
-        parsed = parse_request(
+        parsed = await parse_request(
             body.text,
             form_fields=body.form_fields,
             llm_client=self._client(),
@@ -81,7 +81,7 @@ class RecommendationService:
         )
 
     async def refine(self, body: RefineRequest) -> RecommendationResponse:
-        interpreted = interpret_feedback(
+        interpreted = await interpret_feedback(
             body.text,
             body.request,
             llm_client=self._client(),
@@ -109,6 +109,11 @@ class RecommendationService:
 
     def _client(self) -> LLMClient | None:
         return self._llm_client
+
+    def _cache_lock(self) -> asyncio.Lock:
+        if self._explanation_cache_lock is None:
+            self._explanation_cache_lock = asyncio.Lock()
+        return self._explanation_cache_lock
 
     async def _search(
         self,
@@ -166,7 +171,7 @@ class RecommendationService:
         ranked = ranked[:MAX_RECOMMENDATION_RESULTS]
         # Date distance selects fallback candidates, not recommendation order.
         # Preserve descending score order so explanations assign matching ranks.
-        recommendations, explain_issues = self._explanations_for(
+        recommendations, explain_issues = await self._explanations_for(
             trip,
             ranked,
             ranking_weights=weights.normalized_weights(),
@@ -244,7 +249,7 @@ class RecommendationService:
             )
         return matches[0], [], []
 
-    def _explanations_for(
+    async def _explanations_for(
         self,
         trip: TripRequest,
         ranked: list[RankedDestination],
@@ -257,36 +262,38 @@ class RecommendationService:
 
         cached_by_id: dict[str, tuple[str, list]] = {}
         missing: list[RankedDestination] = []
-        if reuse_explanations:
-            for item in ranked:
-                hit = self._explanation_cache.get(
-                    _explanation_cache_key(trip, item.destination_id)
-                )
-                if hit is None:
-                    missing.append(item)
-                else:
-                    cached_by_id[item.destination_id] = hit
-        else:
-            missing = list(ranked)
+        async with self._cache_lock():
+            if reuse_explanations:
+                for item in ranked:
+                    hit = self._explanation_cache.get(
+                        _explanation_cache_key(trip, item.destination_id)
+                    )
+                    if hit is None:
+                        missing.append(item)
+                    else:
+                        cached_by_id[item.destination_id] = hit
+            else:
+                missing = list(ranked)
 
         issues: list[str] = []
         generated_by_id: dict[str, DestinationExplanation] = {}
         if missing:
-            generated, explain_issues = _generate_explanations(
+            generated, explain_issues = await _generate_explanations(
                 trip,
                 missing,
                 llm_client=self._client(),
                 ranking_weights=ranking_weights,
             )
             issues.extend(explain_issues)
-            for item in generated:
-                generated_by_id[item.destination_id] = item
-                if item.summary:
-                    _remember(
-                        self._explanation_cache,
-                        _explanation_cache_key(trip, item.destination_id),
-                        (item.summary, list(item.evidence)),
-                    )
+            async with self._cache_lock():
+                for item in generated:
+                    generated_by_id[item.destination_id] = item
+                    if item.summary:
+                        _remember(
+                            self._explanation_cache,
+                            _explanation_cache_key(trip, item.destination_id),
+                            (item.summary, list(item.evidence)),
+                        )
 
         explanations: list[DestinationExplanation] = []
         for index, item in enumerate(ranked, start=1):
@@ -352,7 +359,7 @@ def _to_ranking_candidate(item: CandidateItem) -> RankingCandidate:
     )
 
 
-def _generate_explanations(
+async def _generate_explanations(
     trip: TripRequest,
     ranked: list[RankedDestination],
     *,
@@ -362,17 +369,10 @@ def _generate_explanations(
     if not ranked:
         return [], []
 
-    client = llm_client
-    if client is None:
-        try:
-            client = create_llm_client_from_env()
-        except LLMConfigurationError as error:
-            return _ranked_without_explanations(ranked), [str(error)]
-
-    explained = explain_ranked_trips(
+    explained = await explain_ranked_trips(
         trip,
         ranked,
-        llm_client=client,
+        llm_client=llm_client,
         ranking_weights=ranking_weights,
     )
     if explained.status == "ok":

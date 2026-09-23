@@ -628,7 +628,10 @@ class RefineServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         service, _ = _service([_explain_payload()])
         with (
-            patch("backend.services.recommendations.interpret_feedback", return_value=interpreted),
+            patch(
+                "backend.services.recommendations.interpret_feedback",
+                new=AsyncMock(return_value=interpreted),
+            ),
             patch("backend.services.recommendations.rank_candidates", wraps=rank_candidates) as ranking,
         ):
             result = await service.refine(RefineRequest(

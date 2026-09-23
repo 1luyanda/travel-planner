@@ -140,7 +140,13 @@ Offline checks: `python -m pytest tests/test_hotels.py`.
 - `POST /api/activities` — verified Google Places activities for a selected
   destination city. Requires `GOOGLE_PLACES_API_KEY` on the backend. The key
   stays server-side and is never sent from React. No itinerary, maps, or
-  booking.
+  booking. Optional `description` is Google `editorialSummary.text`, copied
+  unchanged, plus `description_language_code`. Google does not provide a
+  summary for every place; missing values are omitted and never invented.
+  Requesting `places.editorialSummary` uses the Text Search Enterprise +
+  Atmosphere SKU (higher than Basic fields alone; this repo does not set
+  prices). Liked activities store the snapshot, including any summary, so
+  Places is not re-queried later.
 - `GET /api/saved-flights` — the authenticated user's saved flights.
   If the current `flights` document still exists, the snapshot is updated
   when any allowlisted field changed (live data refreshes about every 24h).
@@ -391,13 +397,22 @@ The input request is not mutated. Explicit feedback updates are applied; the
 initial parser's form-vs-text conflict rules are not used.
 
 ```python
+import asyncio
 from backend.services.feedback import interpret_feedback
+from backend.services.llm import create_llm_client_from_env
 
-result = interpret_feedback(
-    "Cheaper",
-    request,  # current TripRequest
-    llm_client=create_llm_client_from_env(),
-)
+async def interpret():
+    client = create_llm_client_from_env()
+    try:
+        return await interpret_feedback(
+            "Cheaper",
+            request,  # current TripRequest
+            llm_client=client,
+        )
+    finally:
+        await client.aclose()
+
+result = asyncio.run(interpret())
 ```
 
 ### Return shape
@@ -426,18 +441,26 @@ applies the six-criterion policy described above.
 ## parse_request
 
 ```python
+import asyncio
 from datetime import date
 from backend.services.llm import parse_request, create_llm_client_from_env
 
-result = parse_request(
-    "From ZAG, 21–25 September 2026, under EUR 400, somewhere warm and relaxing.",
-    form_fields=None,
-    reference_date=date.today(),
-    llm_client=create_llm_client_from_env(),
-)
+async def parse():
+    client = create_llm_client_from_env()
+    try:
+        return await parse_request(
+            "From ZAG, 21–25 September 2026, under EUR 400, somewhere warm and relaxing.",
+            form_fields=None,
+            reference_date=date.today(),
+            llm_client=client,
+        )
+    finally:
+        await client.aclose()
+
+result = asyncio.run(parse())
 ```
 
-`llm_client` is optional. If omitted and `user_text` is present, the function builds a live client from environment variables. It never falls back to the test fake client.
+`llm_client` is optional. If omitted and `user_text` is present, the function builds a live client from environment variables and closes that temporary client before returning. It never falls back to the test fake client. An injected client is borrowed and is not closed.
 
 ### Return shape
 
@@ -474,15 +497,23 @@ and the six component scores plus `final_score` and `temperature_direction`).
 explanation step; explanations retain their backend scores and order.
 
 ```python
+import asyncio
 from backend.services.explanations import explain_ranked_trips
 from backend.services.llm import create_llm_client_from_env
 
-result = explain_ranked_trips(
-    request,                 # TripRequest from parse_request
-    ranked,                  # list of RankedDestination-like objects
-    llm_client=create_llm_client_from_env(),
-    ranking_weights=None,    # optional dict actually used by ranking
-)
+async def explain():
+    client = create_llm_client_from_env()
+    try:
+        return await explain_ranked_trips(
+            request,                 # TripRequest from parse_request
+            ranked,                  # list of RankedDestination-like objects
+            llm_client=client,
+            ranking_weights=None,    # optional dict actually used by ranking
+        )
+    finally:
+        await client.aclose()
+
+result = asyncio.run(explain())
 ```
 
 ### Return shape

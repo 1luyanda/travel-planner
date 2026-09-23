@@ -9,6 +9,7 @@ import {
   formatActivityRating,
   normalizeActivitiesResponse,
   normalizeActivityItem,
+  preserveEditorialText,
 } from './activities'
 
 const rome = {
@@ -78,6 +79,8 @@ describe('normalizeActivitiesResponse', () => {
         user_ratings_total: 0,
         business_status: 'OPERATIONAL',
         price_level: 'PRICE_LEVEL_MODERATE',
+        description: null,
+        description_language_code: null,
       },
     ])
   })
@@ -108,7 +111,24 @@ describe('activity display helpers', () => {
     expect(normalizeActivityItem({ place_id: 'id', name: 'Park', rating: null })).toMatchObject({
       rating: null,
       address: null,
+      description: null,
+      description_language_code: null,
     })
+    const editorial = 'Iconic amphitheatre in the centre of Rome.'
+    expect(
+      normalizeActivityItem({
+        place_id: 'ChIJA',
+        name: 'Colosseum',
+        description: editorial,
+        description_language_code: 'en',
+      }),
+    ).toMatchObject({
+      description: editorial,
+      description_language_code: 'en',
+    })
+    expect(preserveEditorialText(editorial)).toBe(editorial)
+    expect(preserveEditorialText('   ')).toBeNull()
+    expect(preserveEditorialText(null)).toBeNull()
   })
 })
 

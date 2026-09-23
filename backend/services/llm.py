@@ -3,7 +3,7 @@
 Backend integration should call `parse_request`.
 
 Signature:
-    parse_request(
+    await parse_request(
         user_text: str,
         form_fields: dict[str, Any] | None = None,
         *,
@@ -36,6 +36,7 @@ LLM behaviour:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from datetime import date
@@ -160,7 +161,7 @@ EXTRACTION_TOOL: dict[str, Any] = {
 class LLMClient(Protocol):
     """Minimal function-calling client used by parse_request."""
 
-    def complete_function_call(
+    async def complete_function_call(
         self,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
@@ -168,9 +169,30 @@ class LLMClient(Protocol):
     ) -> str:
         """Return the chosen tool-call arguments as a JSON string."""
 
+    async def aclose(self) -> None:
+        """Release the shared SDK client for this worker, if one was created."""
+
 
 class LLMConfigurationError(RuntimeError):
     """Raised when a live client is requested but environment config is missing."""
+
+
+def _missing_openai_package(exc: ImportError) -> LLMConfigurationError:
+    return LLMConfigurationError(
+        "The openai package is required for the live LLM adapter. "
+        "Install project dependencies or inject llm_client."
+    )
+
+
+async def _aclose_sdk(client: Any) -> None:
+    if client is None:
+        return
+    closer = getattr(client, "close", None)
+    if closer is None:
+        return
+    result = closer()
+    if asyncio.iscoroutine(result):
+        await result
 
 
 class OpenAICompatibleClient:
@@ -189,25 +211,33 @@ class OpenAICompatibleClient:
         self._model = model
         self._base_url = base_url
         self._api_version = api_version
+        self._sdk: Any = None
+        self._init_lock: asyncio.Lock | None = None
 
-    def complete_function_call(
+    async def _sdk_client(self) -> Any:
+        if self._sdk is not None:
+            return self._sdk
+        if self._init_lock is None:
+            self._init_lock = asyncio.Lock()
+        async with self._init_lock:
+            if self._sdk is None:
+                try:
+                    from openai import AsyncOpenAI
+                except ImportError as exc:
+                    raise _missing_openai_package(exc) from exc
+                client_kwargs: dict[str, Any] = {"api_key": self._api_key}
+                if self._base_url:
+                    client_kwargs["base_url"] = self._base_url
+                self._sdk = AsyncOpenAI(**client_kwargs)
+        return self._sdk
+
+    async def complete_function_call(
         self,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
         tool_choice: dict[str, Any] | None = None,
     ) -> str:
-        try:
-            from openai import OpenAI
-        except ImportError as exc:
-            raise LLMConfigurationError(
-                "The openai package is required for the live LLM adapter. "
-                "Install project dependencies or inject llm_client."
-            ) from exc
-
-        client_kwargs: dict[str, Any] = {"api_key": self._api_key}
-        if self._base_url:
-            client_kwargs["base_url"] = self._base_url
-        client = OpenAI(**client_kwargs)
+        client = await self._sdk_client()
         create_kwargs: dict[str, Any] = {
             "model": self._model,
             "messages": messages,
@@ -221,8 +251,13 @@ class OpenAICompatibleClient:
         if self._api_version:
             create_kwargs["extra_query"] = {"api-version": self._api_version}
 
-        response = client.chat.completions.create(**create_kwargs)
+        response = await client.chat.completions.create(**create_kwargs)
         return _tool_arguments_from_response(response)
+
+    async def aclose(self) -> None:
+        client = self._sdk
+        self._sdk = None
+        await _aclose_sdk(client)
 
 
 class AzureOpenAIChatClient:
@@ -246,27 +281,35 @@ class AzureOpenAIChatClient:
         self._azure_endpoint = azure_endpoint.rstrip("/")
         self._model = deployment
         self._api_version = api_version
+        self._sdk: Any = None
+        self._init_lock: asyncio.Lock | None = None
 
-    def complete_function_call(
+    async def _sdk_client(self) -> Any:
+        if self._sdk is not None:
+            return self._sdk
+        if self._init_lock is None:
+            self._init_lock = asyncio.Lock()
+        async with self._init_lock:
+            if self._sdk is None:
+                try:
+                    from openai import AsyncAzureOpenAI
+                except ImportError as exc:
+                    raise _missing_openai_package(exc) from exc
+                self._sdk = AsyncAzureOpenAI(
+                    api_key=self._api_key,
+                    azure_endpoint=self._azure_endpoint,
+                    api_version=self._api_version,
+                )
+        return self._sdk
+
+    async def complete_function_call(
         self,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
         tool_choice: dict[str, Any] | None = None,
     ) -> str:
-        try:
-            from openai import AzureOpenAI
-        except ImportError as exc:
-            raise LLMConfigurationError(
-                "The openai package is required for the live LLM adapter. "
-                "Install project dependencies or inject llm_client."
-            ) from exc
-
-        client = AzureOpenAI(
-            api_key=self._api_key,
-            azure_endpoint=self._azure_endpoint,
-            api_version=self._api_version,
-        )
-        response = client.chat.completions.create(
+        client = await self._sdk_client()
+        response = await client.chat.completions.create(
             model=self._model,
             messages=messages,
             tools=tools,
@@ -277,6 +320,11 @@ class AzureOpenAIChatClient:
             },
         )
         return _tool_arguments_from_response(response)
+
+    async def aclose(self) -> None:
+        client = self._sdk
+        self._sdk = None
+        await _aclose_sdk(client)
 
 
 def _tool_arguments_from_response(response: Any) -> str:
@@ -371,7 +419,7 @@ def _azure_client_from_env() -> AzureOpenAIChatClient | None:
     )
 
 
-def parse_request(
+async def parse_request(
     user_text: str,
     form_fields: dict[str, Any] | None = None,
     *,
@@ -402,26 +450,32 @@ def parse_request(
 
     text = (user_text or "").strip()
     if text:
-        client = llm_client
-        if client is None:
-            try:
-                client = create_llm_client_from_env()
-            except LLMConfigurationError as exc:
+        owned_client = None
+        try:
+            client = llm_client
+            if client is None:
+                try:
+                    owned_client = create_llm_client_from_env()
+                except LLMConfigurationError as exc:
+                    return ParseRequestResult(
+                        status="error",
+                        preferences=form_preferences,
+                        issues=[str(exc)],
+                        clarification_questions=[],
+                    )
+                client = owned_client
+            extracted, model_error = await _extract_with_retry(text, today, client)
+            if model_error:
                 return ParseRequestResult(
                     status="error",
                     preferences=form_preferences,
-                    issues=[str(exc)],
+                    issues=[model_error],
                     clarification_questions=[],
                 )
-        extracted, model_error = _extract_with_retry(text, today, client)
-        if model_error:
-            return ParseRequestResult(
-                status="error",
-                preferences=form_preferences,
-                issues=[model_error],
-                clarification_questions=[],
-            )
-        extracted = apply_explicit_text_facts(extracted, text)
+            extracted = apply_explicit_text_facts(extracted, text)
+        finally:
+            if owned_client is not None:
+                await owned_client.aclose()
     else:
         extracted = ExtractedPreferences()
 
@@ -451,7 +505,7 @@ def parse_request(
     )
 
 
-def _extract_with_retry(
+async def _extract_with_retry(
     user_text: str,
     reference_date: date,
     llm_client: LLMClient,
@@ -464,7 +518,7 @@ def _extract_with_retry(
 
     for attempt in range(MAX_MODEL_ATTEMPTS):
         try:
-            raw_arguments = llm_client.complete_function_call(
+            raw_arguments = await llm_client.complete_function_call(
                 messages=messages,
                 tools=[EXTRACTION_TOOL],
                 tool_choice={

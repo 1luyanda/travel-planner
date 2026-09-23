@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import date
 
 from backend.models.trip_request import TripRequest
@@ -55,10 +56,12 @@ def _payload(**overrides) -> dict:
 
 def _interpret(text: str, responses: list, request: TripRequest | None = None):
     current = request or _request()
-    return interpret_feedback(
-        text,
-        current,
-        llm_client=FakeLLMClient(responses),
+    return asyncio.run(
+        interpret_feedback(
+            text,
+            current,
+            llm_client=FakeLLMClient(responses),
+        )
     ), current
 
 
@@ -273,7 +276,7 @@ def test_repeated_invalid_output_returns_error_without_changing_request():
 
 def test_empty_feedback_does_not_call_the_model():
     client = FakeLLMClient([_payload()])
-    result = interpret_feedback("  ", _request(), llm_client=client)
+    result = asyncio.run(interpret_feedback("  ", _request(), llm_client=client))
 
     assert result.status == "needs_input"
     assert client.calls == []

@@ -4,7 +4,7 @@ Backend integration (Luyanda) should call ``interpret_feedback`` after the
 user comments on an existing request. Ranking is not called here.
 
 Signature:
-    interpret_feedback(
+    await interpret_feedback(
         feedback_text: str,
         request: TripRequest,
         *,
@@ -172,7 +172,7 @@ INTERPRET_TOOL: dict[str, Any] = {
 }
 
 
-def interpret_feedback(
+async def interpret_feedback(
     feedback_text: str,
     request: TripRequest,
     *,
@@ -192,29 +192,35 @@ def interpret_feedback(
             ],
         )
 
-    client = llm_client
-    if client is None:
-        try:
-            client = create_llm_client_from_env()
-        except LLMConfigurationError as exc:
+    owned_client = None
+    try:
+        client = llm_client
+        if client is None:
+            try:
+                owned_client = create_llm_client_from_env()
+            except LLMConfigurationError as exc:
+                return InterpretFeedbackResult(
+                    status="error",
+                    request=snapshot,
+                    issues=[str(exc)],
+                )
+            client = owned_client
+
+        payload, model_error = await _extract_with_retry(text, snapshot, client)
+        if payload is None:
             return InterpretFeedbackResult(
                 status="error",
                 request=snapshot,
-                issues=[str(exc)],
+                issues=[model_error or "The model returned invalid output."],
             )
 
-    payload, model_error = _extract_with_retry(text, snapshot, client)
-    if payload is None:
-        return InterpretFeedbackResult(
-            status="error",
-            request=snapshot,
-            issues=[model_error or "The model returned invalid output."],
-        )
-
-    return _apply_feedback(text, snapshot, payload)
+        return _apply_feedback(text, snapshot, payload)
+    finally:
+        if owned_client is not None:
+            await owned_client.aclose()
 
 
-def _extract_with_retry(
+async def _extract_with_retry(
     feedback_text: str,
     request: TripRequest,
     llm_client: LLMClient,
@@ -227,7 +233,7 @@ def _extract_with_retry(
 
     for attempt in range(MAX_MODEL_ATTEMPTS):
         try:
-            raw_arguments = llm_client.complete_function_call(
+            raw_arguments = await llm_client.complete_function_call(
                 messages=messages,
                 tools=[INTERPRET_TOOL],
                 tool_choice={

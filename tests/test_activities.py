@@ -16,11 +16,14 @@ from pydantic import ValidationError
 from backend.api.routes import router
 from backend.contracts.activities import ActivitiesRequest, ActivityItem
 from backend.security import require_api_key
+from backend.models.user_activity import SavedActivitySnapshot
 from backend.services.places import (
+    FIELD_MASK,
     PlacesConfigurationError,
     PlacesService,
     PlacesUnavailableError,
     build_text_queries,
+    editorial_description,
 )
 
 SECRET_KEY = "test-google-places-key-do-not-leak"
@@ -121,7 +124,13 @@ def test_valid_request_returns_normalized_activities() -> None:
     assert item.user_ratings_total == 1200
     assert item.business_status == "OPERATIONAL"
     assert item.price_level == "PRICE_LEVEL_MODERATE"
+    assert item.description is None
+    assert item.description_language_code is None
     assert captured["url"] == "https://places.googleapis.com/v1/places:searchText"
+    assert captured["headers"]["X-Goog-FieldMask"] == FIELD_MASK
+    assert "places.editorialSummary" in FIELD_MASK
+    assert "places.photos" not in FIELD_MASK
+    assert "*" not in FIELD_MASK
     assert captured["calls"][0]["textQuery"] == "museums in Rome"
     assert SECRET_KEY not in result.model_dump_json()
 
@@ -279,3 +288,78 @@ def test_endpoint_returns_ready_payload() -> None:
     assert payload["destination_id"] == "ZAG-ROM-2026-09-18"
     assert payload["activities"][0]["name"] == "Colosseum"
     assert SECRET_KEY not in response.text
+
+
+def test_editorial_summary_is_copied_unchanged() -> None:
+    source = "Iconic amphitheatre in the centre of Rome."
+    result = _search(
+        [
+            _place(
+                "ChIJA",
+                "Colosseum",
+                editorialSummary={"text": source, "languageCode": "en"},
+            )
+        ]
+    )
+    item = result.activities[0]
+    assert item.description == source
+    assert item.description_language_code == "en"
+    assert editorial_description(
+        {"editorialSummary": {"text": source, "languageCode": "en"}}
+    ) == (source, "en")
+
+
+def test_missing_or_null_editorial_summary_is_omitted() -> None:
+    missing = _search([_place("ChIJA", "Colosseum")])
+    assert missing.activities[0].description is None
+    assert missing.activities[0].description_language_code is None
+    assert missing.activities[0].name == "Colosseum"
+
+    empty = _search(
+        [
+            _place(
+                "ChIJB",
+                "Trevi Fountain",
+                editorialSummary={"text": "   ", "languageCode": "en"},
+            )
+        ]
+    )
+    assert empty.activities[0].description is None
+    assert editorial_description({"editorialSummary": None}) == (None, None)
+    assert editorial_description({}) == (None, None)
+
+
+def test_saved_snapshot_keeps_summary_and_loads_older_records() -> None:
+    from datetime import datetime, timezone
+
+    source = "Iconic amphitheatre in the centre of Rome."
+    activity = ActivityItem(
+        place_id="ChIJA",
+        name="Colosseum",
+        description=source,
+        description_language_code="en",
+    )
+    snapshot = SavedActivitySnapshot.from_activity(
+        activity,
+        city="Rome",
+        country_code="IT",
+        destination_id="ZAG-ROM-2026-09-18",
+        saved_at=datetime(2026, 9, 21, tzinfo=timezone.utc),
+    )
+    restored = snapshot.to_activity_item()
+    assert restored.description == source
+    assert restored.description_language_code == "en"
+    assert restored.place_id == "ChIJA"
+
+    legacy = SavedActivitySnapshot.model_validate(
+        {
+            "place_id": "ChIJB",
+            "name": "Trevi Fountain",
+            "city": "Rome",
+            "saved_at": "2026-09-01T00:00:00+00:00",
+        }
+    )
+    assert legacy.description is None
+    assert legacy.description_language_code is None
+    assert legacy.to_activity_item().description is None
+    assert legacy.name == "Trevi Fountain"

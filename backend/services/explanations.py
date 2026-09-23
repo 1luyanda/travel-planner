@@ -3,7 +3,7 @@
 Backend integration (Luyanda) should call `explain_ranked_trips` after ranking.
 
 Signature:
-    explain_ranked_trips(
+    await explain_ranked_trips(
         request: TripRequest,
         ranked: Sequence[RankedTripLike],
         *,
@@ -138,7 +138,7 @@ class RankedTripLike(Protocol):
     return_duration_minutes: int | None
 
 
-def explain_ranked_trips(
+async def explain_ranked_trips(
     request: TripRequest,
     ranked: Sequence[RankedTripLike],
     *,
@@ -160,33 +160,41 @@ def explain_ranked_trips(
         for item in catalog
     }
 
-    client = llm_client
-    if client is None:
-        try:
-            client = create_llm_client_from_env()
-        except LLMConfigurationError as exc:
+    owned_client = None
+    try:
+        client = llm_client
+        if client is None:
+            try:
+                owned_client = create_llm_client_from_env()
+            except LLMConfigurationError as exc:
+                return ExplainRankedTripsResult(
+                    status="error",
+                    explanations=[],
+                    issues=[str(exc)],
+                )
+            client = owned_client
+
+        selection, model_error = await _select_evidence_with_retry(
+            request, trips, catalogs, client
+        )
+        if model_error:
             return ExplainRankedTripsResult(
                 status="error",
                 explanations=[],
-                issues=[str(exc)],
+                issues=[model_error],
             )
 
-    selection, model_error = _select_evidence_with_retry(
-        request, trips, catalogs, client
-    )
-    if model_error:
-        return ExplainRankedTripsResult(
-            status="error",
-            explanations=[],
-            issues=[model_error],
+        explanations, issues = _build_explanations(
+            trips, catalogs, allowed_by_id, selection
         )
-
-    explanations, issues = _build_explanations(trips, catalogs, allowed_by_id, selection)
-    return ExplainRankedTripsResult(
-        status="ok",
-        explanations=explanations,
-        issues=issues,
-    )
+        return ExplainRankedTripsResult(
+            status="ok",
+            explanations=explanations,
+            issues=issues,
+        )
+    finally:
+        if owned_client is not None:
+            await owned_client.aclose()
 
 
 def _catalog_for_trip(
@@ -390,7 +398,7 @@ def _catalog_for_trip(
     return items
 
 
-def _select_evidence_with_retry(
+async def _select_evidence_with_retry(
     request: TripRequest,
     trips: Sequence[RankedTripLike],
     catalogs: Sequence[list[EvidenceReference]],
@@ -404,7 +412,7 @@ def _select_evidence_with_retry(
 
     for attempt in range(MAX_MODEL_ATTEMPTS):
         try:
-            raw_arguments = llm_client.complete_function_call(
+            raw_arguments = await llm_client.complete_function_call(
                 messages=messages,
                 tools=[EXPLAIN_TOOL],
                 tool_choice={

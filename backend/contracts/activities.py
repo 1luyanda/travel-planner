@@ -45,6 +45,8 @@ class ActivityItem(BaseModel):
     user_ratings_total: int | None = None
     business_status: str | None = None
     price_level: str | None = None
+    description: str | None = None
+    description_language_code: str | None = None
 
 
 class ActivitiesResponse(BaseModel):
