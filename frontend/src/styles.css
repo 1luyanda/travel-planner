@@ -71,27 +71,6 @@ button:disabled {
   }
 }
 
-.score-breakdown {
-  display: grid;
-  gap: 6px;
-  margin-top: 8px;
-}
-
-.score-line {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  font-size: 12px;
-  color: var(--tp-text-muted);
-}
-
-.score-line.total {
-  border-top: 1px solid var(--tp-border);
-  padding-top: 8px;
-  font-weight: 700;
-  color: var(--tp-text);
-}
-
 .drawer-root {
   position: absolute;
   inset: 0;
@@ -247,20 +226,13 @@ button:disabled {
   color: var(--tp-text);
 }
 
-.trip-details-score {
-  margin-top: 24px;
-  padding-top: 16px;
-  border-top: 1px solid var(--tp-border);
-}
-
 .trip-details-activities {
   margin-top: 24px;
   padding-top: 16px;
   border-top: 1px solid var(--tp-border);
 }
 
-.trip-details-activities h3,
-.trip-details-score h3 {
+.trip-details-activities h3 {
   margin: 0 0 12px;
   font-size: 15px;
 }

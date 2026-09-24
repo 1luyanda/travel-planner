@@ -1,7 +1,6 @@
 import { useRef } from 'react'
 import { Heart } from 'lucide-react'
 import DestinationPhoto from './DestinationPhoto'
-import ScoreBreakdown from './ScoreBreakdown'
 import FlexibleDateNotice from './FlexibleDateNotice'
 import {
   displayValue,
@@ -16,7 +15,7 @@ import {
   formatTripDays,
 } from '../utils/format'
 import { formatOriginLabel } from '../utils/origins'
-import { backendScoreItems, uniqueExplanationView } from '../utils/plannerFlow'
+import { uniqueExplanationView } from '../utils/plannerFlow'
 import TripDetailsActivities from './TripDetailsActivities'
 import TripDetailsHotels from './TripDetailsHotels'
 import { useScrollMapFocus } from '../utils/useScrollMapFocus'
@@ -112,7 +111,6 @@ export default function TripDetailsContent({
   const weather = destination?.weather || {}
   const country = destination?.country || {}
   const airline = formatAirline(flight)
-  const breakdown = destination ? backendScoreItems(destination) : []
   const { summary, evidence } = uniqueExplanationView(destination)
   const placesRef = useRef(null)
   // Scrolling the hotel/activity lists moves the map to the card being read.
@@ -162,13 +160,6 @@ export default function TripDetailsContent({
         <Row label="Airline" value={airline} />
         <Row label="Weather" value={weatherLine(weather)} />
       </dl>
-
-      {breakdown.length > 0 && (
-        <section className="trip-details-score" aria-labelledby={`${titleId}-score`}>
-          <h3 id={`${titleId}-score`}>Planner scores</h3>
-          <ScoreBreakdown items={breakdown} total={destination.scores?.total} />
-        </section>
-      )}
 
       <div ref={placesRef} className="trip-details-places">
         <TripDetailsHotels

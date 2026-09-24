@@ -76,6 +76,7 @@ describe('Trip Details hotels', () => {
       flight: { price: 65, currency: 'EUR' }, weather: {}, scores: { total: 0.8 },
     }} />)
     expect(html).toContain('65 EUR')
+    expect(html).not.toContain('Planner scores')
     expect(html).toContain('id="details-hotels"')
     expect(html).toContain('id="details-activities"')
     expect(html.indexOf('id="details-hotels"')).toBeLessThan(html.indexOf('id="details-activities"'))

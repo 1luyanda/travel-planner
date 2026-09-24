@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { List, Map as MapIcon, Menu, SlidersHorizontal } from 'lucide-react'
+import { List, Map as MapIcon, Menu } from 'lucide-react'
 import { useAuth } from './auth/AuthProvider'
 import Sidebar from './components/Sidebar'
 import Composer from './components/Composer'
@@ -12,7 +12,6 @@ import SavedPane from './components/SavedPane'
 import DestinationMap from './components/DestinationMap'
 import { useHotelSelection } from './utils/useHotelSelection'
 import { useActivitySelection } from './utils/useActivitySelection'
-import FiltersPopover from './components/FiltersPopover'
 import TripDetailsDrawer from './components/TripDetailsDrawer'
 import ExplorePane from './components/ExplorePane'
 import LandingPage from './components/LandingPage'
@@ -77,7 +76,6 @@ import {
   savedFlightIds,
   showPlannerComposer,
   showPlannerConversation,
-  showPlannerFilters,
 } from './utils/savedFlights'
 import { AppLink, ROUTES, isAppPath, isPlannerPath, isWorkspacePath, sessionRedirect, useRoute } from './utils/routes.jsx'
 import styles from './workspace.module.css'
@@ -100,7 +98,6 @@ export default function App() {
   const userId = user?.id || null
   const [form, setForm] = useState(initialForm)
   const [selectedOrigin, setSelectedOrigin] = useState(null)
-  const [searchSnapshot, setSearchSnapshot] = useState(initialForm)
   const [tripRequest, setTripRequest] = useState(null)
   const [rankingPreferences, setRankingPreferences] = useState(null)
   const [pendingSearchText, setPendingSearchText] = useState('')
@@ -129,7 +126,6 @@ export default function App() {
   const [savedItems, setSavedItems] = useState([])
   const [savedLoading, setSavedLoading] = useState(false)
   const [savedError, setSavedError] = useState('')
-  const [filtersOpen, setFiltersOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [mobilePane, setMobilePane] = useState('list')
   const [pendingSelectId, setPendingSelectId] = useState(null)
@@ -160,10 +156,6 @@ export default function App() {
     resultsRef.current = results
   }, [results])
 
-  const prices = results.map((item) => Number(item.flight?.price)).filter((value) => Number.isFinite(value))
-  const maxBudgetCap = prices.length
-    ? Math.max(...prices, Number(form.maxBudget) || 0)
-    : Math.max(500, Number(form.maxBudget) || 0)
   const savedIds = savedFlightIds(savedItems)
   const visibleDestinations = destinationsForView(view, { results, savedItems })
   const mapResults = visibleDestinations
@@ -233,7 +225,6 @@ export default function App() {
     searchSeqRef.current += 1
     setForm(initialForm)
     setSelectedOrigin(null)
-    setSearchSnapshot(initialForm)
     setRejected([])
     setDataSource(null)
     setDateFallback(null)
@@ -252,7 +243,6 @@ export default function App() {
     setDraft('')
     setMessages([])
     setHistory([])
-    setFiltersOpen(false)
     setSidebarOpen(false)
     setMobilePane('list')
     setPendingSelectId(null)
@@ -337,13 +327,11 @@ export default function App() {
     setMessages([])
     setError('')
     setFlightWarning('')
-    setFiltersOpen(false)
     setViewportMode('bounds')
     setView('explore')
     setLoading(false)
     setRefining(false)
     setForm(nextForm)
-    setSearchSnapshot(nextForm)
   }
 
   function handleOriginChange(origin) {
@@ -441,7 +429,6 @@ export default function App() {
     setView('explore')
     setMobilePane('list')
     setSidebarOpen(false)
-    setFiltersOpen(false)
     setHasSearched(true)
     setForm(nextForm)
     if (mode === 'fresh') {
@@ -635,7 +622,6 @@ export default function App() {
     setRankingPreferences(response.ranking_preferences || rankingPreferencesRef.current)
     setPreviousRanks({})
     setActiveRefinement(null)
-    setSearchSnapshot(nextForm)
     setMessages((current) => [
       ...current,
       {
@@ -861,35 +847,6 @@ export default function App() {
     }))
   }
 
-  function handleFilterChange(field, value) {
-    const next = {
-      ...form,
-      [field]: value,
-      budgetTouched: field === 'maxBudget' ? true : form.budgetTouched,
-    }
-    setForm(next)
-    if (!hasSearched || !pendingSearchText || busy || clarifyKind) return
-    // Re-search from the form only. Reusing the original prompt fights the new dates.
-    runRecommend(pendingSearchText, {
-      nextForm: next,
-      mode: 'filters',
-      userMessage: 'Updated filters',
-      // Selecting Warmer is new intent; budget/direct/date changes are not.
-      preserveRankingPreferences: field !== 'preferWarm' || value !== true,
-    })
-  }
-
-  function handleResetFilters() {
-    const restored = searchSnapshot || initialForm
-    setForm(restored)
-    if (!hasSearched || !pendingSearchText || clarifyKind) return
-    runRecommend(pendingSearchText, {
-      nextForm: restored,
-      mode: 'filters',
-      userMessage: 'Reset filters',
-    })
-  }
-
   function handleNewTrip() {
     const cleared = newTripPlannerState()
     searchAbortRef.current?.abort()
@@ -921,7 +878,6 @@ export default function App() {
     setForm(cleared.form)
     setSelectedOrigin(null)
     setOriginError('')
-    setFiltersOpen(false)
     setSidebarOpen(false)
     setMobilePane('list')
     setViewportMode('bounds')
@@ -1135,7 +1091,6 @@ export default function App() {
         }}
         onSaved={() => {
           setView('saved')
-          setFiltersOpen(false)
           setSidebarOpen(false)
           setMobilePane('list')
           if (path !== ROUTES.planner) navigate(ROUTES.planner)
@@ -1174,11 +1129,6 @@ export default function App() {
               </button>
             </div>
           )}
-          {showPlanner && hasSearched && showPlannerFilters(view) && (
-            <button type="button" className={styles.iconBtn} aria-label="Open filters" onClick={() => setFiltersOpen(true)}>
-              <SlidersHorizontal size={18} />
-            </button>
-          )}
         </div>
 
         <div className={styles.centerMain}>
@@ -1202,13 +1152,6 @@ export default function App() {
               onExplore={() => setView('explore')}
             />
           ) : showPlannerConversation(view, hasSearched) ? (
-            <>
-              <div className={styles.desktopTools}>
-                <button type="button" className={styles.ghostBtn} onClick={() => setFiltersOpen(true)}>
-                  <SlidersHorizontal size={16} />
-                  Filters
-                </button>
-              </div>
               <ConversationPane
                 messages={messages}
                 filters={appliedFilters}
@@ -1232,7 +1175,6 @@ export default function App() {
                 onToggleSaved={saveHandler}
                 onViewDetails={handleViewDetails}
               />
-            </>
           ) : (
             <>
               {messages.length > 0 && (
@@ -1342,16 +1284,6 @@ export default function App() {
         )}
       </div>
 
-      {showPlanner && showPlannerFilters(view) && (
-        <FiltersPopover
-          open={filtersOpen}
-          form={form}
-          maxBudgetCap={maxBudgetCap}
-          onChange={handleFilterChange}
-          onReset={handleResetFilters}
-          onClose={() => setFiltersOpen(false)}
-        />
-      )}
     </div>
   )
 }

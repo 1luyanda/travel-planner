@@ -1,5 +1,4 @@
 import { Heart } from 'lucide-react'
-import ScoreBreakdown from './ScoreBreakdown'
 import FlexibleDateNotice from './FlexibleDateNotice'
 import DestinationPhoto from './DestinationPhoto'
 import {
@@ -8,7 +7,6 @@ import {
   formatPrice,
   tripFactItems,
 } from '../utils/format'
-import { backendScoreItems } from '../utils/plannerFlow'
 import styles from '../workspace.module.css'
 
 export default function DestinationCard({
@@ -28,7 +26,6 @@ export default function DestinationCard({
   const place = destination.destination || {}
   const country = destination.country || {}
   const moved = previousRank && previousRank !== rank
-  const breakdown = backendScoreItems(destination)
   const facts = tripFactItems(destination)
   const displayRank = destination.rank || rank
 
@@ -95,13 +92,6 @@ export default function DestinationCard({
           </ul>
         )}
         <FlexibleDateNotice destination={destination} className={styles.reason} />
-
-        {breakdown.length > 0 && (
-          <details className={styles.why}>
-            <summary>Planner scores</summary>
-            <ScoreBreakdown items={breakdown} total={destination.scores?.total} />
-          </details>
-        )}
 
         {onViewDetails && (
           <button
